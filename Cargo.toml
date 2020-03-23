@@ -1,0 +1,9 @@
+[package]
+name = "nac3"
+version = "0.1.0"
+authors = ["Sebastien Bourdeauducq <sb@m-labs.hk>"]
+edition = "2018"
+
+[dependencies]
+inkwell = { git = "https://github.com/TheDan64/inkwell", branch = "llvm8-0" }
+rustpython-parser = { git = "https://github.com/RustPython/RustPython", branch = "master" }
