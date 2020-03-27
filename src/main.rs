@@ -45,9 +45,12 @@ impl<'ctx> CodeGen<'ctx> {
 
     fn get_basic_type(&self, name: &str) -> CompileResult<types::BasicTypeEnum<'ctx>> {
         match name {
+            "bool" => Ok(self.context.bool_type().into()),
             "int32" => Ok(self.context.i32_type().into()),
             "int64" => Ok(self.context.i64_type().into()),
-            _ => Err(CompileError)
+            "float32" => Ok(self.context.f32_type().into()),
+            "float64" => Ok(self.context.f64_type().into()),
+            _ => Err(self.compile_error(CompileErrorKind::UnknownTypeAnnotation))
         }
     }
 
