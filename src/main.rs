@@ -9,18 +9,41 @@ use inkwell::context::Context;
 use inkwell::module::Module;
 use inkwell::targets::*;
 use inkwell::types;
-use crate::inkwell::types::BasicType;
+use inkwell::types::BasicType;
 
 use std::error::Error;
 use std::fmt;
 use std::path::Path;
 
 #[derive(Debug)]
-struct CompileError;
+enum CompileErrorKind {
+    Unsupported(&'static str),
+    MissingTypeAnnotation,
+    UnknownTypeAnnotation
+}
+
+impl fmt::Display for CompileErrorKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            CompileErrorKind::Unsupported(feature)
+                => write!(f, "The following Python feature is not supported by NAC3 {}: ", feature),
+            CompileErrorKind::MissingTypeAnnotation
+                => write!(f, "Missing type annotation"),
+            CompileErrorKind::UnknownTypeAnnotation
+                => write!(f, "Unknown type annotation"),
+        }
+    }
+}
+
+#[derive(Debug)]
+struct CompileError {
+    location: ast::Location,
+    kind: CompileErrorKind,
+}
 
 impl fmt::Display for CompileError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Compilation error")
+        write!(f, "Compilation error at {}: {}", self.location, self.kind)
     }
 }
 
@@ -31,7 +54,8 @@ type CompileResult<T> = Result<T, CompileError>;
 struct CodeGen<'ctx> {
     context: &'ctx Context,
     module: Module<'ctx>,
-    builder: Builder<'ctx>
+    builder: Builder<'ctx>,
+    current_source_location: ast::Location,
 }
 
 impl<'ctx> CodeGen<'ctx> {
@@ -39,7 +63,19 @@ impl<'ctx> CodeGen<'ctx> {
         CodeGen {
             context,
             module: context.create_module("kernel"),
-            builder: context.create_builder()
+            builder: context.create_builder(),
+            current_source_location: ast::Location::default(),
+        }
+    }
+
+    fn set_source_location(&mut self, location: ast::Location) {
+        self.current_source_location = location;
+    }
+
+    fn compile_error(&self, kind: CompileErrorKind) -> CompileError {
+        CompileError {
+            location: self.current_source_location,
+            kind
         }
     }
 
@@ -64,29 +100,42 @@ impl<'ctx> CodeGen<'ctx> {
         is_async: bool,
     ) -> CompileResult<()> {
         if is_async {
-            return Err(CompileError)
+            return Err(self.compile_error(CompileErrorKind::Unsupported("async functions")))
+        }
+        for decorator in decorator_list.iter() {
+            self.set_source_location(decorator.location);
+            if let ast::ExpressionType::Identifier { name } = &decorator.node {
+                if name != "kernel" && name != "portable" {
+                    return Err(self.compile_error(CompileErrorKind::Unsupported("custom decorators")))
+                }
+            } else {
+                return Err(self.compile_error(CompileErrorKind::Unsupported("complex decorators")))
+            }
         }
 
         let args_type = args.args.iter().map(|val| {
-            println!("{:?}", val.annotation);
+            self.set_source_location(val.location);
             if let Some(annotation) = &val.annotation {
                 if let ast::ExpressionType::Identifier { name } = &annotation.node {
                     Ok(self.get_basic_type(&name)?)
                 } else {
-                    Err(CompileError)
+                    Err(self.compile_error(CompileErrorKind::Unsupported("complex type annotation")))
                 }
             } else {
-                Err(CompileError)
+                Err(self.compile_error(CompileErrorKind::MissingTypeAnnotation))
             }
         }).collect::<CompileResult<Vec<types::BasicTypeEnum>>>()?;
-        let return_type = match returns {
-            Some(ast::Located { location, node: ast::ExpressionType::Identifier { name }} )
-                => if name == "None" { None } else { Some(self.get_basic_type(name)?) },
-            Some(_) => return Err(CompileError),
-            None => None,
+        let return_type = if let Some(returns) = returns {
+            self.set_source_location(returns.location);
+            if let ast::ExpressionType::Identifier { name } = &returns.node {
+                if name == "None" { None } else { Some(self.get_basic_type(name)?) }
+            } else {
+                return Err(self.compile_error(CompileErrorKind::Unsupported("complex type annotation")))
+            }
+        } else {
+            None
         };
 
-        let i64_type = self.context.i64_type();
         let fn_type = match return_type {
             Some(ty) => ty.fn_type(&args_type, false),
             None => self.context.void_type().fn_type(&args_type, false)
@@ -103,6 +152,8 @@ impl<'ctx> CodeGen<'ctx> {
     }
 
     fn compile_statement(&mut self, statement: &ast::Statement) -> CompileResult<()> {
+        self.set_source_location(statement.location);
+
         use ast::StatementType::*;
         match &statement.node {
             FunctionDef {
@@ -116,7 +167,7 @@ impl<'ctx> CodeGen<'ctx> {
                 self.compile_function_def(name, args, body, decorator_list, returns, *is_async)?;
             },
             Pass => (),
-            _ => return Err(CompileError),
+            _ => return Err(self.compile_error(CompileErrorKind::Unsupported("special statement"))),
         }
         Ok(())
     }
@@ -143,16 +194,19 @@ impl<'ctx> CodeGen<'ctx> {
     }
 }
 
-fn main() -> Result<(), Box<dyn Error>> {
+fn main() {
     Target::initialize_all(&InitializationConfig::default());
 
-    let ast = parser::parse_program("def foo(x: int32, y: int32) -> int32: return x + y")?;
-    println!("AST: {:?}", ast);
+    let ast = match parser::parse_program("def foo(x: int32, y: int32) -> int32: return x + y") {
+        Ok(ast) => ast,
+        Err(err) => { println!("{}", err); return; }
+    };
 
     let context = Context::create();
     let mut codegen = CodeGen::new(&context);
-    codegen.compile_statement(&ast.statements[0])?;
+    match codegen.compile_statement(&ast.statements[0]) {
+        Ok(_) => (),
+        Err(err) => { println!("{}", err); return; }
+    }
     codegen.output();
-
-    Ok(())
 }
