@@ -19,18 +19,21 @@ use std::path::Path;
 enum CompileErrorKind {
     Unsupported(&'static str),
     MissingTypeAnnotation,
-    UnknownTypeAnnotation
+    UnknownTypeAnnotation,
+    Internal(&'static str)
 }
 
 impl fmt::Display for CompileErrorKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             CompileErrorKind::Unsupported(feature)
-                => write!(f, "The following Python feature is not supported by NAC3 {}: ", feature),
+                => write!(f, "The following Python feature is not supported by NAC3: {}", feature),
             CompileErrorKind::MissingTypeAnnotation
                 => write!(f, "Missing type annotation"),
             CompileErrorKind::UnknownTypeAnnotation
                 => write!(f, "Unknown type annotation"),
+            CompileErrorKind::Internal(details)
+                => write!(f, "Internal compiler error: {}", details),
         }
     }
 }
@@ -148,6 +151,9 @@ impl<'ctx> CodeGen<'ctx> {
         let y = function.get_nth_param(1).unwrap().into_int_value();
         let sum = self.builder.build_int_add(x, y, "sum");
         self.builder.build_return(Some(&sum));
+        for statement in body.iter() {
+            self.compile_statement(statement)?;
+        }
         Ok(())
     }
 
@@ -156,20 +162,26 @@ impl<'ctx> CodeGen<'ctx> {
 
         use ast::StatementType::*;
         match &statement.node {
-            FunctionDef {
-                is_async,
-                name,
-                args,
-                body,
-                decorator_list,
-                returns,
-            } => {
-                self.compile_function_def(name, args, body, decorator_list, returns, *is_async)?;
-            },
             Pass => (),
             _ => return Err(self.compile_error(CompileErrorKind::Unsupported("special statement"))),
         }
         Ok(())
+    }
+
+    fn compile_toplevel(&mut self, statement: &ast::Statement) -> CompileResult<()> {
+        self.set_source_location(statement.location);
+        if let ast::StatementType::FunctionDef {
+                    is_async,
+                    name,
+                    args,
+                    body,
+                    decorator_list,
+                    returns,
+                } = &statement.node {
+            self.compile_function_def(name, args, body, decorator_list, returns, *is_async)
+        } else {
+            Err(self.compile_error(CompileErrorKind::Internal("top-level is not a function definition")))
+        }
     }
 
     fn output(&self) {
@@ -204,7 +216,7 @@ fn main() {
 
     let context = Context::create();
     let mut codegen = CodeGen::new(&context);
-    match codegen.compile_statement(&ast.statements[0]) {
+    match codegen.compile_toplevel(&ast.statements[0]) {
         Ok(_) => (),
         Err(err) => { println!("{}", err); return; }
     }
