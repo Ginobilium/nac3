@@ -112,7 +112,7 @@ impl<'ctx> CodeGen<'ctx> {
                     return Err(self.compile_error(CompileErrorKind::Unsupported("custom decorators")))
                 }
             } else {
-                return Err(self.compile_error(CompileErrorKind::Unsupported("complex decorators")))
+                return Err(self.compile_error(CompileErrorKind::Unsupported("decorator must be an identifier")))
             }
         }
 
@@ -122,7 +122,7 @@ impl<'ctx> CodeGen<'ctx> {
                 if let ast::ExpressionType::Identifier { name } = &annotation.node {
                     Ok(self.get_basic_type(&name)?)
                 } else {
-                    Err(self.compile_error(CompileErrorKind::Unsupported("complex type annotation")))
+                    Err(self.compile_error(CompileErrorKind::Unsupported("type annotation must be an identifier")))
                 }
             } else {
                 Err(self.compile_error(CompileErrorKind::MissingTypeAnnotation))
@@ -133,7 +133,7 @@ impl<'ctx> CodeGen<'ctx> {
             if let ast::ExpressionType::Identifier { name } = &returns.node {
                 if name == "None" { None } else { Some(self.get_basic_type(name)?) }
             } else {
-                return Err(self.compile_error(CompileErrorKind::Unsupported("complex type annotation")))
+                return Err(self.compile_error(CompileErrorKind::Unsupported("type annotation must be an identifier")))
             }
         } else {
             None
