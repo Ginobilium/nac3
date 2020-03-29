@@ -20,6 +20,7 @@ use inkwell::targets::*;
 use inkwell::types;
 use inkwell::types::BasicType;
 use inkwell::values;
+use inkwell::{IntPredicate, FloatPredicate};
 
 
 #[derive(Debug)]
@@ -193,7 +194,7 @@ impl<'ctx> CodeGen<'ctx> {
             },
             ast::ExpressionType::Number { value: ast::Number::Float { value } } => {
                 Ok(self.context.f64_type().const_float(*value).into())
-            }
+            },
             ast::ExpressionType::Identifier { name } => {
                 match self.namespace.get(name) {
                     Some(value) => Ok(*value),
@@ -223,7 +224,70 @@ impl<'ctx> CodeGen<'ctx> {
                         => Ok(self.builder.build_float_mul(a, b, "tmpmul").into()),
                     _ => return Err(self.compile_error(CompileErrorKind::Unsupported("unimplemented operation"))),
                 }
-            }
+            },
+            ast::ExpressionType::Compare { vals, ops } => {
+                let mut vals = vals.iter();
+                let mut ops = ops.iter();
+
+                let mut result = None;
+                let mut a = self.compile_expression(vals.next().unwrap())?;
+                loop {
+                    if let Some(op) = ops.next() {
+                        let b = self.compile_expression(vals.next().unwrap())?;
+                        if a.get_type() != b.get_type() {
+                            return Err(self.compile_error(CompileErrorKind::IncompatibleTypes));
+                        }
+                        let this_result = match (a, b) {
+                            (values::BasicValueEnum::IntValue(a), values::BasicValueEnum::IntValue(b)) => {
+                                match op {
+                                    ast::Comparison::Equal
+                                        => self.builder.build_int_compare(IntPredicate::EQ, a, b, "tmpeq"),
+                                    ast::Comparison::NotEqual
+                                        => self.builder.build_int_compare(IntPredicate::NE, a, b, "tmpne"),
+                                    ast::Comparison::Less
+                                        => self.builder.build_int_compare(IntPredicate::SLT, a, b, "tmpslt"),
+                                    ast::Comparison::LessOrEqual
+                                        => self.builder.build_int_compare(IntPredicate::SLE, a, b, "tmpsle"),
+                                    ast::Comparison::Greater
+                                        => self.builder.build_int_compare(IntPredicate::SGT, a, b, "tmpsgt"),
+                                    ast::Comparison::GreaterOrEqual
+                                        => self.builder.build_int_compare(IntPredicate::SGE, a, b, "tmpsge"),
+                                    _ => return Err(self.compile_error(CompileErrorKind::Unsupported("special comparison"))),
+                                }
+                            },
+                            (values::BasicValueEnum::FloatValue(a), values::BasicValueEnum::FloatValue(b)) => {
+                                match op {
+                                    ast::Comparison::Equal
+                                        => self.builder.build_float_compare(FloatPredicate::OEQ, a, b, "tmpoeq"),
+                                    ast::Comparison::NotEqual
+                                        => self.builder.build_float_compare(FloatPredicate::UNE, a, b, "tmpune"),
+                                    ast::Comparison::Less
+                                        => self.builder.build_float_compare(FloatPredicate::OLT, a, b, "tmpolt"),
+                                    ast::Comparison::LessOrEqual
+                                        => self.builder.build_float_compare(FloatPredicate::OLE, a, b, "tmpole"),
+                                    ast::Comparison::Greater
+                                        => self.builder.build_float_compare(FloatPredicate::OGT, a, b, "tmpogt"),
+                                    ast::Comparison::GreaterOrEqual
+                                        => self.builder.build_float_compare(FloatPredicate::OGE, a, b, "tmpoge"),
+                                    _ => return Err(self.compile_error(CompileErrorKind::Unsupported("special comparison"))),
+                                }
+                            },
+                            _ => return Err(self.compile_error(CompileErrorKind::Unsupported("comparison of non-numerical types"))),
+                        };
+                        match result {
+                            Some(last) => {
+                                result = Some(self.builder.build_and(last, this_result, "tmpand"));
+                            }
+                            None => {
+                                result = Some(this_result);
+                            }
+                        }
+                        a = b;
+                    } else {
+                        return Ok(result.unwrap().into())
+                    }
+                }
+            },
             _ => return Err(self.compile_error(CompileErrorKind::Unsupported("unimplemented expression"))),
         }
     }
