@@ -380,6 +380,8 @@ name = "nac3"
 version = "0.1.0"
 dependencies = [
  "inkwell",
+ "num-bigint",
+ "num-traits",
  "rustpython-parser",
 ]
 

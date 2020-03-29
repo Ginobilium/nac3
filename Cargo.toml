@@ -5,5 +5,7 @@ authors = ["Sebastien Bourdeauducq <sb@m-labs.hk>"]
 edition = "2018"
 
 [dependencies]
+num-bigint = "0.2"
+num-traits = "0.2"
 inkwell = { git = "https://github.com/TheDan64/inkwell", branch = "llvm8-0" }
 rustpython-parser = { git = "https://github.com/RustPython/RustPython", branch = "master" }

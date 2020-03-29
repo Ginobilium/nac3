@@ -1,5 +1,14 @@
+extern crate num_bigint;
 extern crate inkwell;
 extern crate rustpython_parser;
+
+use std::error::Error;
+use std::fmt;
+use std::path::Path;
+use std::collections::HashMap;
+use std::fs;
+
+use num_traits::cast::ToPrimitive;
 
 use rustpython_parser::{ast, parser};
 
@@ -12,11 +21,6 @@ use inkwell::types;
 use inkwell::types::BasicType;
 use inkwell::values;
 
-use std::error::Error;
-use std::fmt;
-use std::path::Path;
-use std::collections::HashMap;
-use std::fs;
 
 #[derive(Debug)]
 enum CompileErrorKind {
@@ -176,6 +180,20 @@ impl<'ctx> CodeGen<'ctx> {
         self.set_source_location(expression.location);
 
         match &expression.node {
+            ast::ExpressionType::Number { value: ast::Number::Integer { value } } => {
+                let mut bits = value.bits();
+                if value.sign() == num_bigint::Sign::Minus {
+                    bits += 1;
+                }
+                match bits {
+                     0..=32 => Ok(self.context.i32_type().const_int(value.to_i32().unwrap() as _, true).into()),
+                    33..=64 => Ok(self.context.i64_type().const_int(value.to_i64().unwrap() as _, true).into()),
+                          _ => Err(self.compile_error(CompileErrorKind::Unsupported("integers larger than 64 bits")))
+                }
+            },
+            ast::ExpressionType::Number { value: ast::Number::Float { value } } => {
+                Ok(self.context.f64_type().const_float(*value).into())
+            }
             ast::ExpressionType::Identifier { name } => {
                 match self.namespace.get(name) {
                     Some(value) => Ok(*value),
