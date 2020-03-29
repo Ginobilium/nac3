@@ -23,6 +23,7 @@ enum CompileErrorKind {
     MissingTypeAnnotation,
     UnknownTypeAnnotation,
     IncompatibleTypes,
+    UnboundIdentifier,
     Internal(&'static str)
 }
 
@@ -37,6 +38,8 @@ impl fmt::Display for CompileErrorKind {
                 => write!(f, "Unknown type annotation"),
             CompileErrorKind::IncompatibleTypes
                 => write!(f, "Incompatible types"),
+            CompileErrorKind::UnboundIdentifier
+                => write!(f, "Unbound identifier"),
             CompileErrorKind::Internal(details)
                 => write!(f, "Internal compiler error: {}", details),
         }
@@ -171,12 +174,14 @@ impl<'ctx> CodeGen<'ctx> {
     ) -> CompileResult<values::BasicValueEnum<'ctx>> {
         self.set_source_location(expression.location);
 
-        use ast::ExpressionType::*;
         match &expression.node {
-            Identifier { name } => {
-                Ok(*self.namespace.get(name).unwrap())
+            ast::ExpressionType::Identifier { name } => {
+                match self.namespace.get(name) {
+                    Some(value) => Ok(*value),
+                    None => Err(self.compile_error(CompileErrorKind::UnboundIdentifier))
+                }
             },
-            Binop { a, op, b } => {
+            ast::ExpressionType::Binop { a, op, b } => {
                 let a = self.compile_expression(&a)?;
                 let b = self.compile_expression(&b)?;
                 if a.get_type() != b.get_type() {
