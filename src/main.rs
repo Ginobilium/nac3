@@ -219,6 +219,21 @@ impl<'ctx> CodeGen<'ctx> {
 
         use ast::StatementType::*;
         match &statement.node {
+            Assign { targets, value } => {
+                let value = self.compile_expression(value)?;
+                for target in targets.iter() {
+                    self.set_source_location(target.location);
+                    if let ast::ExpressionType::Identifier { name } = &target.node {
+                        if let Some(existing) = self.namespace.insert(name.clone(), value) {
+                            if existing.get_type() != value.get_type() {
+                                return Err(self.compile_error(CompileErrorKind::IncompatibleTypes));
+                            }
+                        }
+                    } else {
+                        return Err(self.compile_error(CompileErrorKind::Unsupported("assignment target must be an identifier")))
+                    }
+                }
+            }
             Return { value: Some(value) } => {
                 if let Some(return_type) = return_type {
                     let value = self.compile_expression(value)?;
