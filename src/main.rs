@@ -16,6 +16,7 @@ use std::error::Error;
 use std::fmt;
 use std::path::Path;
 use std::collections::HashMap;
+use std::fs;
 
 #[derive(Debug)]
 enum CompileErrorKind {
@@ -54,7 +55,7 @@ struct CompileError {
 
 impl fmt::Display for CompileError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Compilation error at {}: {}", self.location, self.kind)
+        write!(f, "{}, at {}", self.kind, self.location)
     }
 }
 
@@ -282,16 +283,20 @@ impl<'ctx> CodeGen<'ctx> {
 fn main() {
     Target::initialize_all(&InitializationConfig::default());
 
-    let ast = match parser::parse_program("def foo(x: int32, y: int32) -> int32: return x + y") {
+    let program = match fs::read_to_string("test.py") {
+        Ok(program) => program,
+        Err(err) => { println!("Cannot open input file: {}", err); return; }
+    };
+    let ast = match parser::parse_program(&program) {
         Ok(ast) => ast,
-        Err(err) => { println!("{}", err); return; }
+        Err(err) => { println!("Parse error: {}", err); return; }
     };
 
     let context = Context::create();
     let mut codegen = CodeGen::new(&context);
     match codegen.compile_toplevel(&ast.statements[0]) {
         Ok(_) => (),
-        Err(err) => { println!("{}", err); return; }
+        Err(err) => { println!("Compilation error: {}", err); return; }
     }
     codegen.output();
 }
