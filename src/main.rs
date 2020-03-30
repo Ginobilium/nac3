@@ -197,6 +197,8 @@ impl<'ctx> CodeGen<'ctx> {
         self.set_source_location(expression.location);
 
         match &expression.node {
+            ast::ExpressionType::True => Ok(self.context.bool_type().const_int(1, false).into()),
+            ast::ExpressionType::False => Ok(self.context.bool_type().const_int(0, false).into()),
             ast::ExpressionType::Number { value: ast::Number::Integer { value } } => {
                 let mut bits = value.bits();
                 if value.sign() == num_bigint::Sign::Minus {
