@@ -73,7 +73,7 @@ struct CodeGen<'ctx> {
     module: Module<'ctx>,
     builder: Builder<'ctx>,
     current_source_location: ast::Location,
-    namespace: HashMap<String, values::BasicValueEnum<'ctx>>,
+    namespace: HashMap<String, values::PointerValue<'ctx>>,
 }
 
 impl<'ctx> CodeGen<'ctx> {
@@ -165,7 +165,10 @@ impl<'ctx> CodeGen<'ctx> {
         self.builder.position_at_end(basic_block);
 
         for (n, arg) in args.args.iter().enumerate() {
-            self.namespace.insert(arg.arg.clone(), function.get_nth_param(n as u32).unwrap());
+            let param = function.get_nth_param(n as u32).unwrap();
+            let alloca = self.builder.build_alloca(param.get_type(), &arg.arg);
+            self.builder.build_store(alloca, param);
+            self.namespace.insert(arg.arg.clone(), alloca);
         }
 
         for statement in body.iter() {
@@ -197,7 +200,7 @@ impl<'ctx> CodeGen<'ctx> {
             },
             ast::ExpressionType::Identifier { name } => {
                 match self.namespace.get(name) {
-                    Some(value) => Ok(*value),
+                    Some(value) => Ok(self.builder.build_load(*value, name).into()),
                     None => Err(self.compile_error(CompileErrorKind::UnboundIdentifier))
                 }
             },
@@ -370,11 +373,13 @@ impl<'ctx> CodeGen<'ctx> {
                 for target in targets.iter() {
                     self.set_source_location(target.location);
                     if let ast::ExpressionType::Identifier { name } = &target.node {
-                        if let Some(existing) = self.namespace.insert(name.clone(), value) {
-                            if existing.get_type() != value.get_type() {
-                                return Err(self.compile_error(CompileErrorKind::IncompatibleTypes));
-                            }
+                        let builder = &self.builder;
+                        let target = self.namespace.entry(name.clone()).or_insert_with(
+                            || builder.build_alloca(value.get_type(), name));
+                        if target.get_type() != value.get_type().ptr_type(inkwell::AddressSpace::Generic) {
+                            return Err(self.compile_error(CompileErrorKind::IncompatibleTypes));
                         }
+                        builder.build_store(*target, value);
                     } else {
                         return Err(self.compile_error(CompileErrorKind::Unsupported("assignment target must be an identifier")))
                     }
