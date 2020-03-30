@@ -127,7 +127,7 @@ impl<'ctx> CodeGen<'ctx> {
         &mut self,
         name: &str,
         args: &ast::Parameters,
-        body: &[ast::Statement],
+        body: &ast::Suite,
         decorator_list: &[ast::Expression],
         returns: &Option<ast::Expression>,
         is_async: bool,
@@ -185,9 +185,8 @@ impl<'ctx> CodeGen<'ctx> {
             self.namespace.insert(arg.arg.clone(), alloca);
         }
 
-        for statement in body.iter() {
-            self.compile_statement(statement, return_type)?;
-        }
+        self.compile_suite(body, return_type)?;
+
         Ok(function)
     }
 
@@ -398,7 +397,30 @@ impl<'ctx> CodeGen<'ctx> {
                         return Err(self.compile_error(CompileErrorKind::Unsupported("assignment target must be an identifier")))
                     }
                 }
-            }
+            },
+            If { test, body, orelse } => {
+                let test = self.compile_expression(test)?;
+                if test.get_type() != self.context.bool_type().into() {
+                    return Err(self.compile_error(CompileErrorKind::IncompatibleTypes));
+                }
+
+                let parent = self.builder.get_insert_block().unwrap().get_parent().unwrap();
+                let then_bb = self.context.append_basic_block(parent, "then");
+                let else_bb = self.context.append_basic_block(parent, "else");
+                let cont_bb = self.context.append_basic_block(parent, "ifcont");
+                self.builder.build_conditional_branch(test.into_int_value(), then_bb, else_bb);
+
+                self.builder.position_at_end(then_bb);
+                self.compile_suite(body, return_type)?;
+                self.builder.build_unconditional_branch(cont_bb);
+
+                self.builder.position_at_end(else_bb);
+                if let Some(orelse) = orelse {
+                    self.compile_suite(orelse, return_type)?;
+                }
+                self.builder.build_unconditional_branch(cont_bb);
+                self.builder.position_at_end(cont_bb);
+            },
             Return { value: Some(value) } => {
                 if let Some(return_type) = return_type {
                     let value = self.compile_expression(value)?;
@@ -418,6 +440,17 @@ impl<'ctx> CodeGen<'ctx> {
             },
             Pass => (),
             _ => return Err(self.compile_error(CompileErrorKind::Unsupported("special statement"))),
+        }
+        Ok(())
+    }
+
+    fn compile_suite(
+        &mut self,
+        suite: &ast::Suite,
+        return_type: Option<types::BasicTypeEnum>
+    ) -> CompileResult<()> {
+        for statement in suite.iter() {
+            self.compile_statement(statement, return_type)?;
         }
         Ok(())
     }
