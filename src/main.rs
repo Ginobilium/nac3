@@ -288,6 +288,65 @@ impl<'ctx> CodeGen<'ctx> {
                     }
                 }
             },
+            ast::ExpressionType::Call { function, args, keywords } => {
+                if !keywords.is_empty() {
+                    return Err(self.compile_error(CompileErrorKind::Unsupported("keyword arguments")))
+                }
+                let args = args.iter().map(|val| self.compile_expression(val))
+                    .collect::<CompileResult<Vec<values::BasicValueEnum>>>()?;
+                self.set_source_location(expression.location);
+                if let ast::ExpressionType::Identifier { name } = &function.node {
+                    match (name.as_str(), args[0]) {
+                        ("int32", values::BasicValueEnum::IntValue(a)) => {
+                            let nbits = a.get_type().get_bit_width();
+                            if nbits < 32 {
+                                Ok(self.builder.build_int_s_extend(a, self.context.i32_type(), "tmpsext").into())
+                            } else if nbits > 32 {
+                                Ok(self.builder.build_int_truncate(a, self.context.i32_type(), "tmptrunc").into())
+                            } else {
+                                Ok(a.into())
+                            }
+                        },
+                        ("int64", values::BasicValueEnum::IntValue(a)) => {
+                            let nbits = a.get_type().get_bit_width();
+                            if nbits < 64 {
+                                Ok(self.builder.build_int_s_extend(a, self.context.i64_type(), "tmpsext").into())
+                            } else {
+                                Ok(a.into())
+                            }
+                        },
+                        ("int32", values::BasicValueEnum::FloatValue(a)) => {
+                            Ok(self.builder.build_float_to_signed_int(a, self.context.i32_type(), "tmpfptosi").into())
+                        },
+                        ("int64", values::BasicValueEnum::FloatValue(a)) => {
+                            Ok(self.builder.build_float_to_signed_int(a, self.context.i64_type(), "tmpfptosi").into())
+                        },
+                        ("float32", values::BasicValueEnum::IntValue(a)) => {
+                            Ok(self.builder.build_signed_int_to_float(a, self.context.f32_type(), "tmpsitofp").into())
+                        },
+                        ("float64", values::BasicValueEnum::IntValue(a)) => {
+                            Ok(self.builder.build_signed_int_to_float(a, self.context.f64_type(), "tmpsitofp").into())
+                        },
+                        ("float32", values::BasicValueEnum::FloatValue(a)) => {
+                            if a.get_type() == self.context.f64_type() {
+                                Ok(self.builder.build_float_trunc(a, self.context.f32_type(), "tmptrunc").into())
+                            } else {
+                                Ok(a.into())
+                            }
+                        },
+                        ("float64", values::BasicValueEnum::FloatValue(a)) => {
+                            if a.get_type() == self.context.f32_type() {
+                                Ok(self.builder.build_float_ext(a, self.context.f64_type(), "tmpext").into())
+                            } else {
+                                Ok(a.into())
+                            }
+                        },
+                        _ => Err(self.compile_error(CompileErrorKind::Unsupported("unrecognized call")))
+                    }
+                } else {
+                    return Err(self.compile_error(CompileErrorKind::Unsupported("function must be an identifier")))
+                }
+            },
             _ => return Err(self.compile_error(CompileErrorKind::Unsupported("unimplemented expression"))),
         }
     }
