@@ -424,6 +424,10 @@ impl<'ctx> CodeGen<'ctx> {
         }
     }
 
+    fn print_ir(&self) {
+        self.module.print_to_stderr();
+    }
+
     fn output(&self) {
         let triple = TargetTriple::create("riscv32-none-linux-gnu");
         let target = Target::from_triple(&triple)
@@ -464,5 +468,6 @@ fn main() {
         Ok(_) => (),
         Err(err) => { println!("Compilation error: {}", err); return; }
     }
+    codegen.print_ir();
     codegen.output();
 }
