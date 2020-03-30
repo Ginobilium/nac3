@@ -222,6 +222,11 @@ impl<'ctx> CodeGen<'ctx> {
                         => Ok(self.builder.build_float_sub(a, b, "tmpsub").into()),
                     (Mult, values::BasicValueEnum::FloatValue(a), values::BasicValueEnum::FloatValue(b))
                         => Ok(self.builder.build_float_mul(a, b, "tmpmul").into()),
+
+                    (Div, values::BasicValueEnum::FloatValue(a), values::BasicValueEnum::FloatValue(b))
+                        => Ok(self.builder.build_float_div(a, b, "tmpdiv").into()),
+                    (FloorDiv, values::BasicValueEnum::IntValue(a), values::BasicValueEnum::IntValue(b))
+                        => Ok(self.builder.build_int_signed_div(a, b, "tmpdiv").into()),
                     _ => return Err(self.compile_error(CompileErrorKind::Unsupported("unimplemented operation"))),
                 }
             },
