@@ -1,3 +1,7 @@
+from numpy import int32, float64
+import sys
+
+
 def run() -> int32:
     minX = -2.0
     maxX = 1.0
@@ -28,3 +32,13 @@ def run() -> int32:
         output(-1)
         y = y + 1
     return 0
+
+
+
+def output(i):
+    if i >= 0:
+        sys.stdout.write(" .,-:;i+hHM$*#@  "[i])
+    else:
+        print("")
+
+run()

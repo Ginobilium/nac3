@@ -561,7 +561,8 @@ impl<'ctx> CodeGen<'ctx> {
     }
 
     fn output(&self) {
-        let triple = TargetTriple::create("riscv32-none-linux-gnu");
+        //let triple = TargetTriple::create("riscv32-none-linux-gnu");
+        let triple = TargetMachine::get_default_triple();
         let target = Target::from_triple(&triple)
             .expect("couldn't create target from target triple");
 
