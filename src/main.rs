@@ -225,6 +225,30 @@ impl<'ctx> CodeGen<'ctx> {
                     None => Err(self.compile_error(CompileErrorKind::UnboundIdentifier))
                 }
             },
+            ast::ExpressionType::Unop { op, a } => {
+                let a = self.compile_expression(&a)?;
+                match (op, a) {
+                    (ast::UnaryOperator::Pos, values::BasicValueEnum::IntValue(a))
+                        => Ok(a.into()),
+                    (ast::UnaryOperator::Pos, values::BasicValueEnum::FloatValue(a))
+                        => Ok(a.into()),
+                    (ast::UnaryOperator::Neg, values::BasicValueEnum::IntValue(a))
+                        => Ok(self.builder.build_int_neg(a, "tmpneg").into()),
+                    (ast::UnaryOperator::Neg, values::BasicValueEnum::FloatValue(a))
+                        => Ok(self.builder.build_float_neg(a, "tmpneg").into()),
+                    (ast::UnaryOperator::Inv, values::BasicValueEnum::IntValue(a))
+                        => Ok(self.builder.build_not(a, "tmpnot").into()),
+                    (ast::UnaryOperator::Not, values::BasicValueEnum::IntValue(a)) => {
+                        // boolean "not"
+                        if a.get_type().get_bit_width() != 1 {
+                            Err(self.compile_error(CompileErrorKind::Unsupported("unimplemented unary operation")))
+                        } else {
+                            Ok(self.builder.build_not(a, "tmpnot").into())
+                        }
+                    },
+                    _ => Err(self.compile_error(CompileErrorKind::Unsupported("unimplemented unary operation"))),
+                }
+            },
             ast::ExpressionType::Binop { a, op, b } => {
                 let a = self.compile_expression(&a)?;
                 let b = self.compile_expression(&b)?;
@@ -251,7 +275,7 @@ impl<'ctx> CodeGen<'ctx> {
                         => Ok(self.builder.build_float_div(a, b, "tmpdiv").into()),
                     (FloorDiv, values::BasicValueEnum::IntValue(a), values::BasicValueEnum::IntValue(b))
                         => Ok(self.builder.build_int_signed_div(a, b, "tmpdiv").into()),
-                    _ => return Err(self.compile_error(CompileErrorKind::Unsupported("unimplemented operation"))),
+                    _ => Err(self.compile_error(CompileErrorKind::Unsupported("unimplemented binary operation"))),
                 }
             },
             ast::ExpressionType::Compare { vals, ops } => {
