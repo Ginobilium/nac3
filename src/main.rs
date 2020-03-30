@@ -21,6 +21,7 @@ use inkwell::types;
 use inkwell::types::BasicType;
 use inkwell::values;
 use inkwell::{IntPredicate, FloatPredicate};
+use inkwell::basic_block;
 use inkwell::passes;
 
 
@@ -31,6 +32,7 @@ enum CompileErrorKind {
     UnknownTypeAnnotation,
     IncompatibleTypes,
     UnboundIdentifier,
+    BreakOutsideLoop,
     Internal(&'static str)
 }
 
@@ -47,6 +49,8 @@ impl fmt::Display for CompileErrorKind {
                 => write!(f, "Incompatible types"),
             CompileErrorKind::UnboundIdentifier
                 => write!(f, "Unbound identifier"),
+            CompileErrorKind::BreakOutsideLoop
+                => write!(f, "Break outside loop"),
             CompileErrorKind::Internal(details)
                 => write!(f, "Internal compiler error: {}", details),
         }
@@ -76,6 +80,7 @@ struct CodeGen<'ctx> {
     builder: Builder<'ctx>,
     current_source_location: ast::Location,
     namespace: HashMap<String, values::PointerValue<'ctx>>,
+    break_bb: Option<basic_block::BasicBlock<'ctx>>,
 }
 
 impl<'ctx> CodeGen<'ctx> {
@@ -98,6 +103,7 @@ impl<'ctx> CodeGen<'ctx> {
             builder: context.create_builder(),
             current_source_location: ast::Location::default(),
             namespace: HashMap::new(),
+            break_bb: None,
         }
     }
 
@@ -438,6 +444,8 @@ impl<'ctx> CodeGen<'ctx> {
                 let cont_bb = self.context.append_basic_block(parent, "ifcont");
                 self.builder.build_conditional_branch(test.into_int_value(), then_bb, else_bb);
 
+                self.break_bb = Some(cont_bb);
+
                 self.builder.position_at_end(then_bb);
                 self.compile_suite(body, return_type)?;
                 self.builder.build_unconditional_branch(test_bb);
@@ -448,7 +456,19 @@ impl<'ctx> CodeGen<'ctx> {
                 }
                 self.builder.build_unconditional_branch(cont_bb);
                 self.builder.position_at_end(cont_bb);
+
+                self.break_bb = None;
             },
+            Break => {
+                if let Some(bb) = self.break_bb {
+                    self.builder.build_unconditional_branch(bb);
+                    let parent = self.builder.get_insert_block().unwrap().get_parent().unwrap();
+                    let unreachable_bb = self.context.append_basic_block(parent, "unreachable");
+                    self.builder.position_at_end(unreachable_bb);
+                } else {
+                    return Err(self.compile_error(CompileErrorKind::BreakOutsideLoop));
+                }
+            }
             Return { value: Some(value) } => {
                 if let Some(return_type) = return_type {
                     let value = self.compile_expression(value)?;
