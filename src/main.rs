@@ -423,6 +423,32 @@ impl<'ctx> CodeGen<'ctx> {
                 self.builder.build_unconditional_branch(cont_bb);
                 self.builder.position_at_end(cont_bb);
             },
+            While { test, body, orelse } => {
+                let parent = self.builder.get_insert_block().unwrap().get_parent().unwrap();
+                let test_bb = self.context.append_basic_block(parent, "test");
+                self.builder.build_unconditional_branch(test_bb);
+                self.builder.position_at_end(test_bb);
+                let test = self.compile_expression(test)?;
+                if test.get_type() != self.context.bool_type().into() {
+                    return Err(self.compile_error(CompileErrorKind::IncompatibleTypes));
+                }
+
+                let then_bb = self.context.append_basic_block(parent, "then");
+                let else_bb = self.context.append_basic_block(parent, "else");
+                let cont_bb = self.context.append_basic_block(parent, "ifcont");
+                self.builder.build_conditional_branch(test.into_int_value(), then_bb, else_bb);
+
+                self.builder.position_at_end(then_bb);
+                self.compile_suite(body, return_type)?;
+                self.builder.build_unconditional_branch(test_bb);
+
+                self.builder.position_at_end(else_bb);
+                if let Some(orelse) = orelse {
+                    self.compile_suite(orelse, return_type)?;
+                }
+                self.builder.build_unconditional_branch(cont_bb);
+                self.builder.position_at_end(cont_bb);
+            },
             Return { value: Some(value) } => {
                 if let Some(return_type) = return_type {
                     let value = self.compile_expression(value)?;
