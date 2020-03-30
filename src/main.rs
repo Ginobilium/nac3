@@ -98,6 +98,10 @@ impl<'ctx> CodeGen<'ctx> {
         pass_manager.add_reassociate_pass();
         pass_manager.initialize();
 
+        let i32_type = context.i32_type();
+        let fn_type = i32_type.fn_type(&[i32_type.into()], false);
+        module.add_function("output", fn_type, None);
+
         CodeGen {
             context, module, pass_manager,
             builder: context.create_builder(),
@@ -394,6 +398,12 @@ impl<'ctx> CodeGen<'ctx> {
                                 Ok(a.into())
                             }
                         },
+
+                        ("output", values::BasicValueEnum::IntValue(a)) => {
+                            let fn_value = self.module.get_function("output").unwrap();
+                            Ok(self.builder.build_call(fn_value, &[a.into()], "call")
+                                .try_as_basic_value().left().unwrap())
+                        },
                         _ => Err(self.compile_error(CompileErrorKind::Unsupported("unrecognized call")))
                     }
                 } else {
@@ -430,6 +440,7 @@ impl<'ctx> CodeGen<'ctx> {
                     }
                 }
             },
+            Expression { expression } => { self.compile_expression(expression)?; },
             If { test, body, orelse } => {
                 let test = self.compile_expression(test)?;
                 if test.get_type() != self.context.bool_type().into() {
