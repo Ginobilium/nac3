@@ -21,6 +21,7 @@ use inkwell::types;
 use inkwell::types::BasicType;
 use inkwell::values;
 use inkwell::{IntPredicate, FloatPredicate};
+use inkwell::passes;
 
 
 #[derive(Debug)]
@@ -71,6 +72,7 @@ type CompileResult<T> = Result<T, CompileError>;
 struct CodeGen<'ctx> {
     context: &'ctx Context,
     module: Module<'ctx>,
+    pass_manager: passes::PassManager<values::FunctionValue<'ctx>>,
     builder: Builder<'ctx>,
     current_source_location: ast::Location,
     namespace: HashMap<String, values::PointerValue<'ctx>>,
@@ -78,9 +80,21 @@ struct CodeGen<'ctx> {
 
 impl<'ctx> CodeGen<'ctx> {
     fn new(context: &'ctx Context) -> CodeGen<'ctx> {
+        let module = context.create_module("kernel");
+
+        let pass_manager = passes::PassManager::create(&module);
+        pass_manager.add_instruction_combining_pass();
+        pass_manager.add_reassociate_pass();
+        pass_manager.add_gvn_pass();
+        pass_manager.add_cfg_simplification_pass();
+        pass_manager.add_basic_alias_analysis_pass();
+        pass_manager.add_promote_memory_to_register_pass();
+        pass_manager.add_instruction_combining_pass();
+        pass_manager.add_reassociate_pass();
+        pass_manager.initialize();
+
         CodeGen {
-            context,
-            module: context.create_module("kernel"),
+            context, module, pass_manager,
             builder: context.create_builder(),
             current_source_location: ast::Location::default(),
             namespace: HashMap::new(),
@@ -117,7 +131,7 @@ impl<'ctx> CodeGen<'ctx> {
         decorator_list: &[ast::Expression],
         returns: &Option<ast::Expression>,
         is_async: bool,
-    ) -> CompileResult<()> {
+    ) -> CompileResult<values::FunctionValue<'ctx>> {
         if is_async {
             return Err(self.compile_error(CompileErrorKind::Unsupported("async functions")))
         }
@@ -174,7 +188,7 @@ impl<'ctx> CodeGen<'ctx> {
         for statement in body.iter() {
             self.compile_statement(statement, return_type)?;
         }
-        Ok(())
+        Ok(function)
     }
 
     fn compile_expression(
@@ -418,7 +432,9 @@ impl<'ctx> CodeGen<'ctx> {
                     decorator_list,
                     returns,
                 } = &statement.node {
-            self.compile_function_def(name, args, body, decorator_list, returns, *is_async)
+            let function = self.compile_function_def(name, args, body, decorator_list, returns, *is_async)?;
+            self.pass_manager.run_on(&function);
+            Ok(())
         } else {
             Err(self.compile_error(CompileErrorKind::Internal("top-level is not a function definition")))
         }
