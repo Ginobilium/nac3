@@ -6,11 +6,10 @@ use std::error::Error;
 use std::fmt;
 use std::path::Path;
 use std::collections::HashMap;
-use std::fs;
 
 use num_traits::cast::ToPrimitive;
 
-use rustpython_parser::{ast, parser};
+use rustpython_parser::ast;
 
 use inkwell::OptimizationLevel;
 use inkwell::builder::Builder;
@@ -58,7 +57,7 @@ impl fmt::Display for CompileErrorKind {
 }
 
 #[derive(Debug)]
-struct CompileError {
+pub struct CompileError {
     location: ast::Location,
     kind: CompileErrorKind,
 }
@@ -73,7 +72,7 @@ impl Error for CompileError {}
 
 type CompileResult<T> = Result<T, CompileError>;
 
-struct CodeGen<'ctx> {
+pub struct CodeGen<'ctx> {
     context: &'ctx Context,
     module: Module<'ctx>,
     pass_manager: passes::PassManager<values::FunctionValue<'ctx>>,
@@ -84,7 +83,7 @@ struct CodeGen<'ctx> {
 }
 
 impl<'ctx> CodeGen<'ctx> {
-    fn new(context: &'ctx Context) -> CodeGen<'ctx> {
+    pub fn new(context: &'ctx Context) -> CodeGen<'ctx> {
         let module = context.create_module("kernel");
 
         let pass_manager = passes::PassManager::create(&module);
@@ -538,7 +537,7 @@ impl<'ctx> CodeGen<'ctx> {
         Ok(())
     }
 
-    fn compile_toplevel(&mut self, statement: &ast::Statement) -> CompileResult<()> {
+    pub fn compile_toplevel(&mut self, statement: &ast::Statement) -> CompileResult<()> {
         self.set_source_location(statement.location);
         if let ast::StatementType::FunctionDef {
                     is_async,
@@ -556,11 +555,11 @@ impl<'ctx> CodeGen<'ctx> {
         }
     }
 
-    fn print_ir(&self) {
+    pub fn print_ir(&self) {
         self.module.print_to_stderr();
     }
 
-    fn output(&self) {
+    pub fn output(&self) {
         //let triple = TargetTriple::create("riscv32-none-linux-gnu");
         let triple = TargetMachine::get_default_triple();
         let target = Target::from_triple(&triple)
@@ -581,26 +580,4 @@ impl<'ctx> CodeGen<'ctx> {
             .write_to_file(&self.module, FileType::Object, Path::new("test.o"))
             .expect("couldn't write module to file");
     }
-}
-
-fn main() {
-    Target::initialize_all(&InitializationConfig::default());
-
-    let program = match fs::read_to_string("test.py") {
-        Ok(program) => program,
-        Err(err) => { println!("Cannot open input file: {}", err); return; }
-    };
-    let ast = match parser::parse_program(&program) {
-        Ok(ast) => ast,
-        Err(err) => { println!("Parse error: {}", err); return; }
-    };
-
-    let context = Context::create();
-    let mut codegen = CodeGen::new(&context);
-    match codegen.compile_toplevel(&ast.statements[0]) {
-        Ok(_) => (),
-        Err(err) => { println!("Compilation error: {}", err); return; }
-    }
-    codegen.print_ir();
-    codegen.output();
 }

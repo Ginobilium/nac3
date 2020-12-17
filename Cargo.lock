@@ -343,6 +343,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1482821306169ec4d07f6aca392a4681f66c75c9918aa49641a2595db64053cb"
 
 [[package]]
+name = "libnac3"
+version = "0.1.0"
+dependencies = [
+ "inkwell",
+ "num-bigint",
+ "num-traits",
+ "rustpython-parser",
+]
+
+[[package]]
 name = "llvm-sys"
 version = "100.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -380,12 +390,11 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0ee1c47aaa256ecabcaea351eae4a9b01ef39ed810004e298d2511ed284b1525"
 
 [[package]]
-name = "nac3"
+name = "nac3standalone"
 version = "0.1.0"
 dependencies = [
  "inkwell",
- "num-bigint",
- "num-traits",
+ "libnac3",
  "rustpython-parser",
 ]
 

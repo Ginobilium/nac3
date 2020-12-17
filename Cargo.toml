@@ -1,11 +1,5 @@
-[package]
-name = "nac3"
-version = "0.1.0"
-authors = ["Sebastien Bourdeauducq <sb@m-labs.hk>"]
-edition = "2018"
-
-[dependencies]
-num-bigint = "0.3"
-num-traits = "0.2"
-inkwell = { git = "https://github.com/TheDan64/inkwell", branch = "master", features = ["llvm10-0"] }
-rustpython-parser = { git = "https://github.com/RustPython/RustPython", branch = "master" }
+[workspace]
+members = [
+  "libnac3",
+  "nac3standalone",
+]
