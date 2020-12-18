@@ -460,6 +460,7 @@ name = "nac3embedded"
 version = "0.1.0"
 dependencies = [
  "pyo3",
+ "rustpython-parser",
 ]
 
 [[package]]

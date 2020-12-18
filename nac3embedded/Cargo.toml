@@ -8,6 +8,6 @@ edition = "2018"
 name = "nac3embedded"
 crate-type = ["cdylib"]
 
-[dependencies.pyo3]
-version = "0.12.4"
-features = ["extension-module"]
+[dependencies]
+pyo3 = { version = "0.12.4", features = ["extension-module"] }
+rustpython-parser = { git = "https://github.com/RustPython/RustPython", branch = "master" }
