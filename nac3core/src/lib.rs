@@ -559,7 +559,7 @@ impl<'ctx> CodeGen<'ctx> {
         self.module.print_to_stderr();
     }
 
-    pub fn output(&self) {
+    pub fn output(&self, filename: &str) {
         //let triple = TargetTriple::create("riscv32-none-linux-gnu");
         let triple = TargetMachine::get_default_triple();
         let target = Target::from_triple(&triple)
@@ -577,7 +577,7 @@ impl<'ctx> CodeGen<'ctx> {
             .expect("couldn't create target machine");
 
         target_machine
-            .write_to_file(&self.module, FileType::Object, Path::new("test.o"))
+            .write_to_file(&self.module, FileType::Object, Path::new(filename))
             .expect("couldn't write module to file");
     }
 }

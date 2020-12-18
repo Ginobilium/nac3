@@ -10,7 +10,7 @@ use nac3core::CodeGen;
 fn main() {
     Target::initialize_all(&InitializationConfig::default());
 
-    let program = match fs::read_to_string("test.py") {
+    let program = match fs::read_to_string("mandelbrot.py") {
         Ok(program) => program,
         Err(err) => { println!("Cannot open input file: {}", err); return; }
     };
@@ -26,5 +26,5 @@ fn main() {
         Err(err) => { println!("Compilation error: {}", err); return; }
     }
     codegen.print_ir();
-    codegen.output();
+    codegen.output("mandelbrot.o");
 }

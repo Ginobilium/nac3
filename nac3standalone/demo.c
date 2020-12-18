@@ -1,4 +1,4 @@
-// clang -Wall -o demo demo.c test.o
+// clang -Wall -o demo demo.c mandelbrot.o
 
 #include <stdio.h>
 #include <string.h>
