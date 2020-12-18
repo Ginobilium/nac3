@@ -2,4 +2,5 @@
 members = [
   "libnac3",
   "nac3standalone",
+  "nac3embedded",
 ]
