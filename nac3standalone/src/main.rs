@@ -4,7 +4,7 @@ use inkwell::context::Context;
 use inkwell::targets::*;
 use rustpython_parser::parser;
 
-use libnac3::CodeGen;
+use nac3core::CodeGen;
 
 
 fn main() {

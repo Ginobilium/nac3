@@ -7,4 +7,4 @@ edition = "2018"
 [dependencies]
 inkwell = { git = "https://github.com/TheDan64/inkwell", branch = "master", features = ["llvm10-0"] }
 rustpython-parser = { git = "https://github.com/RustPython/RustPython", branch = "master" }
-libnac3 = { path = "../libnac3" }
+nac3core = { path = "../nac3core" }

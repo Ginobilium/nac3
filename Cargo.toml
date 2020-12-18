@@ -1,6 +1,6 @@
 [workspace]
 members = [
-  "libnac3",
+  "nac3core",
   "nac3standalone",
   "nac3embedded",
 ]
