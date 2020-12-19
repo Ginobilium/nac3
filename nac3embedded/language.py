@@ -9,7 +9,9 @@ __all__ = ["kernel", "portable"]
 def kernel(function):
     @wraps(function)
     def run_on_core(self, *args, **kwargs):
-        nac3embedded.add_host_object(self)
+        nac3 = nac3embedded.NAC3()
+        nac3.register_host_object(self)
+        nac3.compile_method(self, function.__name__)
     return run_on_core
 
 
