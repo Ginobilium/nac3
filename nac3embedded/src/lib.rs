@@ -4,6 +4,10 @@ use std::collections::hash_map::Entry;
 use pyo3::prelude::*;
 use pyo3::exceptions;
 use rustpython_parser::{ast, parser};
+use inkwell::context::Context;
+use inkwell::targets::*;
+
+use nac3core::CodeGen;
 
 fn runs_on_core(decorator_list: &[ast::Expression]) -> bool {
     for decorator in decorator_list.iter() {
@@ -87,7 +91,11 @@ impl Nac3 {
                             decorator_list,
                             returns: _ } = &statement.node {
                         if runs_on_core(decorator_list) && funcdef_name == &name {
-                            println!("found: {:?}", &statement.node);
+                            let context = Context::create();
+                            let mut codegen = CodeGen::new(&context);
+                            codegen.compile_toplevel(&body[0]).map_err(|e|
+                                exceptions::PyRuntimeError::new_err(format!("compilation failed: {}", e)))?;
+                            codegen.print_ir();
                         }
                     }
                 }
@@ -102,6 +110,7 @@ impl Nac3 {
 
 #[pymodule]
 fn nac3embedded(_py: Python, m: &PyModule) -> PyResult<()> {
+    Target::initialize_all(&InitializationConfig::default());
     m.add_class::<Nac3>()?;
     Ok(())
 }

@@ -10,4 +10,6 @@ crate-type = ["cdylib"]
 
 [dependencies]
 pyo3 = { version = "0.12.4", features = ["extension-module"] }
+inkwell = { git = "https://github.com/TheDan64/inkwell", branch = "master", features = ["llvm10-0"] }
 rustpython-parser = { git = "https://github.com/RustPython/RustPython", branch = "master" }
+nac3core = { path = "../nac3core" }

@@ -459,6 +459,8 @@ dependencies = [
 name = "nac3embedded"
 version = "0.1.0"
 dependencies = [
+ "inkwell",
+ "nac3core",
  "pyo3",
  "rustpython-parser",
 ]
