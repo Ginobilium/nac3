@@ -5,6 +5,7 @@ extern crate num_bigint;
 extern crate inkwell;
 extern crate rustpython_parser;
 
+pub mod expression_inference;
 pub mod inference_core;
 mod magic_methods;
 pub mod primitives;
