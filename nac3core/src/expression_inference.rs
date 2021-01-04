@@ -368,3 +368,599 @@ fn infer_list_comprehension<'b: 'a, 'a>(
     }
 }
 
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::context::*;
+    use crate::typedef::*;
+    use rustpython_parser::parser::parse_expression;
+    use std::collections::HashMap;
+    use std::rc::Rc;
+
+    fn get_inference_context(ctx: TopLevelContext) -> InferenceContext {
+        InferenceContext::new(ctx, Box::new(|_| Err("unbounded identifier".into())))
+    }
+
+    #[test]
+    fn test_constants() {
+        let ctx = basic_ctx();
+        let mut ctx = get_inference_context(ctx);
+
+        let ast = parse_expression("123").unwrap();
+        let result = infer_expr(&mut ctx, &ast);
+        assert_eq!(result.unwrap().unwrap(), ctx.get_primitive(INT32_TYPE));
+
+        let ast = parse_expression("2147483647").unwrap();
+        let result = infer_expr(&mut ctx, &ast);
+        assert_eq!(result.unwrap().unwrap(), ctx.get_primitive(INT32_TYPE));
+
+        let ast = parse_expression("2147483648").unwrap();
+        let result = infer_expr(&mut ctx, &ast);
+        assert_eq!(result.unwrap().unwrap(), ctx.get_primitive(INT64_TYPE));
+
+        let ast = parse_expression("9223372036854775807").unwrap();
+        let result = infer_expr(&mut ctx, &ast);
+        assert_eq!(result.unwrap().unwrap(), ctx.get_primitive(INT64_TYPE));
+
+        let ast = parse_expression("9223372036854775808").unwrap();
+        let result = infer_expr(&mut ctx, &ast);
+        assert_eq!(result, Err("integer out of range".into()));
+
+        let ast = parse_expression("123.456").unwrap();
+        let result = infer_expr(&mut ctx, &ast);
+        assert_eq!(result.unwrap().unwrap(), ctx.get_primitive(FLOAT_TYPE));
+
+        let ast = parse_expression("True").unwrap();
+        let result = infer_expr(&mut ctx, &ast);
+        assert_eq!(result.unwrap().unwrap(), ctx.get_primitive(BOOL_TYPE));
+
+        let ast = parse_expression("False").unwrap();
+        let result = infer_expr(&mut ctx, &ast);
+        assert_eq!(result.unwrap().unwrap(), ctx.get_primitive(BOOL_TYPE));
+    }
+
+    #[test]
+    fn test_identifier() {
+        let ctx = basic_ctx();
+        let mut ctx = get_inference_context(ctx);
+        ctx.assign("abc", ctx.get_primitive(INT32_TYPE)).unwrap();
+
+        let ast = parse_expression("abc").unwrap();
+        let result = infer_expr(&mut ctx, &ast);
+        assert_eq!(result.unwrap().unwrap(), ctx.get_primitive(INT32_TYPE));
+
+        let ast = parse_expression("ab").unwrap();
+        let result = infer_expr(&mut ctx, &ast);
+        assert_eq!(result, Err("unbounded identifier".into()));
+    }
+
+    #[test]
+    fn test_list() {
+        let mut ctx = basic_ctx();
+        ctx.add_fn(
+            "foo",
+            FnDef {
+                args: vec![],
+                result: None,
+            },
+        );
+        let mut ctx = get_inference_context(ctx);
+        ctx.assign("abc", ctx.get_primitive(INT32_TYPE)).unwrap();
+        // def is reserved...
+        ctx.assign("efg", ctx.get_primitive(INT32_TYPE)).unwrap();
+        ctx.assign("xyz", ctx.get_primitive(FLOAT_TYPE)).unwrap();
+
+        let ast = parse_expression("[]").unwrap();
+        let result = infer_expr(&mut ctx, &ast);
+        assert_eq!(
+            result.unwrap().unwrap(),
+            ParametricType(LIST_TYPE, vec![BotType.into()]).into()
+        );
+
+        let ast = parse_expression("[abc]").unwrap();
+        let result = infer_expr(&mut ctx, &ast);
+        assert_eq!(
+            result.unwrap().unwrap(),
+            ParametricType(LIST_TYPE, vec![ctx.get_primitive(INT32_TYPE)]).into()
+        );
+
+        let ast = parse_expression("[abc, efg]").unwrap();
+        let result = infer_expr(&mut ctx, &ast);
+        assert_eq!(
+            result.unwrap().unwrap(),
+            ParametricType(LIST_TYPE, vec![ctx.get_primitive(INT32_TYPE)]).into()
+        );
+
+        let ast = parse_expression("[abc, efg, xyz]").unwrap();
+        let result = infer_expr(&mut ctx, &ast);
+        assert_eq!(result, Err("inhomogeneous list is not allowed".into()));
+
+        let ast = parse_expression("[foo()]").unwrap();
+        let result = infer_expr(&mut ctx, &ast);
+        assert_eq!(result, Err("list elements must have some type".into()));
+    }
+
+    #[test]
+    fn test_tuple() {
+        let mut ctx = basic_ctx();
+        ctx.add_fn(
+            "foo",
+            FnDef {
+                args: vec![],
+                result: None,
+            },
+        );
+        let mut ctx = get_inference_context(ctx);
+        ctx.assign("abc", ctx.get_primitive(INT32_TYPE)).unwrap();
+        ctx.assign("efg", ctx.get_primitive(FLOAT_TYPE)).unwrap();
+
+        let ast = parse_expression("(abc, efg)").unwrap();
+        let result = infer_expr(&mut ctx, &ast);
+        assert_eq!(
+            result.unwrap().unwrap(),
+            ParametricType(
+                TUPLE_TYPE,
+                vec![ctx.get_primitive(INT32_TYPE), ctx.get_primitive(FLOAT_TYPE)]
+            )
+            .into()
+        );
+
+        let ast = parse_expression("(abc, efg, foo())").unwrap();
+        let result = infer_expr(&mut ctx, &ast);
+        assert_eq!(result, Err("tuple elements must have some type".into()));
+    }
+
+    #[test]
+    fn test_attribute() {
+        let mut ctx = basic_ctx();
+        ctx.add_fn(
+            "none",
+            FnDef {
+                args: vec![],
+                result: None,
+            },
+        );
+        let int32 = ctx.get_primitive(INT32_TYPE);
+        let float = ctx.get_primitive(FLOAT_TYPE);
+
+        let foo = ctx.add_class(ClassDef {
+            base: TypeDef {
+                name: "Foo",
+                fields: HashMap::new(),
+                methods: HashMap::new(),
+            },
+            parents: vec![],
+        });
+        let foo_def = ctx.get_class_def_mut(foo);
+        foo_def.base.fields.insert("a", int32.clone());
+        foo_def.base.fields.insert("b", ClassType(foo).into());
+        foo_def.base.fields.insert("c", int32.clone());
+
+        let bar = ctx.add_class(ClassDef {
+            base: TypeDef {
+                name: "Bar",
+                fields: HashMap::new(),
+                methods: HashMap::new(),
+            },
+            parents: vec![],
+        });
+        let bar_def = ctx.get_class_def_mut(bar);
+        bar_def.base.fields.insert("a", int32);
+        bar_def.base.fields.insert("b", ClassType(bar).into());
+        bar_def.base.fields.insert("c", float);
+
+        let v0 = ctx.add_variable(VarDef {
+            name: "v0",
+            bound: vec![],
+        });
+
+        let v1 = ctx.add_variable(VarDef {
+            name: "v1",
+            bound: vec![ClassType(foo).into(), ClassType(bar).into()],
+        });
+
+        let mut ctx = get_inference_context(ctx);
+        ctx.assign("foo", Rc::new(ClassType(foo))).unwrap();
+        ctx.assign("bar", Rc::new(ClassType(bar))).unwrap();
+        ctx.assign("foobar", Rc::new(VirtualClassType(foo)))
+            .unwrap();
+        ctx.assign("v0", ctx.get_variable(v0)).unwrap();
+        ctx.assign("v1", ctx.get_variable(v1)).unwrap();
+        ctx.assign("bot", Rc::new(BotType)).unwrap();
+
+        let ast = parse_expression("foo.a").unwrap();
+        let result = infer_expr(&mut ctx, &ast);
+        assert_eq!(result.unwrap().unwrap(), ctx.get_primitive(INT32_TYPE));
+
+        let ast = parse_expression("foo.d").unwrap();
+        let result = infer_expr(&mut ctx, &ast);
+        assert_eq!(result, Err("no such field".into()));
+
+        let ast = parse_expression("foobar.a").unwrap();
+        let result = infer_expr(&mut ctx, &ast);
+        assert_eq!(result.unwrap().unwrap(), ctx.get_primitive(INT32_TYPE));
+
+        let ast = parse_expression("v0.a").unwrap();
+        let result = infer_expr(&mut ctx, &ast);
+        assert_eq!(result, Err("no fields on unbounded type variable".into()));
+
+        let ast = parse_expression("v1.a").unwrap();
+        let result = infer_expr(&mut ctx, &ast);
+        assert_eq!(result.unwrap().unwrap(), ctx.get_primitive(INT32_TYPE));
+
+        // shall we support this?
+        let ast = parse_expression("v1.b").unwrap();
+        let result = infer_expr(&mut ctx, &ast);
+        assert_eq!(
+            result,
+            Err("unknown field (type mismatch between variants)".into())
+        );
+        // assert_eq!(result.unwrap().unwrap(), TypeVariable(v1).into());
+
+        let ast = parse_expression("v1.c").unwrap();
+        let result = infer_expr(&mut ctx, &ast);
+        assert_eq!(
+            result,
+            Err("unknown field (type mismatch between variants)".into())
+        );
+
+        let ast = parse_expression("v1.d").unwrap();
+        let result = infer_expr(&mut ctx, &ast);
+        assert_eq!(result, Err("unknown field".into()));
+
+        let ast = parse_expression("none().a").unwrap();
+        let result = infer_expr(&mut ctx, &ast);
+        assert_eq!(result, Err("no value".into()));
+
+        let ast = parse_expression("bot.a").unwrap();
+        let result = infer_expr(&mut ctx, &ast);
+        assert_eq!(result, Err("this object has no fields".into()));
+    }
+
+    #[test]
+    fn test_bool_ops() {
+        let mut ctx = basic_ctx();
+        ctx.add_fn(
+            "none",
+            FnDef {
+                args: vec![],
+                result: None,
+            },
+        );
+        let mut ctx = get_inference_context(ctx);
+
+        let ast = parse_expression("True and False").unwrap();
+        let result = infer_expr(&mut ctx, &ast);
+        assert_eq!(result.unwrap().unwrap(), ctx.get_primitive(BOOL_TYPE));
+
+        let ast = parse_expression("True and none()").unwrap();
+        let result = infer_expr(&mut ctx, &ast);
+        assert_eq!(result, Err("no value".into()));
+
+        let ast = parse_expression("True and 123").unwrap();
+        let result = infer_expr(&mut ctx, &ast);
+        assert_eq!(result, Err("bool operands must be bool".into()));
+    }
+
+    #[test]
+    fn test_bin_ops() {
+        let mut ctx = basic_ctx();
+        let v0 = ctx.add_variable(VarDef {
+            name: "v0",
+            bound: vec![ctx.get_primitive(INT32_TYPE), ctx.get_primitive(INT64_TYPE)],
+        });
+        let mut ctx = get_inference_context(ctx);
+        ctx.assign("a", TypeVariable(v0).into()).unwrap();
+
+        let ast = parse_expression("1 + 2 + 3").unwrap();
+        let result = infer_expr(&mut ctx, &ast);
+        assert_eq!(result.unwrap().unwrap(), ctx.get_primitive(INT32_TYPE));
+
+        let ast = parse_expression("a + a + a").unwrap();
+        let result = infer_expr(&mut ctx, &ast);
+        assert_eq!(result.unwrap().unwrap(), TypeVariable(v0).into());
+    }
+
+    #[test]
+    fn test_unary_ops() {
+        let mut ctx = basic_ctx();
+        let v0 = ctx.add_variable(VarDef {
+            name: "v0",
+            bound: vec![ctx.get_primitive(INT32_TYPE), ctx.get_primitive(INT64_TYPE)],
+        });
+        let mut ctx = get_inference_context(ctx);
+        ctx.assign("a", TypeVariable(v0).into()).unwrap();
+
+        let ast = parse_expression("-(123)").unwrap();
+        let result = infer_expr(&mut ctx, &ast);
+        assert_eq!(result.unwrap().unwrap(), ctx.get_primitive(INT32_TYPE));
+
+        let ast = parse_expression("-a").unwrap();
+        let result = infer_expr(&mut ctx, &ast);
+        assert_eq!(result.unwrap().unwrap(), TypeVariable(v0).into());
+
+        let ast = parse_expression("not True").unwrap();
+        let result = infer_expr(&mut ctx, &ast);
+        assert_eq!(result.unwrap().unwrap(), ctx.get_primitive(BOOL_TYPE));
+
+        let ast = parse_expression("not (1)").unwrap();
+        let result = infer_expr(&mut ctx, &ast);
+        assert_eq!(result, Err("logical not must be applied to bool".into()));
+    }
+
+    #[test]
+    fn test_compare() {
+        let mut ctx = basic_ctx();
+        let v0 = ctx.add_variable(VarDef {
+            name: "v0",
+            bound: vec![ctx.get_primitive(INT32_TYPE), ctx.get_primitive(INT64_TYPE)],
+        });
+        let mut ctx = get_inference_context(ctx);
+        ctx.assign("a", TypeVariable(v0).into()).unwrap();
+
+        let ast = parse_expression("a == a == a").unwrap();
+        let result = infer_expr(&mut ctx, &ast);
+        assert_eq!(result.unwrap().unwrap(), ctx.get_primitive(BOOL_TYPE));
+
+        let ast = parse_expression("a == a == 1").unwrap();
+        let result = infer_expr(&mut ctx, &ast);
+        assert_eq!(result, Err("not equal".into()));
+
+        let ast = parse_expression("True > False").unwrap();
+        let result = infer_expr(&mut ctx, &ast);
+        assert_eq!(result, Err("no such function".into()));
+
+        let ast = parse_expression("True in False").unwrap();
+        let result = infer_expr(&mut ctx, &ast);
+        assert_eq!(result, Err("unsupported comparison".into()));
+    }
+
+    #[test]
+    fn test_call() {
+        let mut ctx = basic_ctx();
+        ctx.add_fn(
+            "none",
+            FnDef {
+                args: vec![],
+                result: None,
+            },
+        );
+
+        let foo = ctx.add_class(ClassDef {
+            base: TypeDef {
+                name: "Foo",
+                fields: HashMap::new(),
+                methods: HashMap::new(),
+            },
+            parents: vec![],
+        });
+        let foo_def = ctx.get_class_def_mut(foo);
+        foo_def.base.methods.insert(
+            "a",
+            FnDef {
+                args: vec![],
+                result: Some(Rc::new(ClassType(foo))),
+            },
+        );
+
+        let bar = ctx.add_class(ClassDef {
+            base: TypeDef {
+                name: "Bar",
+                fields: HashMap::new(),
+                methods: HashMap::new(),
+            },
+            parents: vec![],
+        });
+        let bar_def = ctx.get_class_def_mut(bar);
+        bar_def.base.methods.insert(
+            "a",
+            FnDef {
+                args: vec![],
+                result: Some(Rc::new(ClassType(bar))),
+            },
+        );
+
+        let v0 = ctx.add_variable(VarDef {
+            name: "v0",
+            bound: vec![],
+        });
+        let v1 = ctx.add_variable(VarDef {
+            name: "v1",
+            bound: vec![ClassType(foo).into(), ClassType(bar).into()],
+        });
+        let v2 = ctx.add_variable(VarDef {
+            name: "v2",
+            bound: vec![
+                ClassType(foo).into(),
+                ClassType(bar).into(),
+                ctx.get_primitive(INT32_TYPE),
+            ],
+        });
+        let mut ctx = get_inference_context(ctx);
+        ctx.assign("foo", Rc::new(ClassType(foo))).unwrap();
+        ctx.assign("bar", Rc::new(ClassType(bar))).unwrap();
+        ctx.assign("foobar", Rc::new(VirtualClassType(foo)))
+            .unwrap();
+        ctx.assign("v0", ctx.get_variable(v0)).unwrap();
+        ctx.assign("v1", ctx.get_variable(v1)).unwrap();
+        ctx.assign("v2", ctx.get_variable(v2)).unwrap();
+        ctx.assign("bot", Rc::new(BotType)).unwrap();
+
+        let ast = parse_expression("foo.a()").unwrap();
+        let result = infer_expr(&mut ctx, &ast);
+        assert_eq!(result.unwrap().unwrap(), ClassType(foo).into());
+
+        let ast = parse_expression("v1.a()").unwrap();
+        let result = infer_expr(&mut ctx, &ast);
+        assert_eq!(result.unwrap().unwrap(), TypeVariable(v1).into());
+
+        let ast = parse_expression("foobar.a()").unwrap();
+        let result = infer_expr(&mut ctx, &ast);
+        assert_eq!(result.unwrap().unwrap(), ClassType(foo).into());
+
+        let ast = parse_expression("none().a()").unwrap();
+        let result = infer_expr(&mut ctx, &ast);
+        assert_eq!(result, Err("no value".into()));
+
+        let ast = parse_expression("bot.a()").unwrap();
+        let result = infer_expr(&mut ctx, &ast);
+        assert_eq!(result, Err("not supported".into()));
+
+        let ast = parse_expression("[][0].a()").unwrap();
+        let result = infer_expr(&mut ctx, &ast);
+        assert_eq!(result, Err("not supported".into()));
+
+        let ast = parse_expression("v0.a()").unwrap();
+        let result = infer_expr(&mut ctx, &ast);
+        assert_eq!(result, Err("unbounded type var".into()));
+
+        let ast = parse_expression("v2.a()").unwrap();
+        let result = infer_expr(&mut ctx, &ast);
+        assert_eq!(result, Err("no such function".into()));
+    }
+
+    #[test]
+    fn infer_subscript() {
+        let mut ctx = basic_ctx();
+        ctx.add_fn(
+            "none",
+            FnDef {
+                args: vec![],
+                result: None,
+            },
+        );
+        let mut ctx = get_inference_context(ctx);
+
+        let ast = parse_expression("[1, 2, 3][0]").unwrap();
+        let result = infer_expr(&mut ctx, &ast);
+        assert_eq!(result.unwrap().unwrap(), ctx.get_primitive(INT32_TYPE));
+
+        let ast = parse_expression("[[1]][0][0]").unwrap();
+        let result = infer_expr(&mut ctx, &ast);
+        assert_eq!(result.unwrap().unwrap(), ctx.get_primitive(INT32_TYPE));
+
+        let ast = parse_expression("[1, 2, 3][1:2]").unwrap();
+        let result = infer_expr(&mut ctx, &ast);
+        assert_eq!(
+            result.unwrap().unwrap(),
+            ParametricType(LIST_TYPE, vec![ctx.get_primitive(INT32_TYPE)]).into()
+        );
+
+        let ast = parse_expression("[1, 2, 3][1:2:2]").unwrap();
+        let result = infer_expr(&mut ctx, &ast);
+        assert_eq!(
+            result.unwrap().unwrap(),
+            ParametricType(LIST_TYPE, vec![ctx.get_primitive(INT32_TYPE)]).into()
+        );
+
+        let ast = parse_expression("[1, 2, 3][1:1.2]").unwrap();
+        let result = infer_expr(&mut ctx, &ast);
+        assert_eq!(result, Err("slice must be int32 type".into()));
+
+        let ast = parse_expression("[1, 2, 3][1:none()]").unwrap();
+        let result = infer_expr(&mut ctx, &ast);
+        assert_eq!(result, Err("slice must have type".into()));
+
+        let ast = parse_expression("[1, 2, 3][1.2]").unwrap();
+        let result = infer_expr(&mut ctx, &ast);
+        assert_eq!(result, Err("index must be either slice or int32".into()));
+
+        let ast = parse_expression("[1, 2, 3][none()]").unwrap();
+        let result = infer_expr(&mut ctx, &ast);
+        assert_eq!(result, Err("no value".into()));
+
+        let ast = parse_expression("none()[1.2]").unwrap();
+        let result = infer_expr(&mut ctx, &ast);
+        assert_eq!(result, Err("no value".into()));
+
+        let ast = parse_expression("123[1]").unwrap();
+        let result = infer_expr(&mut ctx, &ast);
+        assert_eq!(
+            result,
+            Err("subscript is not supported for types other than list".into())
+        );
+    }
+
+    #[test]
+    fn test_if_expr() {
+        let mut ctx = basic_ctx();
+        ctx.add_fn(
+            "none",
+            FnDef {
+                args: vec![],
+                result: None,
+            },
+        );
+        let mut ctx = get_inference_context(ctx);
+
+        let ast = parse_expression("1 if True else 0").unwrap();
+        let result = infer_expr(&mut ctx, &ast);
+        assert_eq!(result.unwrap().unwrap(), ctx.get_primitive(INT32_TYPE));
+
+        let ast = parse_expression("none() if True else none()").unwrap();
+        let result = infer_expr(&mut ctx, &ast);
+        assert_eq!(result.unwrap(), None);
+
+        let ast = parse_expression("none() if 1 else none()").unwrap();
+        let result = infer_expr(&mut ctx, &ast);
+        assert_eq!(result, Err("test should be bool".into()));
+
+        let ast = parse_expression("1 if True else none()").unwrap();
+        let result = infer_expr(&mut ctx, &ast);
+        assert_eq!(result, Err("divergent type".into()));
+    }
+
+    #[test]
+    fn test_list_comp() {
+        let mut ctx = basic_ctx();
+        ctx.add_fn(
+            "none",
+            FnDef {
+                args: vec![],
+                result: None,
+            },
+        );
+        let int32 = ctx.get_primitive(INT32_TYPE);
+        let mut ctx = get_inference_context(ctx);
+        ctx.assign("z", int32.clone()).unwrap();
+
+        let ast = parse_expression("[x for x in [(1, 2), (2, 3), (3, 4)]][0]").unwrap();
+        let result = infer_expr(&mut ctx, &ast);
+        assert_eq!(
+            result.unwrap().unwrap(),
+            ParametricType(TUPLE_TYPE, vec![int32.clone(), int32.clone()]).into()
+        );
+
+        let ast = parse_expression("[x for (x, y) in [(1, 2), (2, 3), (3, 4)]][0]").unwrap();
+        let result = infer_expr(&mut ctx, &ast);
+        assert_eq!(result.unwrap().unwrap(), int32);
+
+        let ast =
+            parse_expression("[x for (x, y) in [(1, 2), (2, 3), (3, 4)] if x > 0][0]").unwrap();
+        let result = infer_expr(&mut ctx, &ast);
+        assert_eq!(result.unwrap().unwrap(), int32);
+
+        let ast = parse_expression("[x for (x, y) in [(1, 2), (2, 3), (3, 4)] if x][0]").unwrap();
+        let result = infer_expr(&mut ctx, &ast);
+        assert_eq!(result, Err("test must be bool".into()));
+
+        let ast = parse_expression("[y for x in []][0]").unwrap();
+        let result = infer_expr(&mut ctx, &ast);
+        assert_eq!(result, Err("unbounded identifier".into()));
+
+        let ast = parse_expression("[none() for x in []][0]").unwrap();
+        let result = infer_expr(&mut ctx, &ast);
+        assert_eq!(result, Err("no value".into()));
+
+        let ast = parse_expression("[z for z in []][0]").unwrap();
+        let result = infer_expr(&mut ctx, &ast);
+        assert_eq!(result, Err("duplicated naming".into()));
+
+        let ast = parse_expression("[x for x in [] for y in []]").unwrap();
+        let result = infer_expr(&mut ctx, &ast);
+        assert_eq!(
+            result,
+            Err("only 1 generator statement is supported".into())
+        );
+    }
+}
