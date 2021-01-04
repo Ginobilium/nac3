@@ -6,6 +6,7 @@ extern crate inkwell;
 extern crate rustpython_parser;
 
 pub mod inference_core;
+mod magic_methods;
 pub mod primitives;
 pub mod typedef;
 pub mod context;
