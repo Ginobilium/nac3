@@ -6,6 +6,8 @@ extern crate inkwell;
 extern crate rustpython_parser;
 
 pub mod typedef;
+pub mod context;
+
 use std::error::Error;
 use std::fmt;
 use std::path::Path;
