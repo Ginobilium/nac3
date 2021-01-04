@@ -5,6 +5,7 @@ extern crate num_bigint;
 extern crate inkwell;
 extern crate rustpython_parser;
 
+pub mod inference_core;
 pub mod primitives;
 pub mod typedef;
 pub mod context;
