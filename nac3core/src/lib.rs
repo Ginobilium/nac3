@@ -5,6 +5,7 @@ extern crate num_bigint;
 extern crate inkwell;
 extern crate rustpython_parser;
 
+pub mod typedef;
 use std::error::Error;
 use std::fmt;
 use std::path::Path;
