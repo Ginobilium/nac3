@@ -4,6 +4,6 @@ in
   pkgs.stdenv.mkDerivation {
     name = "nac3-env";
     buildInputs = with pkgs; [
-      llvm_10 clang_10 cargo rustc libffi libxml2
+      llvm_10 clang_10 cargo rustc libffi libxml2 clippy
     ];
   }
