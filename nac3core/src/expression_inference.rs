@@ -66,12 +66,7 @@ fn infer_constant(
             if int32.is_ok() {
                 Ok(Some(ctx.get_primitive(INT32_TYPE)))
             } else {
-                let int64: Result<i64, _> = value.try_into();
-                if int64.is_ok() {
-                    Ok(Some(ctx.get_primitive(INT64_TYPE)))
-                } else {
-                    Err("integer out of range".into())
-                }
+                Err("integer out of range".into())
             }
         }
         Number::Float { .. } => Ok(Some(ctx.get_primitive(FLOAT_TYPE))),
@@ -98,6 +93,7 @@ fn infer_list<'b: 'a, 'a>(
         return Err("list elements must have some type".into());
     }
     for v in types {
+        // TODO: try virtual type...
         if v? != head {
             return Err("inhomogeneous list is not allowed".into());
         }
@@ -124,31 +120,14 @@ fn infer_attribute<'a>(
     name: &str,
 ) -> ParserResult {
     let value = infer_expr(ctx, value)?.ok_or_else(|| "no value".to_string())?;
-    if let TypeVariable(id) = value.as_ref() {
-        let v = ctx.get_variable_def(*id);
-        if v.bound.is_empty() {
-            return Err("no fields on unbounded type variable".into());
-        }
-        let ty = v.bound[0].get_base(ctx).and_then(|v| v.fields.get(name));
-        if ty.is_none() {
-            return Err("unknown field".into());
-        }
-        for x in v.bound[1..].iter() {
-            let ty1 = x.get_base(ctx).and_then(|v| v.fields.get(name));
-            if ty1 != ty {
-                return Err("unknown field (type mismatch between variants)".into());
-            }
-        }
-        return Ok(Some(ty.unwrap().clone()));
+    if let TypeVariable(_) = value.as_ref() {
+        return Err("no fields for type variable".into());
     }
 
-    match value.get_base(ctx) {
-        Some(b) => match b.fields.get(name) {
-            Some(t) => Ok(Some(t.clone())),
-            None => Err("no such field".into()),
-        },
-        None => Err("this object has no fields".into()),
-    }
+    value
+        .get_base(ctx)
+        .and_then(|b| b.fields.get(name).cloned())
+        .map_or_else(|| Err("no such field".to_string()), |v| Ok(Some(v)))
 }
 
 fn infer_bool_ops<'a>(ctx: &mut InferenceContext<'a>, values: &'a [Expression]) -> ParserResult {
@@ -223,6 +202,7 @@ fn infer_call<'b: 'a, 'a>(
     args: &'b [Expression],
     function: &'b Expression,
 ) -> ParserResult {
+    // TODO: special handling for int64 constant
     let types: Result<Option<Vec<_>>, _> = args.iter().map(|v| infer_expr(ctx, v)).collect();
     let types = types?;
     if types.is_none() {
@@ -396,15 +376,19 @@ mod test {
 
         let ast = parse_expression("2147483648").unwrap();
         let result = infer_expr(&mut ctx, &ast);
-        assert_eq!(result.unwrap().unwrap(), ctx.get_primitive(INT64_TYPE));
-
-        let ast = parse_expression("9223372036854775807").unwrap();
-        let result = infer_expr(&mut ctx, &ast);
-        assert_eq!(result.unwrap().unwrap(), ctx.get_primitive(INT64_TYPE));
-
-        let ast = parse_expression("9223372036854775808").unwrap();
-        let result = infer_expr(&mut ctx, &ast);
         assert_eq!(result, Err("integer out of range".into()));
+        //
+        // let ast = parse_expression("2147483648").unwrap();
+        // let result = infer_expr(&mut ctx, &ast);
+        // assert_eq!(result.unwrap().unwrap(), ctx.get_primitive(INT64_TYPE));
+
+        // let ast = parse_expression("9223372036854775807").unwrap();
+        // let result = infer_expr(&mut ctx, &ast);
+        // assert_eq!(result.unwrap().unwrap(), ctx.get_primitive(INT64_TYPE));
+
+        // let ast = parse_expression("9223372036854775808").unwrap();
+        // let result = infer_expr(&mut ctx, &ast);
+        // assert_eq!(result, Err("integer out of range".into()));
 
         let ast = parse_expression("123.456").unwrap();
         let result = infer_expr(&mut ctx, &ast);
@@ -582,31 +566,11 @@ mod test {
 
         let ast = parse_expression("v0.a").unwrap();
         let result = infer_expr(&mut ctx, &ast);
-        assert_eq!(result, Err("no fields on unbounded type variable".into()));
+        assert_eq!(result, Err("no fields for type variable".into()));
 
         let ast = parse_expression("v1.a").unwrap();
         let result = infer_expr(&mut ctx, &ast);
-        assert_eq!(result.unwrap().unwrap(), ctx.get_primitive(INT32_TYPE));
-
-        // shall we support this?
-        let ast = parse_expression("v1.b").unwrap();
-        let result = infer_expr(&mut ctx, &ast);
-        assert_eq!(
-            result,
-            Err("unknown field (type mismatch between variants)".into())
-        );
-        // assert_eq!(result.unwrap().unwrap(), TypeVariable(v1).into());
-
-        let ast = parse_expression("v1.c").unwrap();
-        let result = infer_expr(&mut ctx, &ast);
-        assert_eq!(
-            result,
-            Err("unknown field (type mismatch between variants)".into())
-        );
-
-        let ast = parse_expression("v1.d").unwrap();
-        let result = infer_expr(&mut ctx, &ast);
-        assert_eq!(result, Err("unknown field".into()));
+        assert_eq!(result, Err("no fields for type variable".into()));
 
         let ast = parse_expression("none().a").unwrap();
         let result = infer_expr(&mut ctx, &ast);
@@ -614,7 +578,7 @@ mod test {
 
         let ast = parse_expression("bot.a").unwrap();
         let result = infer_expr(&mut ctx, &ast);
-        assert_eq!(result, Err("this object has no fields".into()));
+        assert_eq!(result, Err("no such field".into()));
     }
 
     #[test]
