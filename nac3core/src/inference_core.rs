@@ -129,39 +129,6 @@ fn resolve_call_rec(
     let fun = match &obj {
         Some(obj) => {
             let base = match obj.as_ref() {
-                TypeVariable(id) => {
-                    let v = ctx.get_variable_def(*id);
-                    if v.bound.is_empty() {
-                        return Err("unbounded type var".to_string());
-                    }
-                    let results: Result<Vec<_>, String> = v
-                        .bound
-                        .iter()
-                        .map(|ins| {
-                            resolve_call_rec(
-                                ctx,
-                                &Some((*id, ins.clone())),
-                                Some(ins.clone()),
-                                func,
-                                args.clone(),
-                            )
-                        })
-                        .collect();
-                    let results = results?;
-                    if results.iter().all(|v| v == &results[0]) {
-                        return Ok(results[0].clone());
-                    }
-                    let mut results = results.iter().zip(v.bound.iter()).map(|(r, ins)| {
-                        r.as_ref()
-                            .map(|v| v.inv_subst(&[(ins.clone(), obj.clone())]))
-                    });
-                    let first = results.next().unwrap();
-                    if results.all(|v| v == first) {
-                        return Ok(first);
-                    } else {
-                        return Err("divergent type after substitution".to_string());
-                    }
-                }
                 PrimitiveType(id) => &ctx.get_primitive_def(*id),
                 ClassType(id) | VirtualClassType(id) => &ctx.get_class_def(*id).base,
                 ParametricType(id, _) => &ctx.get_parametric_def(*id).base,
@@ -273,25 +240,6 @@ mod tests {
             bound: vec![],
         });
         let v0 = ctx.get_variable(v0);
-        let v1 = ctx.add_variable(VarDef {
-            name: "V1",
-            bound: vec![ctx.get_primitive(INT32_TYPE), ctx.get_primitive(FLOAT_TYPE)],
-        });
-        let v1 = ctx.get_variable(v1);
-        let v2 = ctx.add_variable(VarDef {
-            name: "V2",
-            bound: vec![ctx.get_primitive(INT32_TYPE), ctx.get_primitive(FLOAT_TYPE)],
-        });
-        let v2 = ctx.get_variable(v2);
-        let v3 = ctx.add_variable(VarDef {
-            name: "V3",
-            bound: vec![
-                ctx.get_primitive(BOOL_TYPE),
-                ctx.get_primitive(INT32_TYPE),
-                ctx.get_primitive(FLOAT_TYPE),
-            ],
-        });
-        let v3 = ctx.get_variable(v3);
 
         let int32 = ctx.get_primitive(INT32_TYPE);
         let int64 = ctx.get_primitive(INT64_TYPE);
@@ -315,32 +263,8 @@ mod tests {
 
         // with type variables
         assert_eq!(
-            resolve_call(&ctx, Some(v1.clone()), "__add__", &[v1.clone()]),
-            Ok(Some(v1.clone()))
-        );
-        assert_eq!(
-            resolve_call(&ctx, Some(v0.clone()), "__add__", &[v2.clone()]),
-            Err("unbounded type var".to_string())
-        );
-        assert_eq!(
-            resolve_call(&ctx, Some(v1.clone()), "__add__", &[v0]),
-            Err("different domain".to_string())
-        );
-        assert_eq!(
-            resolve_call(&ctx, Some(v1.clone()), "__add__", &[v2]),
-            Err("different domain".to_string())
-        );
-        assert_eq!(
-            resolve_call(&ctx, Some(v1.clone()), "__add__", &[v3.clone()]),
-            Err("different domain".to_string())
-        );
-        assert_eq!(
-            resolve_call(&ctx, Some(v3.clone()), "__add__", &[v1]),
-            Err("no such function".to_string())
-        );
-        assert_eq!(
-            resolve_call(&ctx, Some(v3.clone()), "__add__", &[v3]),
-            Err("no such function".to_string())
+            resolve_call(&ctx, Some(v0.clone()), "__add__", &[v0.clone()]),
+            Err("not supported".into())
         );
     }
 

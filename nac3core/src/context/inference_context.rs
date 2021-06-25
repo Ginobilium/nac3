@@ -185,22 +185,6 @@ impl TypeEnum {
         }
     }
 
-    pub fn inv_subst(&self, map: &[(Type, Type)]) -> Type {
-        for (from, to) in map.iter() {
-            if self == from.as_ref() {
-                return to.clone();
-            }
-        }
-        match self {
-            TypeEnum::ParametricType(id, params) => TypeEnum::ParametricType(
-                *id,
-                params.iter().map(|v| v.as_ref().inv_subst(map)).collect(),
-            ),
-            _ => self.clone(),
-        }
-        .into()
-    }
-
     pub fn get_subst(&self, ctx: &InferenceContext) -> HashMap<VariableId, Type> {
         match self {
             TypeEnum::ParametricType(id, params) => {

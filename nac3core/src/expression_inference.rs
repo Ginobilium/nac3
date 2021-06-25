@@ -658,7 +658,7 @@ mod test {
 
         let ast = parse_expression("a + a + a").unwrap();
         let result = infer_expr(&mut ctx, &ast);
-        assert_eq!(result.unwrap().unwrap(), TypeVariable(v0).into());
+        assert_eq!(result, Err("not supported".into()));
     }
 
     #[test]
@@ -677,7 +677,7 @@ mod test {
 
         let ast = parse_expression("-a").unwrap();
         let result = infer_expr(&mut ctx, &ast);
-        assert_eq!(result.unwrap().unwrap(), TypeVariable(v0).into());
+        assert_eq!(result, Err("not supported".into()));
 
         let ast = parse_expression("not True").unwrap();
         let result = infer_expr(&mut ctx, &ast);
@@ -700,11 +700,11 @@ mod test {
 
         let ast = parse_expression("a == a == a").unwrap();
         let result = infer_expr(&mut ctx, &ast);
-        assert_eq!(result.unwrap().unwrap(), ctx.get_primitive(BOOL_TYPE));
+        assert_eq!(result, Err("not supported".into()));
 
         let ast = parse_expression("a == a == 1").unwrap();
         let result = infer_expr(&mut ctx, &ast);
-        assert_eq!(result, Err("not equal".into()));
+        assert_eq!(result, Err("not supported".into()));
 
         let ast = parse_expression("True > False").unwrap();
         let result = infer_expr(&mut ctx, &ast);
@@ -792,7 +792,7 @@ mod test {
 
         let ast = parse_expression("v1.a()").unwrap();
         let result = infer_expr(&mut ctx, &ast);
-        assert_eq!(result.unwrap().unwrap(), TypeVariable(v1).into());
+        assert_eq!(result, Err("not supported".into()));
 
         let ast = parse_expression("foobar.a()").unwrap();
         let result = infer_expr(&mut ctx, &ast);
@@ -809,14 +809,6 @@ mod test {
         let ast = parse_expression("[][0].a()").unwrap();
         let result = infer_expr(&mut ctx, &ast);
         assert_eq!(result, Err("not supported".into()));
-
-        let ast = parse_expression("v0.a()").unwrap();
-        let result = infer_expr(&mut ctx, &ast);
-        assert_eq!(result, Err("unbounded type var".into()));
-
-        let ast = parse_expression("v2.a()").unwrap();
-        let result = infer_expr(&mut ctx, &ast);
-        assert_eq!(result, Err("no such function".into()));
     }
 
     #[test]
