@@ -16,10 +16,19 @@ compiler would analyse the set of functions/classes that are used and perform
 code generation.
 
 
-Symble resolver:
-Str -> Nac3Type
-Str -> Value
+Symbol resolver:
+- Str -> Nac3Type
+- Str -> Value
 
 value could be integer values, boolean values, bytes (for memcpy), function ID
 (full name + concrete type)
+
+## Current Plan
+
+1. Write out the syntax-directed type checking/inferencing rules. Fix the rule
+   for type variable instantiation.
+2. Update the library dependencies and rewrite some of the type checking code.
+3. Design the symbol resolver API.
+4. Move tests from code to external files to cleanup the code.
+
 
