@@ -168,11 +168,11 @@ pub fn resolve_call(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use super::super::context::TopLevelContext;
+    use super::super::context::GlobalContext;
     use super::super::primitives::*;
     use std::rc::Rc;
 
-    fn get_inference_context(ctx: TopLevelContext) -> InferenceContext {
+    fn get_inference_context(ctx: GlobalContext) -> InferenceContext {
         InferenceContext::new(ctx, Box::new(|_| Err("unbounded identifier".into())))
     }
 

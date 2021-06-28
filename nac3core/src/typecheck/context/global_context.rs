@@ -5,7 +5,7 @@ use std::rc::Rc;
 /// Structure for storing top-level type definitions.
 /// Used for collecting type signature from source code.
 /// Can be converted to `InferenceContext` for type inference in functions.
-pub struct TopLevelContext<'a> {
+pub struct GlobalContext<'a> {
     /// List of primitive definitions.
     pub(super) primitive_defs: Vec<TypeDef<'a>>,
     /// List of class definitions.
@@ -16,61 +16,39 @@ pub struct TopLevelContext<'a> {
     pub(super) var_defs: Vec<VarDef<'a>>,
     /// Function name to signature mapping.
     pub(super) fn_table: HashMap<&'a str, FnDef>,
-    /// Type name to type mapping.
-    pub(super) sym_table: HashMap<&'a str, Type>,
 
     primitives: Vec<Type>,
     variables: Vec<Type>,
 }
 
-impl<'a> TopLevelContext<'a> {
-    pub fn new(primitive_defs: Vec<TypeDef<'a>>) -> TopLevelContext {
-        let mut sym_table = HashMap::new();
+impl<'a> GlobalContext<'a> {
+    pub fn new(primitive_defs: Vec<TypeDef<'a>>) -> GlobalContext {
         let mut primitives = Vec::new();
         for (i, t) in primitive_defs.iter().enumerate() {
             primitives.push(TypeEnum::PrimitiveType(PrimitiveId(i)).into());
-            sym_table.insert(t.name, TypeEnum::PrimitiveType(PrimitiveId(i)).into());
         }
-        TopLevelContext {
+        GlobalContext {
             primitive_defs,
             class_defs: Vec::new(),
             parametric_defs: Vec::new(),
             var_defs: Vec::new(),
             fn_table: HashMap::new(),
-            sym_table,
             primitives,
             variables: Vec::new(),
         }
     }
 
     pub fn add_class(&mut self, def: ClassDef<'a>) -> ClassId {
-        self.sym_table.insert(
-            def.base.name,
-            TypeEnum::ClassType(ClassId(self.class_defs.len())).into(),
-        );
         self.class_defs.push(def);
         ClassId(self.class_defs.len() - 1)
     }
 
     pub fn add_parametric(&mut self, def: ParametricDef<'a>) -> ParamId {
-        let params = def
-            .params
-            .iter()
-            .map(|&v| Rc::new(TypeEnum::TypeVariable(v)))
-            .collect();
-        self.sym_table.insert(
-            def.base.name,
-            TypeEnum::ParametricType(ParamId(self.parametric_defs.len()), params).into(),
-        );
         self.parametric_defs.push(def);
         ParamId(self.parametric_defs.len() - 1)
     }
 
     pub fn add_variable(&mut self, def: VarDef<'a>) -> VariableId {
-        self.sym_table.insert(
-            def.name,
-            TypeEnum::TypeVariable(VariableId(self.var_defs.len())).into(),
-        );
         self.add_variable_private(def)
     }
 
@@ -127,10 +105,5 @@ impl<'a> TopLevelContext<'a> {
 
     pub fn get_variable(&self, id: VariableId) -> Type {
         self.variables.get(id.0).unwrap().clone()
-    }
-
-    pub fn get_type(&self, name: &str) -> Option<Type> {
-        // TODO: handle parametric types
-        self.sym_table.get(name).cloned()
     }
 }

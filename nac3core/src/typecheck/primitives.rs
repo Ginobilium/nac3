@@ -78,7 +78,7 @@ fn impl_order(def: &mut TypeDef, ty: &Type) {
     def.methods.insert("__ge__", fun);
 }
 
-pub fn basic_ctx() -> TopLevelContext<'static> {
+pub fn basic_ctx() -> GlobalContext<'static> {
     let primitives = [
         TypeDef {
             name: "bool",
@@ -102,7 +102,7 @@ pub fn basic_ctx() -> TopLevelContext<'static> {
         },
     ]
     .to_vec();
-    let mut ctx = TopLevelContext::new(primitives);
+    let mut ctx = GlobalContext::new(primitives);
 
     let b = ctx.get_primitive(BOOL_TYPE);
     let b_def = ctx.get_primitive_def_mut(BOOL_TYPE);

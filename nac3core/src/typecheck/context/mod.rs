@@ -1,4 +1,4 @@
 mod inference_context;
-mod top_level_context;
+mod global_context;
 pub use inference_context::InferenceContext;
-pub use top_level_context::TopLevelContext;
+pub use global_context::GlobalContext;
