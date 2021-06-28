@@ -1,6 +1,8 @@
+use super::super::location::{FileID, Location};
 use super::super::symbol_resolver::*;
 use super::super::typedef::*;
 use super::GlobalContext;
+use rustpython_parser::ast;
 use std::boxed::Box;
 use std::collections::HashMap;
 
@@ -17,34 +19,28 @@ pub struct InferenceContext<'a> {
     global: GlobalContext<'a>,
     /// per source symbol resolver
     resolver: Box<dyn SymbolResolver>,
+    /// File ID
+    file: FileID,
 
-    /// list of primitive instances
-    primitives: Vec<Type>,
-    /// list of variable instances
-    variables: Vec<Type>,
     /// identifier to (type, readable) mapping.
     /// an identifier might be defined earlier but has no value (for some code path), thus not
     /// readable.
-    sym_table: HashMap<&'a str, (Type, bool)>,
+    sym_table: HashMap<&'a str, (Type, bool, Location)>,
     /// stack
     stack: ContextStack<'a>,
 }
 
 // non-trivial implementations here
 impl<'a> InferenceContext<'a> {
-    /// return a new `InferenceContext` from `TopLevelContext` and resolution function.
-    pub fn new(global: GlobalContext, resolver: Box<dyn SymbolResolver>) -> InferenceContext {
-        let primitives = (0..global.primitive_defs.len())
-            .map(|v| TypeEnum::PrimitiveType(PrimitiveId(v)).into())
-            .collect();
-        let variables = (0..global.var_defs.len())
-            .map(|v| TypeEnum::TypeVariable(VariableId(v)).into())
-            .collect();
+    pub fn new(
+        global: GlobalContext,
+        resolver: Box<dyn SymbolResolver>,
+        file: FileID,
+    ) -> InferenceContext {
         InferenceContext {
             global,
             resolver,
-            primitives,
-            variables,
+            file,
             sym_table: HashMap::new(),
             stack: ContextStack {
                 level: 0,
@@ -56,7 +52,7 @@ impl<'a> InferenceContext<'a> {
     /// execute the function with new scope.
     /// variable assignment would be limited within the scope (not readable outside), and type
     /// returns the list of variables assigned within the scope, and the result of the function
-    pub fn with_scope<F, R>(&mut self, f: F) -> (Vec<&'a str>, R)
+    pub fn with_scope<F, R>(&mut self, f: F) -> (Vec<(&'a str, Type, Location)>, R)
     where
         F: FnOnce(&mut Self) -> R,
     {
@@ -68,8 +64,8 @@ impl<'a> InferenceContext<'a> {
             let (_, level) = self.stack.sym_def.last().unwrap();
             if *level > self.stack.level {
                 let (name, _) = self.stack.sym_def.pop().unwrap();
-                self.sym_table.remove(name).unwrap();
-                poped_names.push(name);
+                let (t, _, l) = self.sym_table.remove(name).unwrap();
+                poped_names.push((name, t, l));
             } else {
                 break;
             }
@@ -79,8 +75,8 @@ impl<'a> InferenceContext<'a> {
 
     /// assign a type to an identifier.
     /// may return error if the identifier was defined but with different type
-    pub fn assign(&mut self, name: &'a str, ty: Type) -> Result<Type, String> {
-        if let Some((t, x)) = self.sym_table.get_mut(name) {
+    pub fn assign(&mut self, name: &'a str, ty: Type, loc: ast::Location) -> Result<Type, String> {
+        if let Some((t, x, _)) = self.sym_table.get_mut(name) {
             if t == &ty {
                 if !*x {
                     self.stack.sym_def.push((name, self.stack.level));
@@ -92,21 +88,19 @@ impl<'a> InferenceContext<'a> {
             }
         } else {
             self.stack.sym_def.push((name, self.stack.level));
-            self.sym_table.insert(name, (ty.clone(), true));
+            self.sym_table.insert(
+                name,
+                (ty.clone(), true, Location::CodeRange(self.file, loc)),
+            );
             Ok(ty)
         }
-    }
-
-    /// check if an identifier is already defined
-    pub fn defined(&self, name: &str) -> bool {
-        self.sym_table.get(name).is_some()
     }
 
     /// get the type of an identifier
     /// may return error if the identifier is not defined, and cannot be resolved with the
     /// resolution function.
-    pub fn resolve(&mut self, name: &str) -> Result<Type, String> {
-        if let Some((t, x)) = self.sym_table.get(name) {
+    pub fn resolve(&self, name: &str) -> Result<Type, String> {
+        if let Some((t, x, _)) = self.sym_table.get(name) {
             if *x {
                 Ok(t.clone())
             } else {
@@ -120,15 +114,24 @@ impl<'a> InferenceContext<'a> {
             }
         }
     }
+
+    pub fn get_location(&self, name: &str) -> Option<Location> {
+        if let Some((_, _, l)) = self.sym_table.get(name) {
+            Some(*l)
+        } else {
+            self.resolver.get_symbol_location(name)
+        }
+    }
 }
 
 // trivial getters:
 impl<'a> InferenceContext<'a> {
     pub fn get_primitive(&self, id: PrimitiveId) -> Type {
-        self.primitives.get(id.0).unwrap().clone()
+        TypeEnum::PrimitiveType(id).into()
     }
+
     pub fn get_variable(&self, id: VariableId) -> Type {
-        self.variables.get(id.0).unwrap().clone()
+        TypeEnum::TypeVariable(id).into()
     }
 
     pub fn get_fn_def(&self, name: &str) -> Option<&FnDef> {
