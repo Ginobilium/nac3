@@ -64,8 +64,10 @@ impl<'a> InferenceContext<'a> {
             let (_, level) = self.stack.sym_def.last().unwrap();
             if *level > self.stack.level {
                 let (name, _) = self.stack.sym_def.pop().unwrap();
-                let (t, _, l) = self.sym_table.remove(name).unwrap();
-                poped_names.push((name, t, l));
+                let (t, b, l) = self.sym_table.get_mut(name).unwrap();
+                // set it to be unreadable
+                *b = false;
+                poped_names.push((name, t.clone(), *l));
             } else {
                 break;
             }
