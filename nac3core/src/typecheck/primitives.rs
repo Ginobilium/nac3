@@ -1,5 +1,5 @@
 use super::typedef::{TypeEnum::*, *};
-use crate::context::*;
+use super::context::*;
 use std::collections::HashMap;
 
 pub const TUPLE_TYPE: ParamId = ParamId(0);

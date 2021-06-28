@@ -1,5 +1,5 @@
-use crate::context::InferenceContext;
-use crate::typedef::{TypeEnum::*, *};
+use super::context::InferenceContext;
+use super::typedef::{TypeEnum::*, *};
 use std::collections::HashMap;
 
 fn find_subst(
@@ -168,8 +168,8 @@ pub fn resolve_call(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::context::TopLevelContext;
-    use crate::primitives::*;
+    use super::super::context::TopLevelContext;
+    use super::super::primitives::*;
     use std::rc::Rc;
 
     fn get_inference_context(ctx: TopLevelContext) -> InferenceContext {

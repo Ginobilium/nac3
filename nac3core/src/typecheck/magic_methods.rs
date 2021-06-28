@@ -1,4 +1,4 @@
-use rustpython_parser::ast::{Comparison, Operator, UnaryOperator};
+use rustpython_parser::ast::{Cmpop, Operator, Unaryop};
 
 pub fn binop_name(op: &Operator) -> &'static str {
     match op {
@@ -36,23 +36,23 @@ pub fn binop_assign_name(op: &Operator) -> &'static str {
     }
 }
 
-pub fn unaryop_name(op: &UnaryOperator) -> &'static str {
+pub fn unaryop_name(op: &Unaryop) -> &'static str {
     match op {
-        UnaryOperator::Pos => "__pos__",
-        UnaryOperator::Neg => "__neg__",
-        UnaryOperator::Not => "__not__",
-        UnaryOperator::Inv => "__inv__",
+        Unaryop::UAdd   => "__pos__",
+        Unaryop::USub   => "__neg__",
+        Unaryop::Not    => "__not__",
+        Unaryop::Invert => "__inv__",
     }
 }
 
-pub fn comparison_name(op: &Comparison) -> Option<&'static str> {
+pub fn comparison_name(op: &Cmpop) -> Option<&'static str> {
     match op {
-        Comparison::Less => Some("__lt__"),
-        Comparison::LessOrEqual => Some("__le__"),
-        Comparison::Greater => Some("__gt__"),
-        Comparison::GreaterOrEqual => Some("__ge__"),
-        Comparison::Equal => Some("__eq__"),
-        Comparison::NotEqual => Some("__ne__"),
+        Cmpop::Lt    => Some("__lt__"),
+        Cmpop::LtE   => Some("__le__"),
+        Cmpop::Gt    => Some("__gt__"),
+        Cmpop::GtE   => Some("__ge__"),
+        Cmpop::Eq    => Some("__eq__"),
+        Cmpop::NotEq => Some("__ne__"),
         _ => None,
     }
 }
