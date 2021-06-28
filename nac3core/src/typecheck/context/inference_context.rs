@@ -106,7 +106,7 @@ impl<'a> InferenceContext<'a> {
             if *x {
                 Ok(t.clone())
             } else {
-                Err("unbounded identifier".into())
+                Err("may not be defined".into())
             }
         } else {
             match self.resolver.get_symbol_type(name) {
