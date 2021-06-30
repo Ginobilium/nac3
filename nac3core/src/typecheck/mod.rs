@@ -1,7 +1,6 @@
-pub mod context;
-pub mod inference_core;
+mod context;
 pub mod location;
-pub mod magic_methods;
-pub mod primitives;
+mod magic_methods;
+mod primitives;
 pub mod symbol_resolver;
 pub mod typedef;
