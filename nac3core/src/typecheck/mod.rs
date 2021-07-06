@@ -5,3 +5,4 @@ pub mod magic_methods;
 pub mod primitives;
 pub mod symbol_resolver;
 pub mod typedef;
+pub mod expression_inference;

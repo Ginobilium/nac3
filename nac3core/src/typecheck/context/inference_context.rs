@@ -22,7 +22,7 @@ pub struct InferenceContext<'a> {
     /// File ID
     file: FileID,
 
-    /// identifier to (type, readable) mapping.
+    /// identifier to (type, readable, location) mapping.
     /// an identifier might be defined earlier but has no value (for some code path), thus not
     /// readable.
     sym_table: HashMap<&'a str, (Type, bool, Location)>,
