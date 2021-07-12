@@ -1,11 +1,13 @@
 use std::convert::TryInto;
 
 use crate::typecheck::context::InferenceContext;
+use crate::typecheck::inference_core;
+use crate::typecheck::magic_methods;
 use crate::typecheck::typedef::{Type, TypeEnum};
 use crate::typecheck::primitives;
 use rustpython_parser::ast;
 
-use super::magic_methods;
+use super::inference_core::resolve_call;
 
 pub struct ExpressionTypeInferencer<'a> {
     pub ctx: InferenceContext<'a>  //FIXME: may need to remove this pub
@@ -94,6 +96,225 @@ impl<'a> ExpressionTypeInferencer<'a> { // NOTE: add location here in the functi
             Err("tuple elements must have some type".into())
         }
     }
+
+    fn infer_arrtibute(&self, value: &Box<ast::Expr<Option<Type>>>, attr: &str) -> Result<Option<Type>, String> {
+        let ty = value.custom.clone().ok_or_else(|| "no value".to_string())?;
+        if let TypeEnum::TypeVariable(id) = ty.as_ref() {
+            let v = self.ctx.get_variable_def(*id);
+            if v.bound.is_empty() {
+                return Err("no fields on unbounded type variable".into());
+            }
+            let ty = v.bound[0].get_base(&self.ctx).and_then(|v| v.fields.get(attr));
+            if ty.is_none() {
+                return Err("unknown field".into());
+            }
+            for x in v.bound[1..].iter() {
+                let ty1 = x.get_base(&self.ctx).and_then(|v| v.fields.get(attr));
+                if ty1 != ty {
+                    return Err("unknown field (type mismatch between variants)".into());
+                }
+            }
+            return Ok(Some(ty.unwrap().clone()));
+        }
+        
+        match ty.get_base(&self.ctx) {
+            Some(b) => match b.fields.get(attr) {
+                Some(t) => Ok(Some(t.clone())),
+                None => Err("no such field".into()),
+            },
+            None => Err("this object has no fields".into()),
+        }
+    }
+
+    fn infer_bool_ops(&self, values: &Vec<ast::Expr<Option<Type>>>) -> Result<Option<Type>, String> {
+        assert_eq!(values.len(), 2); 
+        let left = values[0].custom.clone().ok_or_else(|| "no value".to_string())?;
+        let right = values[1].custom.clone().ok_or_else(|| "no value".to_string())?;
+        let b = self.ctx.get_primitive(primitives::BOOL_TYPE);
+        if left == b && right == b {
+            Ok(Some(b))
+        } else {
+            Err("bool operands must be bool".to_string())
+        }
+    }
+
+    fn _infer_bin_ops(&self, _left: &Box<ast::Expr<Option<Type>>>, _op: &ast::Operator, _right: &Box<ast::Expr<Option<Type>>>) -> Result<Option<Type>, String> {
+        Err("no need this function".into())
+    }
+
+    fn infer_unary_ops(&self, op: &ast::Unaryop, operand: &Box<ast::Expr<Option<Type>>>) -> Result<Option<Type>, String> {
+        if let ast::Unaryop::Not = op {
+            if (**operand).custom == Some(self.ctx.get_primitive(primitives::BOOL_TYPE)) {
+                Ok(Some(self.ctx.get_primitive(primitives::BOOL_TYPE)))
+            } else {
+                Err("logical not must be applied to bool".into())
+            }
+        } else {
+            inference_core::resolve_call(&self.ctx, (**operand).custom.clone(), magic_methods::unaryop_name(op), &[])
+        }
+    }
+
+    fn infer_compare(&self, left: &Box<ast::Expr<Option<Type>>>, ops: &Vec<ast::Cmpop>, comparators: &Vec<ast::Expr<Option<Type>>>) -> Result<Option<Type>, String> {
+        assert!(comparators.len() > 0);
+        if left.custom.is_none() || (!comparators.iter().all(|x| x.custom.is_some())) {
+            Err("comparison operands must have type".into())
+        } else {
+            let bool_type = Some(self.ctx.get_primitive(primitives::BOOL_TYPE));
+            let ty_first = resolve_call(
+                &self.ctx, 
+                Some(left.custom.clone().ok_or_else(|| "comparator must be able to be typed".to_string())?.clone()), 
+                magic_methods::comparison_name(&ops[0]).ok_or_else(|| "unsupported comparison".to_string())?, 
+                &[comparators[0].custom.clone().ok_or_else(|| "comparator must be able to be typed".to_string())?])?;
+            if ty_first != bool_type {
+                return Err("comparison result must be boolean".into());
+            }
+
+            for ((a, b), op) 
+            in comparators[..(comparators.len() - 1)]
+                .iter()
+                .zip(comparators[1..].iter())
+                .zip(ops[1..].iter()) {
+                    let ty = resolve_call(
+                        &self.ctx, 
+                        Some(a.custom.clone().ok_or_else(|| "comparator must be able to be typed".to_string())?.clone()), 
+                        magic_methods::comparison_name(op).ok_or_else(|| "unsupported comparison".to_string())?,
+                        &[b.custom.clone().ok_or_else(|| "comparator must be able to be typed".to_string())?.clone()])?;
+                    if ty != bool_type {
+                        return Err("comparison result must be boolean".into());
+                    }
+                }
+            Ok(bool_type)
+        }
+    }
+
+    fn infer_call(&self, func: &Box<ast::Expr<Option<Type>>>, args: &Vec<ast::Expr<Option<Type>>>, _keywords: &Vec<ast::Keyword<Option<Type>>>) -> Result<Option<Type>, String> {
+        if args.iter().all(|x| x.custom.is_some()) {
+            match &func.node {
+                ast::ExprKind::Name {id, ctx: _} 
+                    => resolve_call(
+                        &self.ctx, 
+                        None, 
+                        id, 
+                        &args.iter().map(|x| x.custom.clone().unwrap()).collect::<Vec<_>>()),
+                
+                ast::ExprKind::Attribute {value, attr, ctx: _}
+                    => resolve_call(
+                        &self.ctx, 
+                        Some(value.custom.clone().ok_or_else(|| "no value".to_string())?), 
+                        &attr, 
+                        &args.iter().map(|x| x.custom.clone().unwrap()).collect::<Vec<_>>()),
+                
+                _ => Err("not supported".into())
+            }
+        } else {
+            Err("function params must have type".into())
+        }
+    }
+
+    fn infer_slice(&self, lower: &Option<Box<ast::Expr<Option<Type>>>>, upper: &Option<Box<ast::Expr<Option<Type>>>>, step: &Option<Box<ast::Expr<Option<Type>>>>) -> Result<Option<Type>, String> {
+        let int32_type = self.ctx.get_primitive(primitives::INT32_TYPE);
+        let l = lower.as_ref().map_or(
+            Ok(&int32_type),
+            |x| x.custom.as_ref().ok_or("lower bound cannot be typped".to_string()))?;
+        let u = upper.as_ref().map_or(
+            Ok(&int32_type),
+            |x| x.custom.as_ref().ok_or("upper bound cannot be typped".to_string()))?;
+        let s = step.as_ref().map_or(
+            Ok(&int32_type),
+            |x| x.custom.as_ref().ok_or("step cannot be typped".to_string()))?;
+        
+        if l == &int32_type && u == &int32_type && s == &int32_type {
+            Ok(Some(self.ctx.get_primitive(primitives::SLICE_TYPE)))
+        } else {
+            Err("slice must be int32 type".into())
+        }
+    }
+
+    fn infer_subscript(&self, value: &Box<ast::Expr<Option<Type>>>, slice: &Box<ast::Expr<Option<Type>>>) -> Result<Option<Type>, String> {
+        // let tt = value.custom.ok_or_else(|| "no value".to_string())?.as_ref();
+
+        let t = if let TypeEnum::ParametricType(primitives::LIST_TYPE, ls) = value.custom.as_ref().ok_or_else(|| "no value".to_string())?.as_ref() {
+            ls[0].clone()
+        } else {
+            return Err("subscript is not supported for types other than list".into());
+        };
+
+       if slice.custom == Some(self.ctx.get_primitive(primitives::SLICE_TYPE)) {
+           Ok(value.custom.clone())
+       } else if slice.custom == Some(self.ctx.get_primitive(primitives::INT32_TYPE)) {
+           Ok(Some(t))
+       } else {
+           Err("slice or index must be int32 type".into())
+       }
+    }
+
+    fn infer_if_expr(&self, test: &Box<ast::Expr<Option<Type>>>, body: &Box<ast::Expr<Option<Type>>>, orelse: &Box<ast::Expr<Option<Type>>>) -> Result<Option<Type>, String> {
+        if test.custom != Some(self.ctx.get_primitive(primitives::BOOL_TYPE)) {
+            Err("test should be bool".into())
+        } else {
+            if body.custom == orelse.custom {
+                Ok(body.custom.clone())
+            } else {
+                Err("divergent type at if expression".into())
+            }
+        }
+    }
+
+    fn infer_simple_binding(&mut self, name: &'a ast::Expr<Option<Type>>, ty: Type) -> Result<(), String> {
+        match &name.node {
+            ast::ExprKind::Name {id, ctx: _} => {
+                if id == "_" {
+                    Ok(())
+                } else if self.ctx.defined(id.as_str()) {
+                    Err("duplicated naming".into())
+                } else {
+                    self.ctx.assign(id.as_str(), ty, name.location)?;
+                    Ok(())
+                }
+            }
+
+            ast::ExprKind::Tuple {elts, ctx: _} => {
+                if let TypeEnum::ParametricType(TUPLE_TYPE, ls) = ty.as_ref() {
+                    if elts.len() == ls.len() {
+                        for (a, b) in elts.iter().zip(ls.iter()) {
+                            self.infer_simple_binding(a, b.clone())?;
+                        }
+                        Ok(())
+                    } else {
+                        Err("different length".into())
+                    }
+                } else {
+                    Err("not supported".into())
+                }
+            }
+
+            _ => Err("not supported".into())
+        }
+    }
+
+    fn infer_list_comprehesion(&mut self, elt: &Box<ast::Expr<Option<Type>>>, generators: &Vec<ast::Comprehension<Option<Type>>>) -> Result<Option<Type>, String> {
+        if generators.len() != 1 {
+            Err("only 1 generator statement is supported".into())
+        } else {
+            let gen = &generators[0];
+            if gen.is_async {
+                Err("async is not supported".into())
+            } else {
+                let iter_type = gen.iter.custom.as_ref().ok_or("no value".to_string())?.as_ref();
+                if let TypeEnum::ParametricType(primitives::LIST_TYPE, ref ls) = iter_type {
+                    self.ctx.with_scope(|x| {
+                        // x.infer_simple_binding(&gen.target, ls[0].clone()); // FIXME:
+                        Ok(None)
+                    }).1
+                } else {
+                    Err("iteration is supported for list only".into())
+                }
+            }
+        }
+    }
+
+
+
 }
 
 // REVIEW: field custom: from () to Option<Type> or just Option<Type>?
@@ -105,217 +326,144 @@ impl<'a> ast::fold::Fold<Option<Type>> for ExpressionTypeInferencer<'a> {
         Ok(user)
     }
 
-    fn fold_expr(&mut self, expr: ast::Expr<Option<Type>>) -> Result<ast::Expr<Self::TargetU>, Self::Error> {
-        let ast::Expr {location, custom, node} = expr;
-        match node {
-            ast::ExprKind::Constant {value, kind} => 
-                Ok(ast::Expr {
-                    location, 
-                    custom: self.infer_constant_val(&value)?, 
-                    node: ast::ExprKind::Constant {value, kind}
+    // override the default fold_comprehension to avoid errors caused by folding locally bound variable
+    fn fold_comprehension(&mut self, node: ast::Comprehension<Option<Type>>) -> Result<ast::Comprehension<Self::TargetU>, Self::Error> {
+        Ok(ast::Comprehension {
+            target: node.target,
+            iter: Box::new(self.fold_expr(*node.iter)?),
+            ifs: node.ifs,
+            is_async: node.is_async
+        })
+    }
+
+    fn fold_expr(&mut self, node: ast::Expr<Option<Type>>) -> Result<ast::Expr<Self::TargetU>, Self::Error> {
+        assert_eq!(node.custom, None); // NOTE: should pass
+        let mut expr = node;
+        if let ast::Expr {location: _, custom: _, node: ast::ExprKind::ListComp {elt, generators } } = expr { 
+            expr = ast::Expr {
+                location: expr.location,
+                custom: expr.custom,
+                node: ast::ExprKind::ListComp {
+                    elt,
+                    generators: generators.into_iter().map(|x| self.fold_comprehension(x)).collect::<Result<Vec<_>, _>>()?
+                }
+            };
+        } else {
+            // if not listcomp which requires special handling, skip current level, make sure child nodes have their type
+            expr = ast::fold::fold_expr(self, expr)?;
+        }
+
+        match &expr.node {
+            ast::ExprKind::Constant {value, kind: _} => 
+            Ok(ast::Expr {
+                    location: expr.location, 
+                    custom: self.infer_constant_val(value)?, 
+                    node: expr.node
                 }),
-            
-            ast::ExprKind::Name {id, ctx} =>
-                Ok(ast::Expr {
-                    location, 
-                    custom: Some(self.ctx.resolve(&*id)?),  // REVIEW: the conversion from String to &str is not sure
-                    node: ast::ExprKind::Name {id, ctx}
+                
+            ast::ExprKind::Name {id, ctx: _} =>
+            Ok(ast::Expr {
+                location: expr.location, 
+                custom: Some(self.ctx.resolve(id)?),
+                    node: expr.node
                 }), 
-
-            ast::ExprKind::List {elts, ctx} => {
-                /* let folded = ast::fold::fold_expr(
-                    self, 
-                    ast::Expr {location, custom, node: ast::ExprKind::List {elts, ctx}})?;
-
-                if let ast::Expr {location: _, custom: _, node: ast::ExprKind::List {elts, ctx}} = folded {
-                    Ok(ast::Expr {
-                        location, 
-                        custom: self.infer_list_val(&elts)?,
-                        node: ast::ExprKind::List {elts, ctx}
-                    })
-                } else {
-                    Err("something wrong here".into())
-                } */
                 
-                let elts = elts
-                    .into_iter()
-                    .map(|x| self.fold_expr(x))
-                    .collect::<Result<Vec<ast::Expr<Option<Type>>>, _>>()?; // elements inside the vector should now have type info
-                
+            ast::ExprKind::List {elts, ctx: _} => {
                 Ok(ast::Expr {
-                    location, 
-                    custom: self.infer_list_val(&elts)?,
-                    node: ast::ExprKind::List {elts, ctx}
+                    location: expr.location,
+                    custom: self.infer_list_val(elts)?,
+                    node: expr.node
                 })
             }
 
-            ast::ExprKind::Tuple {elts, ctx} => {
-                // let folded_tup_expr = ast::fold::fold_expr(self, ast::Expr {location, custom, node})?;
-                let elts= elts
-                    .into_iter()
-                    .map(|x| self.fold_expr(x))
-                    .collect::<Result<Vec<ast::Expr<Option<Type>>>, _>>()?; // elements inside the vector should now have type info
-                
+            ast::ExprKind::Tuple {elts, ctx: _} => 
                 Ok(ast::Expr {
-                    location,
-                    custom: self.infer_tuple_val(&elts)?,
-                    node: ast::ExprKind::Tuple {elts, ctx}
-                })
-            }
+                    location: expr.location,
+                    custom: self.infer_tuple_val(elts)?,
+                    node: expr.node
+                }),
 
-            ast::ExprKind::Attribute {value, attr, ctx} => {
-                let folded_val = self.fold_expr(*value)?;
-
-                match folded_val.custom {
-                    Some(ref ty) => {
-                        if let TypeEnum::TypeVariable(_) = ty.as_ref() {
-                            Err("no fields for type variable".into())
-                        } else {
-                            ty
-                                .clone()
-                                .get_base(&self.ctx)
-                                .and_then(|b| b.fields.get(&*attr).clone())
-                                .map_or_else(
-                                    || Err("no such field".into()), 
-                                    |v| Ok(ast::Expr {
-                                        location,
-                                        custom: Some(v.clone()),
-                                        node: ast::ExprKind::Attribute {value: Box::new(folded_val), attr, ctx}
-                                    }))                            
-                        }
-                    },
-                    None => Err("no value".into())
-                }
-            }
-
-            ast::ExprKind::BoolOp {op, values} => {
-                assert_eq!(values.len(), 2); // NOTE: should panic
-                let folded = values
-                    .into_iter()
-                    .map(|x| self.fold_expr(x))
-                    .collect::<Result<Vec<ast::Expr<Option<Type>>>, _>>()?;
-                
-                if (&folded)
-                    .iter()
-                    .all(|x| x.custom == Some(self.ctx.get_primitive(primitives::BOOL_TYPE))) {
-                    Ok(ast::Expr {
-                        location,
-                        node: ast::ExprKind::BoolOp {op, values: folded},
-                        custom: Some(self.ctx.get_primitive(primitives::BOOL_TYPE))
-                    })
-                } else {
-                    Err("bool operands must be bool".into())
-                }
-            }
-
-            ast::ExprKind::BinOp {op, left, right} => {
-                let folded_left = self.fold_expr(*left)?;
-                let folded_right = self.fold_expr(*right)?;
-                let fun = magic_methods::binop_name(&op);
-                let left_type = folded_left.custom.clone().ok_or_else(|| "no value".to_string())?;
-                let right_type = folded_right.custom.clone().ok_or_else(|| "no value".to_string())?;
-
-                let result = crate::typecheck::inference_core::resolve_call(
-                    &self.ctx, 
-                    Some(left_type), 
-                    fun, 
-                    &[right_type])?;
-                
+            ast::ExprKind::Attribute {value, attr, ctx: _} => 
                 Ok(ast::Expr {
-                    location,
-                    custom: result,
-                    node: ast::ExprKind::BinOp {op, left: Box::new(folded_left), right: Box::new(folded_right)}
-                })
-            }
+                    location: expr.location,
+                    custom: self.infer_arrtibute(value, attr)?,
+                    node: expr.node
+                }),
+
+            ast::ExprKind::BoolOp {op: _, values} => 
+                Ok(ast::Expr {
+                    location: expr.location,
+                    custom: self.infer_bool_ops(values)?,
+                    node: expr.node
+                }),
+
+            ast::ExprKind::BinOp {left, op, right} => 
+                Ok(ast::Expr {
+                    location: expr.location,
+                    custom: inference_core::resolve_call(
+                        &self.ctx, 
+                        Some(left.custom.clone().ok_or_else(|| "no value".to_string())?), 
+                        magic_methods::binop_name(op), 
+                        &[right.custom.clone().ok_or_else(|| "no value".to_string())?])?,
+                    node: expr.node
+                }),
+
+            ast::ExprKind::UnaryOp {op, operand} => 
+                Ok(ast::Expr {
+                    location: expr.location,
+                    custom: self.infer_unary_ops(op, operand)?,
+                    node: expr.node
+                }),
+
+            ast::ExprKind::Compare {left, ops, comparators} => 
+                Ok(ast::Expr {
+                    location: expr.location,
+                    custom: self.infer_compare(left, ops, comparators)?,
+                    node: expr.node
+                }),
+
+            ast::ExprKind::Call {func, args, keywords} => 
+                Ok(ast::Expr {
+                    location: expr.location,
+                    custom: self.infer_call(func, args, keywords)?,
+                    node: expr.node
+                }),
+
+            // REVIEW: add a new primitive type for slice and do type check of bounds here?
+            ast::ExprKind::Slice {lower, upper, step } => 
+                Ok(ast::Expr {
+                    location: expr.location,
+                    custom: self.infer_slice(lower, upper, step)?, 
+                    node: expr.node
+                }),
+
+            ast::ExprKind::Subscript {value, slice, ctx} => 
+                Ok(ast::Expr {
+                    location: expr.location,
+                    custom: self.infer_subscript(value, slice)?,
+                    node: expr.node
+                }),
+
+            ast::ExprKind::IfExp {test, body, orelse} => 
+                Ok(ast::Expr {
+                    location: expr.location,
+                    custom: self.infer_if_expr(test, body, orelse)?,
+                    node: expr.node
+                }),
+
+            ast::ExprKind::ListComp {elt, generators} => 
+                Ok(ast::Expr {
+                    location: expr.location,
+                    custom: self.infer_list_comprehesion(elt, generators)?,
+                    node: expr.node
+                }),
+
             
-            ast::ExprKind::UnaryOp {op, operand} => {
-                let folded = self.fold_expr(*operand)?;
-                let ty = folded.custom.clone().ok_or_else(|| "no value".to_string())?;
-                if let ast::Unaryop::Not = op {
-                    if ty == self.ctx.get_primitive(primitives::BOOL_TYPE) {
-                        Ok(ast::Expr {
-                            location,
-                            node: ast::ExprKind::UnaryOp {op, operand: Box::new(folded)},
-                            custom: Some(self.ctx.get_primitive(primitives::BOOL_TYPE))
-                        })
-                    } else {
-                        Err("logical not must be applied to bool".into())
-                    }
-                } else {
-                    Ok(ast::Expr {
-                        location,
-                        custom: crate::typecheck::inference_core::resolve_call(
-                            &self.ctx, 
-                            Some(ty), 
-                            magic_methods::unaryop_name(&op), 
-                            &[])?,
-                        node: ast::ExprKind::UnaryOp {op, operand: Box::new(folded)},
-                    })
-                }
 
+
+            _ => { // not supported
+                Err("not supported yet".into())
             }
-            
-            ast::ExprKind::Compare {left, ops, comparators} => {
-                Err("not sure".into()) // FIXME: what is the `left` field here?
-            }
-
-            ast::ExprKind::Call {func, args, keywords} => {
-                if !keywords.is_empty() {
-                    Err("keyword is not supported yet".into())
-                } else {
-                    let folded_args = args
-                        .into_iter()
-                        .map(|x| self.fold_expr(x))
-                        .collect::<Result<Vec<ast::Expr<Option<Type>>>, _>>()?;
-
-                    if !folded_args.iter().all(|x| x.custom.is_some()) {
-                        Err("function params must have type".into())
-                    } else {
-                        match &func.node {
-                            ast::ExprKind::Name {id, ctx} => {
-                                Ok(ast::Expr {
-                                    location,
-                                    custom: crate::typecheck::inference_core::resolve_call(
-                                        &self.ctx, 
-                                        None, 
-                                        id,
-                                        &folded_args
-                                                .iter()
-                                                .map(|x| (x.custom.clone().unwrap()))
-                                                .collect::<Vec<_>>())?,
-                                    node: ast::ExprKind::Call {func, args: folded_args, keywords}
-                                })
-                            }
-
-                            ast::ExprKind::Attribute {value, attr, ctx} => {
-                                // Err("sdf".into())
-                                let folded_value = self.fold_expr(**value)?;
-                                Ok(ast::Expr {
-                                    location,
-                                    node: ast::ExprKind::Call {func, args: folded_args, keywords},
-                                    custom: crate::typecheck::inference_core::resolve_call(
-                                        &self.ctx, 
-                                        folded_value.custom, 
-                                        attr,
-                                        &folded_args
-                                                .iter()
-                                                .map(|x| (x.custom.clone().unwrap()))
-                                                .collect::<Vec<_>>())?
-                                })
-                            }
-
-
-                            _ => Err("not supported".into())
-                        }
-                        // Err("sdf".into())
-                    }
-
-                }
-            }
-
-
-            _ => 
-                Ok(ast::Expr {location, custom, node})
         }
     }
 }
