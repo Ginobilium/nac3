@@ -6,12 +6,12 @@ use rustpython_parser::ast;
 use std::boxed::Box;
 use std::collections::HashMap;
 
-struct ContextStack<'a> {
+pub struct ContextStack {
     /// stack level, starts from 0
-    level: u32,
+    pub level: u32,
     /// stack of symbol definitions containing (name, level) where `level` is the smallest level
     /// where the name is assigned a value
-    sym_def: Vec<(&'a str, u32)>,
+    pub sym_def: Vec<(String, u32)>,
 }
 
 pub struct InferenceContext<'a> {
@@ -25,9 +25,9 @@ pub struct InferenceContext<'a> {
     /// identifier to (type, readable, location) mapping.
     /// an identifier might be defined earlier but has no value (for some code path), thus not
     /// readable.
-    sym_table: HashMap<&'a str, (Type, bool, Location)>,
+    pub sym_table: HashMap<String, (Type, bool, Location)>,
     /// stack
-    stack: ContextStack<'a>,
+    pub stack: ContextStack,
 }
 
 // non-trivial implementations here
@@ -52,7 +52,7 @@ impl<'a> InferenceContext<'a> {
     /// execute the function with new scope.
     /// variable assignment would be limited within the scope (not readable outside), and type
     /// returns the list of variables assigned within the scope, and the result of the function
-    pub fn with_scope<F, R>(&mut self, f: F) -> (Vec<(&'a str, Type, Location)>, R)
+    pub fn with_scope<F, R>(&mut self, f: F) -> (Vec<(String, Type, Location)>, R)
     where
         F: FnOnce(&mut Self) -> R,
     {
@@ -64,7 +64,7 @@ impl<'a> InferenceContext<'a> {
             let (_, level) = self.stack.sym_def.last().unwrap();
             if *level > self.stack.level {
                 let (name, _) = self.stack.sym_def.pop().unwrap();
-                let (t, b, l) = self.sym_table.get_mut(name).unwrap();
+                let (t, b, l) = self.sym_table.get_mut(&name).unwrap();
                 // set it to be unreadable
                 *b = false;
                 poped_names.push((name, t.clone(), *l));
@@ -77,8 +77,8 @@ impl<'a> InferenceContext<'a> {
 
     /// assign a type to an identifier.
     /// may return error if the identifier was defined but with different type
-    pub fn assign(&mut self, name: &'a str, ty: Type, loc: ast::Location) -> Result<Type, String> {
-        if let Some((t, x, _)) = self.sym_table.get_mut(name) {
+    pub fn assign(&mut self, name: String, ty: Type, loc: ast::Location) -> Result<Type, String> {
+        if let Some((t, x, _)) = self.sym_table.get_mut(&name) {
             if t == &ty {
                 if !*x {
                     self.stack.sym_def.push((name, self.stack.level));
@@ -89,7 +89,7 @@ impl<'a> InferenceContext<'a> {
                 Err("different types".into())
             }
         } else {
-            self.stack.sym_def.push((name, self.stack.level));
+            self.stack.sym_def.push((name.clone(), self.stack.level));
             self.sym_table.insert(
                 name,
                 (ty.clone(), true, Location::CodeRange(self.file, loc)),
@@ -123,6 +123,11 @@ impl<'a> InferenceContext<'a> {
         } else {
             self.resolver.get_symbol_location(name)
         }
+    }
+
+    /// check if an identifier is already defined
+    pub fn defined(&self, name: &String) -> bool {
+        self.sym_table.get(name).is_some()
     }
 }
 
