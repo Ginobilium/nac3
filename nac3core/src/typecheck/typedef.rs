@@ -2,7 +2,7 @@ use ena::unify::{InPlaceUnificationTable, NoError, UnifyKey, UnifyValue};
 use generational_arena::{Arena, Index};
 use std::cell::RefCell;
 use std::collections::BTreeMap;
-use std::iter::{empty, once, Iterator};
+use std::iter::once;
 use std::mem::swap;
 use std::rc::Rc;
 
@@ -155,7 +155,7 @@ struct Unifier {
 }
 
 impl Unifier {
-    fn unify(&self, a: Type, b: Type) -> Result<(), String> {
+    fn unify(&self, mut a: Type, mut b: Type) -> Result<(), String> {
         let (mut i_a, mut i_b) = {
             let mut table = self.unification_table.borrow_mut();
             (table.probe_value(a), table.probe_value(b))
@@ -165,7 +165,7 @@ impl Unifier {
             return Ok(());
         }
 
-        let (ty_a_cell, ty_b_cell) = {
+        let (mut ty_a_cell, mut ty_b_cell) = {
             let arena = self.type_arena.borrow();
             (
                 arena.get(i_a.0).unwrap().clone(),
@@ -173,15 +173,17 @@ impl Unifier {
             )
         };
 
-        let mut ty_a = ty_a_cell.borrow();
-        let mut ty_b = ty_b_cell.borrow();
+        let (ty_a, ty_b) = {
+            // simplify our pattern matching...
+            if ty_a_cell.borrow().kind_le(&ty_b_cell.borrow()) {
+                swap(&mut a, &mut b);
+                swap(&mut i_a, &mut i_b);
+                swap(&mut ty_a_cell, &mut ty_b_cell);
+            }
+            (ty_a_cell.borrow(), ty_b_cell.borrow())
+        };
 
-        // simplify our pattern matching...
-        if ty_a.kind_le(&ty_b) {
-            swap(&mut i_a, &mut i_b);
-            swap(&mut ty_a, &mut ty_b);
-        }
-
+        self.occur_check(i_a, b)?;
         match &*ty_a {
             TypeEnum::TVar { .. } => {
                 match *ty_b {
@@ -195,12 +197,11 @@ impl Unifier {
                             } else {
                                 i_a
                             }
-                        }
-                        .0;
-                        self.type_arena.borrow_mut().remove(old);
+                        };
+                        self.type_arena.borrow_mut().remove(old.0);
                     }
                     _ => {
-                        // TODO: type variables bound check and occur check
+                        // TODO: type variables bound check
                         self.set_a_to_b(a, b);
                     }
                 }
@@ -208,7 +209,6 @@ impl Unifier {
             TypeEnum::TSeq { map: map1 } => {
                 match &*ty_b {
                     TypeEnum::TSeq { map: map2 } => {
-                        self.set_a_to_b(a, b);
                         drop(ty_a);
                         if let TypeEnum::TSeq { map: map1 } = &mut *ty_a_cell.as_ref().borrow_mut()
                         {
@@ -223,9 +223,9 @@ impl Unifier {
                         } else {
                             unreachable!()
                         }
+                        self.set_a_to_b(a, b);
                     }
                     TypeEnum::TTuple { ty: types } => {
-                        self.set_a_to_b(a, b);
                         let len = types.len() as u32;
                         for (k, v) in map1.iter() {
                             if *k >= len {
@@ -237,12 +237,13 @@ impl Unifier {
                             }
                             self.unify(*v, types[*k as usize])?;
                         }
+                        self.set_a_to_b(a, b);
                     }
                     TypeEnum::TList { ty } => {
-                        self.set_a_to_b(a, b);
                         for v in map1.values() {
                             self.unify(*v, *ty)?;
                         }
+                        self.set_a_to_b(a, b);
                     }
                     _ => {
                         return self.report_kind_error(&*ty_a, &*ty_b);
@@ -258,26 +259,25 @@ impl Unifier {
                             ty2.len()
                         ));
                     }
-                    self.set_a_to_b(a, b);
-                    for (a, b) in ty1.iter().zip(ty2.iter()) {
-                        self.unify(*a, *b)?;
+                    for (x, y) in ty1.iter().zip(ty2.iter()) {
+                        self.unify(*x, *y)?;
                     }
+                    self.set_a_to_b(a, b);
                 } else {
                     return self.report_kind_error(&*ty_a, &*ty_b);
                 }
             }
             TypeEnum::TList { ty: ty1 } => {
                 if let TypeEnum::TList { ty: ty2 } = *ty_b {
-                    self.set_a_to_b(a, b);
                     self.unify(*ty1, ty2)?;
+                    self.set_a_to_b(a, b);
                 } else {
                     return self.report_kind_error(&*ty_a, &*ty_b);
                 }
             }
-            TypeEnum::TRecord { .. } => {
+            TypeEnum::TRecord { fields: fields1 } => {
                 match &*ty_b {
                     TypeEnum::TRecord { fields: fields2 } => {
-                        self.set_a_to_b(a, b);
                         drop(ty_a);
                         if let TypeEnum::TRecord { fields: fields1 } =
                             &mut *ty_a_cell.as_ref().borrow_mut()
@@ -292,11 +292,57 @@ impl Unifier {
                         } else {
                             unreachable!()
                         }
+                        self.set_a_to_b(a, b);
                     }
-                    // obj...
+                    TypeEnum::TObj {
+                        fields: fields2, ..
+                    } => {
+                        for (key, value) in fields1.iter() {
+                            if let Some(ty) = fields2.get(key) {
+                                self.unify(*ty, *value)?;
+                            } else {
+                                return Err(format!("No such attribute {}", key));
+                            }
+                        }
+                        self.set_a_to_b(a, b);
+                    }
+                    TypeEnum::TVirtual { ty } => {
+                        // not sure if this is correct...
+                        self.unify(a, *ty)?;
+                        self.set_a_to_b(a, b);
+                    }
                     _ => {
                         return self.report_kind_error(&*ty_a, &*ty_b);
                     }
+                }
+            }
+            TypeEnum::TObj {
+                obj_id: id1,
+                params: params1,
+                ..
+            } => {
+                if let TypeEnum::TObj {
+                    obj_id: id2,
+                    params: params2,
+                    ..
+                } = &*ty_b
+                {
+                    if id1 != id2 {
+                        return Err(format!("Cannot unify objects with ID {} and {}", id1, id2));
+                    }
+                    for (x, y) in params1.values().zip(params2.values()) {
+                        self.unify(*x, *y)?;
+                    }
+                    self.set_a_to_b(a, b);
+                } else {
+                    return self.report_kind_error(&*ty_a, &*ty_b);
+                }
+            }
+            TypeEnum::TVirtual { ty: ty1 } => {
+                if let TypeEnum::TVirtual { ty: ty2 } = &*ty_b {
+                    self.unify(*ty1, *ty2)?;
+                } else {
+                    return self.report_kind_error(&*ty_a, &*ty_b);
                 }
             }
             _ => unimplemented!(),
