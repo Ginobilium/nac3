@@ -1,9 +1,9 @@
 use ena::unify::{InPlaceUnificationTable, NoError, UnifyKey, UnifyValue};
 use generational_arena::{Arena, Index};
-use std::borrow::{BorrowMut, Cow};
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::mem::swap;
+use std::rc::Rc;
 
 // Order:
 // TVar
@@ -63,44 +63,41 @@ struct FuncArg {
     is_optional: bool,
 }
 
-// We use a lot of `RefCell`s here as we want to simplify our code.
-// Pattern:
-// 1. Take the complex data structure out
-// 2. Drop the arena (required before unification)
-// 3. Do unification for each type in the data structure
-// 4. Put the complex data structure back...
+// We use a lot of `Rc`/`RefCell`s here as we want to simplify our code.
+// We may not really need so much `Rc`s, but we would have to do complicated
+// stuffs otherwise.
 enum TypeEnum {
     TVar {
         // TODO: upper/lower bound
         id: u32,
     },
     TSeq {
-        map: RefCell<VarMap>,
+        map: VarMap,
     },
     TTuple {
-        ty: RefCell<Vec<Type>>,
+        ty: Vec<Type>,
     },
     TList {
         ty: Type,
     },
     TRecord {
-        fields: RefCell<Mapping<String>>,
+        fields: Mapping<String>,
     },
     TObj {
         obj_id: usize,
-        fields: RefCell<Mapping<String>>,
-        params: RefCell<VarMap>,
+        fields: Mapping<String>,
+        params: VarMap,
     },
     TVirtual {
         ty: Type,
     },
     TCall {
-        calls: RefCell<Vec<Call>>,
+        calls: Vec<Call>,
     },
     TFunc {
-        args: RefCell<Vec<FuncArg>>,
+        args: Vec<FuncArg>,
         ret: Type,
-        params: RefCell<VarMap>,
+        params: VarMap,
     },
 }
 
@@ -150,7 +147,7 @@ struct ObjDef {
 
 struct Unifier {
     unification_table: RefCell<InPlaceUnificationTable<Type>>,
-    type_arena: RefCell<Arena<TypeEnum>>,
+    type_arena: RefCell<Arena<Rc<RefCell<TypeEnum>>>>,
     obj_def_table: Vec<ObjDef>,
 }
 
@@ -165,19 +162,26 @@ impl Unifier {
             return Ok(());
         }
 
-        let arena = self.type_arena.borrow();
-        let mut ty_a = arena.get(i_a.0).unwrap();
-        let mut ty_b = arena.get(i_b.0).unwrap();
+        let (ty_a_cell, ty_b_cell) = {
+            let arena = self.type_arena.borrow();
+            (
+                arena.get(i_a.0).unwrap().clone(),
+                arena.get(i_b.0).unwrap().clone(),
+            )
+        };
+
+        let mut ty_a = ty_a_cell.borrow();
+        let mut ty_b = ty_b_cell.borrow();
 
         // simplify our pattern matching...
-        if ty_a.kind_le(ty_b) {
+        if ty_a.kind_le(&ty_b) {
             swap(&mut i_a, &mut i_b);
             swap(&mut ty_a, &mut ty_b);
         }
 
-        match ty_a {
+        match &*ty_a {
             TypeEnum::TVar { .. } => {
-                match ty_b {
+                match *ty_b {
                     TypeEnum::TVar { .. } => {
                         // TODO: type variables bound check
                         let old = {
@@ -190,51 +194,37 @@ impl Unifier {
                             }
                         }
                         .0;
-                        drop(arena);
                         self.type_arena.borrow_mut().remove(old);
                     }
                     _ => {
                         // TODO: type variables bound check and occur check
-                        drop(arena);
                         self.set_a_to_b(a, b);
                     }
                 }
             }
             TypeEnum::TSeq { map: map1 } => {
-                match ty_b {
+                match &*ty_b {
                     TypeEnum::TSeq { map: map2 } => {
-                        // we get the tables out first.
-                        // unification requires mutable access to the underlying
-                        // structs, so we have to manaully drop the arena first,
-                        // do the unification, and then get a mutable reference
-                        // and put them back...
-                        let mut map1 = map1.take();
-                        let map2 = map2.take();
-                        drop(arena);
                         self.set_a_to_b(a, b);
-                        // unify them to map1
-                        for (key, value) in map2.iter() {
-                            if let Some(ty) = map1.get(key) {
-                                self.unify(*ty, *value)?;
-                            } else {
-                                map1.insert(*key, *value);
-                            }
-                        }
-                        if let Some(TypeEnum::TSeq { map: mapping }) =
-                            self.type_arena.borrow().get(i_b.0)
+                        drop(ty_a);
+                        if let TypeEnum::TSeq { map: map1 } = &mut *ty_a_cell.as_ref().borrow_mut()
                         {
-                            *mapping.borrow_mut() = map1;
+                            // unify them to map1
+                            for (key, value) in map2.iter() {
+                                if let Some(ty) = map1.get(key) {
+                                    self.unify(*ty, *value)?;
+                                } else {
+                                    map1.insert(*key, *value);
+                                }
+                            }
                         } else {
                             unreachable!()
                         }
                     }
                     TypeEnum::TTuple { ty: types } => {
-                        let map = map1.take();
-                        let types = types.take();
-                        drop(arena);
                         self.set_a_to_b(a, b);
                         let len = types.len() as u32;
-                        for (k, v) in map.iter() {
+                        for (k, v) in map1.iter() {
                             if *k >= len {
                                 return Err(format!(
                                     "Tuple index out of range. (Length: {}, Index: {})",
@@ -244,31 +234,20 @@ impl Unifier {
                             }
                             self.unify(*v, types[*k as usize])?;
                         }
-
-                        if let Some(TypeEnum::TTuple { ty }) = self.type_arena.borrow().get(i_b.0) {
-                            *ty.borrow_mut() = types;
-                        } else {
-                            unreachable!()
-                        }
                     }
                     TypeEnum::TList { ty } => {
-                        let map = map1.take();
-                        let ty = *ty;
-                        drop(arena);
                         self.set_a_to_b(a, b);
-                        for v in map.values() {
-                            self.unify(*v, ty)?;
+                        for v in map1.values() {
+                            self.unify(*v, *ty)?;
                         }
                     }
                     _ => {
-                        return self.report_kind_error(ty_a, ty_b);
+                        return self.report_kind_error(&*ty_a, &*ty_b);
                     }
                 }
             }
             TypeEnum::TTuple { ty: ty1 } => {
-                if let TypeEnum::TTuple { ty: ty2 } = ty_b {
-                    let ty1 = ty1.take();
-                    let ty2 = ty2.take();
+                if let TypeEnum::TTuple { ty: ty2 } = &*ty_b {
                     if ty1.len() != ty2.len() {
                         return Err(format!(
                             "Cannot unify tuples with length {} and {}",
@@ -276,58 +255,44 @@ impl Unifier {
                             ty2.len()
                         ));
                     }
-                    drop(arena);
                     self.set_a_to_b(a, b);
                     for (a, b) in ty1.iter().zip(ty2.iter()) {
                         self.unify(*a, *b)?;
                     }
-                    if let Some(TypeEnum::TTuple { ty }) =
-                        self.type_arena.borrow_mut().get_mut(i_b.0)
-                    {
-                        *ty.borrow_mut().get_mut() = ty1;
-                    } else {
-                        unreachable!()
-                    }
                 } else {
-                    return self.report_kind_error(ty_a, ty_b);
+                    return self.report_kind_error(&*ty_a, &*ty_b);
                 }
             }
             TypeEnum::TList { ty: ty1 } => {
-                if let TypeEnum::TList { ty: ty2 } = ty_b {
-                    let ty1 = *ty1;
-                    let ty2 = *ty2;
-                    drop(arena);
+                if let TypeEnum::TList { ty: ty2 } = *ty_b {
                     self.set_a_to_b(a, b);
-                    self.unify(ty1, ty2)?;
+                    self.unify(*ty1, ty2)?;
                 } else {
-                    return self.report_kind_error(ty_a, ty_b);
+                    return self.report_kind_error(&*ty_a, &*ty_b);
                 }
             }
-            TypeEnum::TRecord { fields: fields1 } => {
-                match ty_b {
+            TypeEnum::TRecord { .. } => {
+                match &*ty_b {
                     TypeEnum::TRecord { fields: fields2 } => {
-                        let mut fields1 = fields1.take();
-                        let fields2 = fields2.take();
-                        drop(arena);
                         self.set_a_to_b(a, b);
-                        for (key, value) in fields2.iter() {
-                            if let Some(ty) = fields1.get(key) {
-                                self.unify(*ty, *value)?;
-                            } else {
-                                fields1.insert(key.clone(), *value);
-                            }
-                        }
-                        if let Some(TypeEnum::TRecord { fields }) =
-                            self.type_arena.borrow().get(i_b.0)
+                        drop(ty_a);
+                        if let TypeEnum::TRecord { fields: fields1 } =
+                            &mut *ty_a_cell.as_ref().borrow_mut()
                         {
-                            *fields.borrow_mut() = fields1;
+                            for (key, value) in fields2.iter() {
+                                if let Some(ty) = fields1.get(key) {
+                                    self.unify(*ty, *value)?;
+                                } else {
+                                    fields1.insert(key.clone(), *value);
+                                }
+                            }
                         } else {
                             unreachable!()
                         }
                     }
                     // obj...
                     _ => {
-                        return self.report_kind_error(ty_a, ty_b);
+                        return self.report_kind_error(&*ty_a, &*ty_b);
                     }
                 }
             }
@@ -357,36 +322,27 @@ impl Unifier {
 
     fn subst(&self, a: Type, mapping: &VarMap) -> Option<Type> {
         let index = self.unification_table.borrow_mut().probe_value(a);
-        let arena = self.type_arena.borrow();
-        let ty = arena.get(index.0).unwrap();
+        let ty_cell = {
+            let arena = self.type_arena.borrow();
+            arena.get(index.0).unwrap().clone()
+        };
+        let ty = ty_cell.borrow();
         // this function would only be called when we instantiate functions.
         // function type signature should ONLY contain concrete types and type
         // variables, i.e. things like TRecord, TCall should not occur, and we
         // should be safe to not implement the substitution for those variants.
-        match ty {
+        match &*ty {
             TypeEnum::TVar { id } => mapping.get(&id).cloned(),
-            TypeEnum::TSeq { map } => {
-                let map = map.take();
-                drop(arena);
-                let new_map = self.subst_map(&map, mapping);
-                if let Some(TypeEnum::TSeq { map: m }) = self.type_arena.borrow().get(index.0) {
-                    *m.borrow_mut() = map;
-                } else {
-                    unreachable!();
-                };
-                new_map.map(|m| {
-                    let index = self
-                        .type_arena
-                        .borrow_mut()
-                        .insert(TypeEnum::TSeq { map: m.into() });
-                    self.unification_table
-                        .borrow_mut()
-                        .new_key(TypeIndex(index))
-                })
-            }
+            TypeEnum::TSeq { map } => self.subst_map(map, mapping).map(|m| {
+                let index = self
+                    .type_arena
+                    .borrow_mut()
+                    .insert(Rc::new(TypeEnum::TSeq { map: m }.into()));
+                self.unification_table
+                    .borrow_mut()
+                    .new_key(TypeIndex(index))
+            }),
             TypeEnum::TTuple { ty } => {
-                let ty = ty.take();
-                drop(arena);
                 let mut new_ty = None;
                 for (i, t) in ty.iter().enumerate() {
                     if let Some(t1) = self.subst(*t, mapping) {
@@ -396,58 +352,39 @@ impl Unifier {
                         new_ty.as_mut().unwrap()[i] = t1;
                     }
                 }
-                if let Some(TypeEnum::TTuple { ty: t }) = self.type_arena.borrow().get(index.0) {
-                    *t.borrow_mut() = ty;
-                } else {
-                    unreachable!();
-                };
                 new_ty.map(|t| {
                     let index = self
                         .type_arena
                         .borrow_mut()
-                        .insert(TypeEnum::TTuple { ty: t.into() });
+                        .insert(Rc::new(TypeEnum::TTuple { ty: t }.into()));
                     self.unification_table
                         .borrow_mut()
                         .new_key(TypeIndex(index))
                 })
             }
-            TypeEnum::TList { ty } => {
-                let ty = *ty;
-                drop(arena);
-                self.subst(ty, mapping).map(|t| {
-                    let index = self
-                        .type_arena
-                        .borrow_mut()
-                        .insert(TypeEnum::TList { ty: t });
-                    self.unification_table
-                        .borrow_mut()
-                        .new_key(TypeIndex(index))
-                })
-            }
-            TypeEnum::TVirtual { ty } => {
-                let ty = *ty;
-                drop(arena);
-                self.subst(ty, mapping).map(|t| {
-                    let index = self
-                        .type_arena
-                        .borrow_mut()
-                        .insert(TypeEnum::TVirtual { ty: t });
-                    self.unification_table
-                        .borrow_mut()
-                        .new_key(TypeIndex(index))
-                })
-            }
+            TypeEnum::TList { ty } => self.subst(*ty, mapping).map(|t| {
+                let index = self
+                    .type_arena
+                    .borrow_mut()
+                    .insert(Rc::new(TypeEnum::TList { ty: t }.into()));
+                self.unification_table
+                    .borrow_mut()
+                    .new_key(TypeIndex(index))
+            }),
+            TypeEnum::TVirtual { ty } => self.subst(*ty, mapping).map(|t| {
+                let index = self
+                    .type_arena
+                    .borrow_mut()
+                    .insert(Rc::new(TypeEnum::TVirtual { ty: t }.into()));
+                self.unification_table
+                    .borrow_mut()
+                    .new_key(TypeIndex(index))
+            }),
             TypeEnum::TObj {
                 obj_id,
                 fields,
                 params,
             } => {
-                let obj_id = *obj_id;
-                let params = params.take();
-                let fields = fields.take();
-                drop(arena);
-                let mut new_params = None;
-                let mut new_fields = None;
                 // Type variables in field types must be present in the type parameter.
                 // If the mapping does not contain any type variables in the
                 // parameter list, we don't need to substitute the fields.
@@ -455,38 +392,29 @@ impl Unifier {
                 let need_subst = params.values().any(|v| {
                     let index = self.unification_table.borrow_mut().probe_value(*v);
                     let arena = self.type_arena.borrow();
-                    let ty = arena.get(index.0).unwrap();
-                    if let TypeEnum::TVar { id } = ty {
+                    let ty_cell = arena.get(index.0).unwrap();
+                    let ty = ty_cell.borrow();
+                    if let TypeEnum::TVar { id } = &*ty {
                         mapping.contains_key(id)
                     } else {
                         false
                     }
                 });
                 if need_subst {
-                    new_params = self
-                        .subst_map(&params, mapping)
-                        .or_else(|| Some(params.clone()));
-                    new_fields = self
-                        .subst_map(&fields, mapping)
-                        .or_else(|| Some(fields.clone()));
-                }
-                if let Some(TypeEnum::TObj {
-                    params: p,
-                    fields: f,
-                    ..
-                }) = self.type_arena.borrow().get(index.0)
-                {
-                    *p.borrow_mut() = params;
-                    *f.borrow_mut() = fields;
-                } else {
-                    unreachable!();
-                };
-                if need_subst {
-                    let index = self.type_arena.borrow_mut().insert(TypeEnum::TObj {
-                        obj_id,
-                        params: new_params.unwrap().into(),
-                        fields: new_fields.unwrap().into(),
-                    });
+                    let index = self.type_arena.borrow_mut().insert(Rc::new(
+                        TypeEnum::TObj {
+                            obj_id: *obj_id,
+                            params: self
+                                .subst_map(&params, mapping)
+                                .or_else(|| Some(params.clone()))
+                                .unwrap(),
+                            fields: self
+                                .subst_map(&fields, mapping)
+                                .or_else(|| Some(fields.clone()))
+                                .unwrap(),
+                        }
+                        .into(),
+                    ));
                     Some(
                         self.unification_table
                             .borrow_mut()
