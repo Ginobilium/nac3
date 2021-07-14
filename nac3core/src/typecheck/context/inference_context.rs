@@ -8,10 +8,10 @@ use std::collections::HashMap;
 
 pub struct ContextStack {
     /// stack level, starts from 0
-    pub level: u32,
+    level: u32,
     /// stack of symbol definitions containing (name, level) where `level` is the smallest level
     /// where the name is assigned a value
-    pub sym_def: Vec<(String, u32)>,
+    sym_def: Vec<(String, u32)>,
 }
 
 pub struct InferenceContext<'a> {
@@ -25,9 +25,9 @@ pub struct InferenceContext<'a> {
     /// identifier to (type, readable, location) mapping.
     /// an identifier might be defined earlier but has no value (for some code path), thus not
     /// readable.
-    pub sym_table: HashMap<String, (Type, bool, Location)>,
+    sym_table: HashMap<String, (Type, bool, Location)>,
     /// stack
-    pub stack: ContextStack,
+    stack: ContextStack,
 }
 
 // non-trivial implementations here
