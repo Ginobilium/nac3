@@ -8,6 +8,7 @@ use crate::typecheck::primitives;
 use rustpython_parser::ast;
 use rustpython_parser::ast::fold::Fold;
 
+// REVIEW: direct impl fold trait on InferenceContext
 impl<'a> ast::fold::Fold<Option<Type>> for InferenceContext<'a> {
     type TargetU = Option<Type>;
     type Error = String;
@@ -379,6 +380,7 @@ impl<'a> InferenceContext<'a> {
             }       
     }
 
+    // some pre-folds need special handling
     fn prefold_list_comprehension(&mut self, expr: ast::Expr<Option<Type>>) -> Result<ast::Expr<Option<Type>>, String> {
         if let ast::Expr {
             location, 
