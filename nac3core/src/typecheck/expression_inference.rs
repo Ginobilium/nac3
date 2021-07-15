@@ -19,112 +19,35 @@ impl<'a> ast::fold::Fold<Option<Type>> for InferenceContext<'a> {
 
     fn fold_expr(&mut self, node: ast::Expr<Option<Type>>) -> Result<ast::Expr<Self::TargetU>, Self::Error> {
         assert_eq!(node.custom, None);
+        
+        // pre-fold
         let mut expr = node;
-
-        match &expr.node {
-            ast::ExprKind::ListComp { .. } => expr = self.prefold_list_comprehension(expr)?,
-            _ => expr = rustpython_parser::ast::fold::fold_expr(self, expr)?
+        expr = match &expr.node {
+            ast::ExprKind::ListComp { .. } => self.prefold_list_comprehension(expr)?,
+            _ => rustpython_parser::ast::fold::fold_expr(self, expr)?
         };
 
-        match &expr.node {
-            ast::ExprKind::Constant {value, kind: _} => 
-            Ok(ast::Expr {
-                    location: expr.location, 
-                    custom: self.infer_constant(value)?, 
-                    node: expr.node
-                }),
-                
-            ast::ExprKind::Name {id, ctx: _} =>
-            Ok(ast::Expr {
-                location: expr.location, 
-                custom: Some(self.resolve(id)?),
-                    node: expr.node
-                }), 
-                
-            ast::ExprKind::List {elts, ctx: _} => 
-                Ok(ast::Expr {
-                    location: expr.location,
-                    custom: self.infer_list(elts)?,
-                    node: expr.node
-                }),
-
-            ast::ExprKind::Tuple {elts, ctx: _} => 
-                Ok(ast::Expr {
-                    location: expr.location,
-                    custom: self.infer_tuple(elts)?,
-                    node: expr.node
-                }),
-
-            ast::ExprKind::Attribute {value, attr, ctx: _} => 
-                Ok(ast::Expr {
-                    location: expr.location,
-                    custom: self.infer_arrtibute(value, attr)?,
-                    node: expr.node
-                }),
-
-            ast::ExprKind::BoolOp {op: _, values} => 
-                Ok(ast::Expr {
-                    location: expr.location,
-                    custom: self.infer_bool_ops(values)?,
-                    node: expr.node
-                }),
-
-            ast::ExprKind::BinOp {left, op, right} => 
-                Ok(ast::Expr {
-                    location: expr.location,
-                    custom: inference_core::resolve_call(
-                        &self, 
-                        Some(left.custom.clone().ok_or_else(|| "no value".to_string())?), 
-                        magic_methods::binop_name(op), 
-                        &[right.custom.clone().ok_or_else(|| "no value".to_string())?])?,
-                    node: expr.node
-                }),
-
-            ast::ExprKind::UnaryOp {op, operand} => 
-                Ok(ast::Expr {
-                    location: expr.location,
-                    custom: self.infer_unary_ops(op, operand)?,
-                    node: expr.node
-                }),
-
-            ast::ExprKind::Compare {left, ops, comparators} => 
-                Ok(ast::Expr {
-                    location: expr.location,
-                    custom: self.infer_compare(left, ops, comparators)?,
-                    node: expr.node
-                }),
-
-            ast::ExprKind::Call {func, args, keywords} => 
-                Ok(ast::Expr {
-                    location: expr.location,
-                    custom: self.infer_call(func, args, keywords)?,
-                    node: expr.node
-                }),
-
-            ast::ExprKind::Subscript {value, slice, ctx: _} => 
-                Ok(ast::Expr {
-                    location: expr.location,
-                    custom: self.infer_subscript(value, slice)?,
-                    node: expr.node
-                }),
-
-            ast::ExprKind::IfExp {test, body, orelse} => 
-                Ok(ast::Expr {
-                    location: expr.location,
-                    custom: self.infer_if_expr(test, body, orelse)?,
-                    node: expr.node
-                }),
-
-            ast::ExprKind::ListComp {elt, generators} => 
-                Ok(ast::Expr {
-                    location: expr.location,
-                    custom: self.infer_list_comprehesion(elt, generators)?,
-                    node: expr.node
-                }),
-            
-            // not supported
-            _ => Err("not supported yet".into())
-        }
+        Ok(ast::Expr {
+            // compute type info and store in the custom field
+            custom: match &expr.node {
+                ast::ExprKind::Constant {value, kind: _} => self.infer_constant(value),
+                ast::ExprKind::Name {id, ctx: _} => Ok(Some(self.resolve(id)?)),
+                ast::ExprKind::List {elts, ctx: _} => self.infer_list(elts),
+                ast::ExprKind::Tuple {elts, ctx: _} => self.infer_tuple(elts),
+                ast::ExprKind::Attribute {value, attr, ctx: _} => self.infer_arrtibute(value, attr),
+                ast::ExprKind::BoolOp {op: _, values} => self.infer_bool_ops(values),
+                ast::ExprKind::BinOp {left, op, right} => self.infer_bin_ops(left, op, right),
+                ast::ExprKind::UnaryOp {op, operand} => self.infer_unary_ops(op, operand),
+                ast::ExprKind::Compare {left, ops, comparators} => self.infer_compare(left, ops, comparators),
+                ast::ExprKind::Call {func, args, keywords} => self.infer_call(func, args, keywords),
+                ast::ExprKind::Subscript {value, slice, ctx: _} => self.infer_subscript(value, slice),
+                ast::ExprKind::IfExp {test, body, orelse} => self.infer_if_expr(test, body, orelse),
+                ast::ExprKind::ListComp {elt, generators} => self.infer_list_comprehesion(elt, generators),
+                _ => Err("not supported yet".into())
+            }?,
+            location: expr.location,
+            node: expr.node
+        })
     }
 }
 
@@ -152,7 +75,7 @@ impl<'a> InferenceContext<'a> {
 
             ast::Constant::Tuple(vals) => {
                 let result = vals
-                    .into_iter()
+                    .iter()
                     .map(|x| self.infer_constant(x))
                     .collect::<Vec<_>>();
                 
@@ -251,8 +174,12 @@ impl<'a> InferenceContext<'a> {
         }
     }
 
-    fn _infer_bin_ops(&self, _left: &Box<ast::Expr<Option<Type>>>, _op: &ast::Operator, _right: &Box<ast::Expr<Option<Type>>>) -> Result<Option<Type>, String> {
-        Err("no need this function".into())
+    fn infer_bin_ops(&self, left: &Box<ast::Expr<Option<Type>>>, op: &ast::Operator, right: &Box<ast::Expr<Option<Type>>>) -> Result<Option<Type>, String> {
+        inference_core::resolve_call(
+            &self, 
+            Some(left.custom.clone().ok_or_else(|| "no value".to_string())?), 
+            magic_methods::binop_name(op), 
+            &[right.custom.clone().ok_or_else(|| "no value".to_string())?])
     }
 
     fn infer_unary_ops(&self, op: &ast::Unaryop, operand: &Box<ast::Expr<Option<Type>>>) -> Result<Option<Type>, String> {
@@ -417,15 +344,15 @@ impl<'a> InferenceContext<'a> {
                     .as_ref()
                     .clone() {
                 self.with_scope(|ctx| -> Result<ast::Expr<Option<Type>>, String> {
-                    ctx.infer_simple_binding(
-                        &generators_first_folded[0].target, 
-                        ls[0].clone())?;
+                    ctx.infer_simple_binding(&generators_first_folded[0].target, ls[0].clone())?;
                     Ok(ast::Expr {
                         location,
                         custom,
                         node: ast::ExprKind::ListComp { // now fold things with new name
-                            elt: Box::new(ctx.fold_expr(*elt)?),
-                            generators: generators_first_folded
+                            elt: 
+                                Box::new(ctx.fold_expr(*elt)?),
+                            generators: 
+                                generators_first_folded
                                 .into_iter()
                                 .map(|x| -> Result<ast::Comprehension<Option<Type>>, String> {Ok(ast::Comprehension {
                                     target: Box::new(ctx.fold_expr(*x.target)?),
