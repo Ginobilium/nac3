@@ -216,7 +216,7 @@ impl Unifier {
                         drop(ty_b);
                         if let TypeEnum::TSeq { map: map2 } = &mut *ty_b_cell.as_ref().borrow_mut()
                         {
-                            // unify them to map1
+                            // unify them to map2
                             for (key, value) in map1.iter() {
                                 if let Some(ty) = map2.get(key) {
                                     self.unify(*ty, *value)?;
@@ -377,7 +377,7 @@ impl Unifier {
     fn occur_check(&self, a: TypeIndex, b: Type) -> Result<(), String> {
         let i_b = self.unification_table.borrow_mut().probe_value(b);
         if a == i_b {
-            return Err("Recursive type detected!".to_owned());
+            return Err("Recursive type is prohibited.".to_owned());
         }
         let ty = self.type_arena.borrow().get(i_b.0).unwrap().clone();
         let ty = ty.borrow();
