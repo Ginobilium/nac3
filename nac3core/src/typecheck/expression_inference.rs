@@ -418,22 +418,41 @@ pub mod test {
         struct S;
 
         impl SymbolResolver for S {
-            fn get_symbol_location(&self, _str: &str) -> Option<Location> {
-                None
-            }
+            fn get_symbol_location(&self, _str: &str) -> Option<Location> { None }
         
-            fn get_symbol_type(&self, _str: &str) -> Option<SymbolType> {
-                None
-            }
+            fn get_symbol_type(&self, _str: &str) -> Option<SymbolType> { None }
         
-            fn get_symbol_value(&self, _str: &str) -> Option<SymbolValue> {
-                None
-            }
+            fn get_symbol_value(&self, _str: &str) -> Option<SymbolValue> { None }
         }
 
         InferenceContext::new(primitives::basic_ctx(), Box::new(S{}), FileID(3))
     }
 
+    #[test]
+    fn test_i32() {
+        let mut inferencer = new_ctx();
+        let ast: Expr<Option<Type>> = Expr {
+            location: ast::Location::new(0, 0),
+            custom: None,
+            node: ast::ExprKind::Constant {
+                value: ast::Constant::Int(123.into()),
+                kind: None
+            }
+        };
+
+        let new_ast = inferencer.fold_expr(ast);
+        assert_eq!(
+            new_ast,
+            Ok(ast::Expr {
+                location: ast::Location::new(0, 0),
+                custom: Some(inferencer.get_primitive(primitives::INT32_TYPE)),
+                node: ast::ExprKind::Constant {
+                    value: ast::Constant::Int(123.into()),
+                    kind: None
+                }
+            })
+        );
+    }
 
     #[test]
     fn test_i64() {
@@ -530,5 +549,4 @@ pub mod test {
             }
         );
     }
-
 }
