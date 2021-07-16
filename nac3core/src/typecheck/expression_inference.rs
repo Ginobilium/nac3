@@ -642,6 +642,7 @@ pub mod test {
         let ast9 = rustpython_parser::parser::parse_expression("[1, 2, 3, 4, 5][1: 2]").unwrap();
         let ast10 = rustpython_parser::parser::parse_expression("4 if False and True else 8").unwrap();
         let ast11 = rustpython_parser::parser::parse_expression("(1, 2, 3, 4)[1]").unwrap();
+        let ast12 = rustpython_parser::parser::parse_expression("(1, True, 3, False)[1]").unwrap();
         
         let folded = inf.fold_expr(ast1).unwrap();
         let folded_2 = Premapper.fold_expr(ast2).unwrap();
@@ -654,6 +655,7 @@ pub mod test {
         let folded_9 = inf.fold_expr(ast9).unwrap();
         let folded_10 = inf.fold_expr(ast10).unwrap();
         let folded_11 = inf.fold_expr(ast11).unwrap();
+        let folded_12 = inf.fold_expr(ast12).unwrap();
         
         println!("{:?}", folded.custom);
         println!("{:?}", folded_2.custom);
@@ -666,6 +668,7 @@ pub mod test {
         println!("{:?}", folded_9.custom);
         println!("{:?}", folded_10.custom);
         println!("{:?}", folded_11.custom);
+        println!("{:?}", folded_12.custom);
 
     }
 }
