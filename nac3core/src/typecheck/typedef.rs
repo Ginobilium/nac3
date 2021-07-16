@@ -1,29 +1,20 @@
 use ena::unify::{InPlaceUnificationTable, NoError, UnifyKey, UnifyValue};
-use generational_arena::{Arena, Index};
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::fmt::Debug;
 use std::iter::once;
 use std::mem::swap;
+use std::ops::Deref;
 use std::rc::Rc;
 
-// Order:
-// TVar
-// |--> TSeq
-// |   |--> TTuple
-// |   `--> TList
-// |--> TRecord
-// |   |--> TObj
-// |   `--> TVirtual
-// `--> TCall
-//     `--> TFunc
-
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
+/// Handle for a type, implementated as a key in the unification table.
 pub struct Type(u32);
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub struct TypeIndex(Index);
+#[derive(Clone)]
+pub struct TypeCell(Rc<RefCell<TypeEnum>>);
 
-impl UnifyValue for TypeIndex {
+impl UnifyValue for TypeCell {
     type Error = NoError;
     fn unify_values(_: &Self, value2: &Self) -> Result<Self, Self::Error> {
         // WARN: depends on the implementation details of ena.
@@ -31,12 +22,12 @@ impl UnifyValue for TypeIndex {
         // and assign the type by `union_value(key, new_value)`, which set the
         // value as `unify_values(key.value, new_value)`. So, we need to return
         // the right one.
-        Ok(*value2)
+        Ok(value2.clone())
     }
 }
 
 impl UnifyKey for Type {
-    type Value = TypeIndex;
+    type Value = TypeCell;
     fn index(&self) -> u32 {
         self.0
     }
@@ -45,6 +36,14 @@ impl UnifyKey for Type {
     }
     fn tag() -> &'static str {
         "TypeID"
+    }
+}
+
+impl Deref for TypeCell {
+    type Target = Rc<RefCell<TypeEnum>>;
+
+    fn deref(&self) -> &<Self as Deref>::Target {
+        &self.0
     }
 }
 
@@ -104,18 +103,63 @@ pub enum TypeEnum {
     },
 }
 
+// Order:
+// TVar
+// |--> TSeq
+// |   |--> TTuple
+// |   `--> TList
+// |--> TRecord
+// |   |--> TObj
+// |   `--> TVirtual
+// `--> TCall
+//     `--> TFunc
+
+// We encode the types as natural numbers, and subtyping relation as divisibility.
+// If a | b, b <: a.
+// We assign unique prime numbers (1 to TVar, everything is a subtype of it) to each type:
+// TVar               = 1
+// |--> TSeq          = 2
+// |   |--> TTuple    = 3
+// |   `--> TList     = 5
+// |--> TRecord       = 7
+// |   |--> TObj      = 11
+// |   `--> TVirtual  = 13
+// `--> TCall         = 17
+//     `--> TFunc     = 21
+//
+// And then, based on the subtyping relation, multiply them together...
+// TVar               = 1
+// |--> TSeq          = 2  * TVar
+// |   |--> TTuple    = 3  * TSeq * TVar
+// |   `--> TList     = 5  * TSeq * TVar
+// |--> TRecord       = 7  * TVar
+// |   |--> TObj      = 11 * TRecord * TVar
+// |   `--> TVirtual  = 13 * TRecord * TVar
+// `--> TCall         = 17 * TVar
+//     `--> TFunc     = 21 * TCall * TVar
+
 impl TypeEnum {
     fn get_int(&self) -> i32 {
+        const TVAR: i32 = 1;
+        const TSEQ: i32 = 2;
+        const TTUPLE: i32 = 3;
+        const TLIST: i32 = 5;
+        const TRECORD: i32 = 7;
+        const TOBJ: i32 = 11;
+        const TVIRTUAL: i32 = 13;
+        const TCALL: i32 = 17;
+        const TFUNC: i32 = 21;
+
         match self {
-            TypeEnum::TVar { .. } => 1,
-            TypeEnum::TSeq { .. } => 5,
-            TypeEnum::TTuple { .. } => 10,
-            TypeEnum::TList { .. } => 15,
-            TypeEnum::TRecord { .. } => 7,
-            TypeEnum::TObj { .. } => 14,
-            TypeEnum::TVirtual { .. } => 21,
-            TypeEnum::TCall { .. } => 11,
-            TypeEnum::TFunc { .. } => 22,
+            TypeEnum::TVar { .. } => TVAR,
+            TypeEnum::TSeq { .. } => TSEQ * TVAR,
+            TypeEnum::TTuple { .. } => TTUPLE * TSEQ * TVAR,
+            TypeEnum::TList { .. } => TLIST * TSEQ * TVAR,
+            TypeEnum::TRecord { .. } => TRECORD * TVAR,
+            TypeEnum::TObj { .. } => TOBJ * TRECORD * TVAR,
+            TypeEnum::TVirtual { .. } => TVIRTUAL * TRECORD * TVAR,
+            TypeEnum::TCall { .. } => TCALL * TVAR,
+            TypeEnum::TFunc { .. } => TFUNC * TCALL * TVAR,
         }
     }
 
@@ -126,7 +170,7 @@ impl TypeEnum {
         (a % b) == 0
     }
 
-    pub fn get_kind_name(&self) -> &'static str {
+    pub fn get_type_name(&self) -> &'static str {
         // this function is for debugging only...
         // a proper to_str implementation requires the context
         match self {
@@ -143,6 +187,12 @@ impl TypeEnum {
     }
 }
 
+impl Debug for TypeCell {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.borrow().get_type_name())
+    }
+}
+
 pub struct ObjDef {
     name: String,
     fields: Mapping<String>,
@@ -150,7 +200,6 @@ pub struct ObjDef {
 
 pub struct Unifier {
     unification_table: RefCell<InPlaceUnificationTable<Type>>,
-    type_arena: RefCell<Arena<Rc<RefCell<TypeEnum>>>>,
     obj_def_table: Vec<ObjDef>,
 }
 
@@ -158,53 +207,43 @@ impl Unifier {
     pub fn new() -> Unifier {
         Unifier {
             unification_table: RefCell::new(InPlaceUnificationTable::new()),
-            type_arena: RefCell::new(Arena::new()),
             obj_def_table: Vec::new(),
         }
     }
 
+    /// Register a type to the unifier.
+    /// Returns a key in the unification_table.
     pub fn add_ty(&self, a: TypeEnum) -> Type {
-        let index = self.type_arena.borrow_mut().insert(Rc::new(a.into()));
         self.unification_table
             .borrow_mut()
-            .new_key(TypeIndex(index))
+            .new_key(TypeCell(Rc::new(a.into())))
     }
 
+    /// Get the TypeEnum of a type.
     pub fn get_ty(&self, a: Type) -> Rc<RefCell<TypeEnum>> {
         let mut table = self.unification_table.borrow_mut();
-        let arena = self.type_arena.borrow();
-        arena.get(table.probe_value(a).0).unwrap().clone()
+        table.probe_value(a).0
     }
 
     pub fn unify(&self, mut a: Type, mut b: Type) -> Result<(), String> {
-        let (mut i_a, mut i_b) = {
-            let mut table = self.unification_table.borrow_mut();
-            (table.probe_value(a), table.probe_value(b))
-        };
-
-        if i_a == i_b {
-            return Ok(());
-        }
-
         let (mut ty_a_cell, mut ty_b_cell) = {
-            let arena = self.type_arena.borrow();
-            (
-                arena.get(i_a.0).unwrap().clone(),
-                arena.get(i_b.0).unwrap().clone(),
-            )
+            let mut table = self.unification_table.borrow_mut();
+            if table.unioned(a, b) {
+                return Ok(());
+            }
+            (table.probe_value(a), table.probe_value(b))
         };
 
         let (ty_a, ty_b) = {
             // simplify our pattern matching...
             if ty_a_cell.borrow().kind_le(&ty_b_cell.borrow()) {
                 swap(&mut a, &mut b);
-                swap(&mut i_a, &mut i_b);
                 swap(&mut ty_a_cell, &mut ty_b_cell);
             }
             (ty_a_cell.borrow(), ty_b_cell.borrow())
         };
 
-        self.occur_check(i_a, b)?;
+        self.occur_check(a, b)?;
         match &*ty_a {
             TypeEnum::TVar { .. } => {
                 // TODO: type variables bound check...
@@ -356,30 +395,26 @@ impl Unifier {
     }
 
     fn set_a_to_b(&self, a: Type, b: Type) {
-        // unify a and b together, and set the value to b's value this would
-        // also deallocate a's previous value in the arena to save space...
+        // unify a and b together, and set the value to b's value.
         let mut table = self.unification_table.borrow_mut();
-        let i_a = table.probe_value(a);
-        let i_b = table.probe_value(b);
+        let ty_b = table.probe_value(b);
         table.union(a, b);
-        table.union_value(a, i_b);
-        self.type_arena.borrow_mut().remove(i_a.0);
+        table.union_value(a, ty_b);
     }
 
     fn report_kind_error(&self, a: &TypeEnum, b: &TypeEnum) -> Result<(), String> {
         Err(format!(
             "Cannot unify {} with {}",
-            a.get_kind_name(),
-            b.get_kind_name()
+            a.get_type_name(),
+            b.get_type_name()
         ))
     }
 
-    fn occur_check(&self, a: TypeIndex, b: Type) -> Result<(), String> {
-        let i_b = self.unification_table.borrow_mut().probe_value(b);
-        if a == i_b {
+    fn occur_check(&self, a: Type, b: Type) -> Result<(), String> {
+        if self.unification_table.borrow_mut().unioned(a, b) {
             return Err("Recursive type is prohibited.".to_owned());
         }
-        let ty = self.type_arena.borrow().get(i_b.0).unwrap().clone();
+        let ty = self.unification_table.borrow_mut().probe_value(b);
         let ty = ty.borrow();
 
         match &*ty {
@@ -433,11 +468,7 @@ impl Unifier {
     }
 
     pub fn subst(&self, a: Type, mapping: &VarMap) -> Option<Type> {
-        let index = self.unification_table.borrow_mut().probe_value(a);
-        let ty_cell = {
-            let arena = self.type_arena.borrow();
-            arena.get(index.0).unwrap().clone()
-        };
+        let ty_cell = self.unification_table.borrow_mut().probe_value(a);
         let ty = ty_cell.borrow();
         // this function would only be called when we instantiate functions.
         // function type signature should ONLY contain concrete types and type
@@ -445,15 +476,9 @@ impl Unifier {
         // should be safe to not implement the substitution for those variants.
         match &*ty {
             TypeEnum::TVar { id } => mapping.get(&id).cloned(),
-            TypeEnum::TSeq { map } => self.subst_map(map, mapping).map(|m| {
-                let index = self
-                    .type_arena
-                    .borrow_mut()
-                    .insert(Rc::new(TypeEnum::TSeq { map: m }.into()));
-                self.unification_table
-                    .borrow_mut()
-                    .new_key(TypeIndex(index))
-            }),
+            TypeEnum::TSeq { map } => self
+                .subst_map(map, mapping)
+                .map(|m| self.add_ty(TypeEnum::TSeq { map: m })),
             TypeEnum::TTuple { ty } => {
                 let mut new_ty = None;
                 for (i, t) in ty.iter().enumerate() {
@@ -482,9 +507,7 @@ impl Unifier {
                 // parameter list, we don't need to substitute the fields.
                 // This is also used to prevent infinite substitution...
                 let need_subst = params.values().any(|v| {
-                    let index = self.unification_table.borrow_mut().probe_value(*v);
-                    let arena = self.type_arena.borrow();
-                    let ty_cell = arena.get(index.0).unwrap();
+                    let ty_cell = self.unification_table.borrow_mut().probe_value(*v);
                     let ty = ty_cell.borrow();
                     if let TypeEnum::TVar { id } = &*ty {
                         mapping.contains_key(id)
@@ -558,21 +581,12 @@ impl Unifier {
         if a == b {
             return true;
         }
-        let (i_a, i_b) = {
-            let mut table = self.unification_table.borrow_mut();
-            (table.probe_value(a), table.probe_value(b))
-        };
-
-        if i_a == i_b {
-            return true;
-        }
-
         let (ty_a, ty_b) = {
-            let arena = self.type_arena.borrow();
-            (
-                arena.get(i_a.0).unwrap().clone(),
-                arena.get(i_b.0).unwrap().clone(),
-            )
+            let mut table = self.unification_table.borrow_mut();
+            if table.unioned(a, b) {
+                return true;
+            }
+            (table.probe_value(a), table.probe_value(b))
         };
 
         let ty_a = ty_a.borrow();
