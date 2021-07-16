@@ -177,6 +177,7 @@ mod test {
         ]
         ; "record obj merge"
     )]
+    /// Test cases for valid unifications.
     fn test_unify(
         variable_count: u32,
         unify_pairs: &[(&'static str, &'static str)],
@@ -249,6 +250,7 @@ mod test {
         (("v1", "v2"), "Recursive type is prohibited.")
         ; "recursive type for lists"
     )]
+    /// Test cases for invalid unifications.
     fn test_invalid_unification(
         variable_count: u32,
         unify_pairs: &[(&'static str, &'static str)],

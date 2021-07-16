@@ -225,6 +225,7 @@ impl Unifier {
         table.probe_value(a).0
     }
 
+    /// Unify two types, i.e. a = b.
     pub fn unify(&self, mut a: Type, mut b: Type) -> Result<(), String> {
         let (mut ty_a_cell, mut ty_b_cell) = {
             let mut table = self.unification_table.borrow_mut();
@@ -467,6 +468,10 @@ impl Unifier {
         Ok(())
     }
 
+    /// Substitute type variables within a type into other types.
+    /// If this returns Some(T), T would be the substituted type.
+    /// If this returns None, the result type would be the original type
+    /// (no substitution has to be done).
     pub fn subst(&self, a: Type, mapping: &VarMap) -> Option<Type> {
         let ty_cell = self.unification_table.borrow_mut().probe_value(a);
         let ty = ty_cell.borrow();
@@ -577,6 +582,7 @@ impl Unifier {
         map2
     }
 
+    /// Check whether two types are equal.
     pub fn eq(&self, a: Type, b: Type) -> bool {
         if a == b {
             return true;
