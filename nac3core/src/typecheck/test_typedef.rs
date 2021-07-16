@@ -8,14 +8,12 @@ mod test {
     struct TestEnvironment {
         pub unifier: Unifier,
         type_mapping: HashMap<String, Type>,
-        var_max_id: u32,
     }
 
     impl TestEnvironment {
         fn new() -> TestEnvironment {
-            let unifier = Unifier::new();
+            let mut unifier = Unifier::new();
             let mut type_mapping = HashMap::new();
-            let mut var_max_id = 0;
 
             type_mapping.insert(
                 "int".into(),
@@ -41,38 +39,30 @@ mod test {
                     params: HashMap::new(),
                 }),
             );
-            let v0 = unifier.add_ty(TypeEnum::TVar { id: 0 });
-            var_max_id += 1;
+            let (v0, id) = unifier.get_fresh_var();
             type_mapping.insert(
                 "Foo".into(),
                 unifier.add_ty(TypeEnum::TObj {
                     obj_id: 3,
                     fields: [("a".into(), v0)].iter().cloned().collect(),
-                    params: [(0u32, v0)].iter().cloned().collect(),
+                    params: [(id, v0)].iter().cloned().collect(),
                 }),
             );
 
             TestEnvironment {
                 unifier,
                 type_mapping,
-                var_max_id,
             }
         }
 
-        fn get_fresh_var(&mut self) -> Type {
-            let id = self.var_max_id + 1;
-            self.var_max_id += 1;
-            self.unifier.add_ty(TypeEnum::TVar { id })
-        }
-
-        fn parse(&self, typ: &str, mapping: &Mapping<String>) -> Type {
+        fn parse(&mut self, typ: &str, mapping: &Mapping<String>) -> Type {
             let result = self.internal_parse(typ, mapping);
             assert!(result.1.is_empty());
             result.0
         }
 
         fn internal_parse<'a, 'b>(
-            &'a self,
+            &'a mut self,
             typ: &'b str,
             mapping: &Mapping<String>,
         ) -> (Type, &'b str) {
@@ -189,8 +179,8 @@ mod test {
             let mut env = TestEnvironment::new();
             let mut mapping = HashMap::new();
             for i in 1..=variable_count {
-                let v = env.get_fresh_var();
-                mapping.insert(format!("v{}", i), v);
+                let v = env.unifier.get_fresh_var();
+                mapping.insert(format!("v{}", i), v.0);
             }
             // unification may have side effect when we do type resolution, so freeze the types
             // before doing unification.
@@ -259,8 +249,8 @@ mod test {
         let mut env = TestEnvironment::new();
         let mut mapping = HashMap::new();
         for i in 1..=variable_count {
-            let v = env.get_fresh_var();
-            mapping.insert(format!("v{}", i), v);
+            let v = env.unifier.get_fresh_var();
+            mapping.insert(format!("v{}", i), v.0);
         }
         // unification may have side effect when we do type resolution, so freeze the types
         // before doing unification.
