@@ -164,7 +164,7 @@ impl TypeEnum {
     }
 
     // e.g. List <: Var
-    pub fn kind_le(&self, other: &TypeEnum) -> bool {
+    pub fn type_le(&self, other: &TypeEnum) -> bool {
         let a = self.get_int();
         let b = other.get_int();
         (a % b) == 0
@@ -236,7 +236,7 @@ impl Unifier {
 
         let (ty_a, ty_b) = {
             // simplify our pattern matching...
-            if ty_a_cell.borrow().kind_le(&ty_b_cell.borrow()) {
+            if ty_a_cell.borrow().type_le(&ty_b_cell.borrow()) {
                 swap(&mut a, &mut b);
                 swap(&mut ty_a_cell, &mut ty_b_cell);
             }
@@ -289,7 +289,7 @@ impl Unifier {
                         self.set_a_to_b(a, b);
                     }
                     _ => {
-                        return self.report_kind_error(&*ty_a, &*ty_b);
+                        return self.incompatible_types(&*ty_a, &*ty_b);
                     }
                 }
             }
@@ -307,7 +307,7 @@ impl Unifier {
                     }
                     self.set_a_to_b(a, b);
                 } else {
-                    return self.report_kind_error(&*ty_a, &*ty_b);
+                    return self.incompatible_types(&*ty_a, &*ty_b);
                 }
             }
             TypeEnum::TList { ty: ty1 } => {
@@ -315,7 +315,7 @@ impl Unifier {
                     self.unify(*ty1, ty2)?;
                     self.set_a_to_b(a, b);
                 } else {
-                    return self.report_kind_error(&*ty_a, &*ty_b);
+                    return self.incompatible_types(&*ty_a, &*ty_b);
                 }
             }
             TypeEnum::TRecord { fields: fields1 } => {
@@ -355,7 +355,7 @@ impl Unifier {
                         self.set_a_to_b(a, b);
                     }
                     _ => {
-                        return self.report_kind_error(&*ty_a, &*ty_b);
+                        return self.incompatible_types(&*ty_a, &*ty_b);
                     }
                 }
             }
@@ -378,7 +378,7 @@ impl Unifier {
                     }
                     self.set_a_to_b(a, b);
                 } else {
-                    return self.report_kind_error(&*ty_a, &*ty_b);
+                    return self.incompatible_types(&*ty_a, &*ty_b);
                 }
             }
             TypeEnum::TVirtual { ty: ty1 } => {
@@ -386,7 +386,7 @@ impl Unifier {
                     self.unify(*ty1, *ty2)?;
                     self.set_a_to_b(a, b);
                 } else {
-                    return self.report_kind_error(&*ty_a, &*ty_b);
+                    return self.incompatible_types(&*ty_a, &*ty_b);
                 }
             }
             _ => unimplemented!(),
@@ -402,7 +402,7 @@ impl Unifier {
         table.union_value(a, ty_b);
     }
 
-    fn report_kind_error(&self, a: &TypeEnum, b: &TypeEnum) -> Result<(), String> {
+    fn incompatible_types(&self, a: &TypeEnum, b: &TypeEnum) -> Result<(), String> {
         Err(format!(
             "Cannot unify {} with {}",
             a.get_type_name(),

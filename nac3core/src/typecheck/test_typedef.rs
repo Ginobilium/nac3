@@ -216,7 +216,7 @@ mod test {
             ("v2", "List[int]"),
         ],
         (("v1", "v2"), "Cannot unify TTuple with TList")
-        ; "kind mismatch"
+        ; "type mismatch"
     )]
     #[test_case(2,
         &[
