@@ -436,7 +436,7 @@ impl Unifier {
                             .collect();
                         for (i, t) in posargs.iter().enumerate() {
                             if signature.args.len() <= i {
-                                return Err(format!("Too many arguments."));
+                                return Err("Too many arguments.".to_string());
                             }
                             if !required.is_empty() {
                                 required.pop();
@@ -465,17 +465,17 @@ impl Unifier {
             TypeEnum::TFunc(sign1) => {
                 if let TypeEnum::TFunc(sign2) = &*ty_b {
                     if !sign1.params.is_empty() || !sign2.params.is_empty() {
-                        return Err(format!("Polymorphic function pointer is prohibited."));
+                        return Err("Polymorphic function pointer is prohibited.".to_string());
                     }
                     if sign1.args.len() != sign2.args.len() {
-                        return Err(format!("Functions differ in number of parameters."));
+                        return Err("Functions differ in number of parameters.".to_string());
                     }
                     for (x, y) in sign1.args.iter().zip(sign2.args.iter()) {
                         if x.name != y.name {
-                            return Err(format!("Functions differ in parameter names."));
+                            return Err("Functions differ in parameter names.".to_string());
                         }
                         if x.is_optional != y.is_optional {
-                            return Err(format!("Functions differ in optional parameters."));
+                            return Err("Functions differ in optional parameters.".to_string());
                         }
                         self.unify(x.ty, y.ty)?;
                     }
@@ -651,7 +651,7 @@ impl Unifier {
                     let params = new_params.unwrap_or_else(|| params.clone());
                     let ret = new_ret.unwrap_or_else(|| *ret);
                     let args = new_args.unwrap_or_else(|| args.clone());
-                    Some(self.add_ty(TypeEnum::TFunc(FunSignature { params, ret, args })))
+                    Some(self.add_ty(TypeEnum::TFunc(FunSignature { args, ret, params })))
                 } else {
                     None
                 }
