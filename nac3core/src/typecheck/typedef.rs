@@ -52,24 +52,24 @@ type VarMap = Mapping<u32>;
 
 #[derive(Clone)]
 pub struct Call {
-    posargs: Vec<Type>,
-    kwargs: HashMap<String, Type>,
-    ret: Type,
-    fun: RefCell<Option<Type>>,
+    pub posargs: Vec<Type>,
+    pub kwargs: HashMap<String, Type>,
+    pub ret: Type,
+    pub fun: RefCell<Option<Type>>,
 }
 
 #[derive(Clone)]
 pub struct FuncArg {
-    name: String,
-    ty: Type,
-    is_optional: bool,
+    pub name: String,
+    pub ty: Type,
+    pub is_optional: bool,
 }
 
 #[derive(Clone)]
 pub struct FunSignature {
-    args: Vec<FuncArg>,
-    ret: Type,
-    params: VarMap,
+    pub args: Vec<FuncArg>,
+    pub ret: Type,
+    pub params: VarMap,
 }
 
 // We use a lot of `Rc`/`RefCell`s here as we want to simplify our code.

@@ -4,3 +4,4 @@ mod magic_methods;
 pub mod symbol_resolver;
 mod test_typedef;
 pub mod typedef;
+pub mod type_inferencer;

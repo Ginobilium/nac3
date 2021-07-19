@@ -6,6 +6,7 @@ extern crate inkwell;
 extern crate rustpython_parser;
 extern crate indoc;
 extern crate ena;
+extern crate itertools;
 
 mod typecheck;
 

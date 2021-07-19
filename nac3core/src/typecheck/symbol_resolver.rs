@@ -16,8 +16,8 @@ pub enum SymbolValue<'a> {
 }
 
 pub trait SymbolResolver {
-    fn get_symbol_type(&self, str: &str) -> Option<SymbolType>;
-    fn get_symbol_value(&self, str: &str) -> Option<SymbolValue>;
-    fn get_symbol_location(&self, str: &str) -> Option<Location>;
+    fn get_symbol_type(&mut self, str: &str) -> Option<SymbolType>;
+    fn get_symbol_value(&mut self, str: &str) -> Option<SymbolValue>;
+    fn get_symbol_location(&mut self, str: &str) -> Option<Location>;
     // handle function call etc.
 }
