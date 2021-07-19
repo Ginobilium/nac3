@@ -188,9 +188,7 @@ impl Unifier {
             )
         };
 
-        let (ty_a, ty_b) = {
-            (ty_a_cell.borrow(), ty_b_cell.borrow())
-        };
+        let (ty_a, ty_b) = { (ty_a_cell.borrow(), ty_b_cell.borrow()) };
 
         self.occur_check(a, b)?;
         match (&*ty_a, &*ty_b) {
