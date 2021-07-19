@@ -206,7 +206,7 @@ mod test {
             ("v1", "Tuple[int]"),
             ("v2", "List[int]"),
         ],
-        (("v1", "v2"), "Cannot unify TTuple with TList")
+        (("v1", "v2"), "Cannot unify TList with TTuple")
         ; "type mismatch"
     )]
     #[test_case(2,
@@ -222,7 +222,7 @@ mod test {
             ("v1", "Tuple[int,int]"),
             ("v2", "Tuple[int]"),
         ],
-        (("v1", "v2"), "Cannot unify tuples with length 1 and 2")
+        (("v1", "v2"), "Cannot unify tuples with length 2 and 1")
         ; "tuple length mismatch"
     )]
     #[test_case(3,
