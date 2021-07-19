@@ -81,7 +81,7 @@ pub enum TypeEnum {
         id: u32,
     },
     TSeq {
-        map: VarMap,
+        map: Mapping<i32>,
     },
     TTuple {
         ty: Vec<Type>,
@@ -274,16 +274,18 @@ impl Unifier {
                         self.set_a_to_b(a, b);
                     }
                     TypeEnum::TTuple { ty: types } => {
-                        let len = types.len() as u32;
+                        let len = types.len() as i32;
                         for (k, v) in map1.iter() {
-                            if *k >= len {
+                            // handle negative index
+                            let ind = if *k < 0 { len + *k } else { *k };
+                            if ind >= len || ind < 0 {
                                 return Err(format!(
                                     "Tuple index out of range. (Length: {}, Index: {})",
                                     types.len(),
                                     k
                                 ));
                             }
-                            self.unify(*v, types[*k as usize])?;
+                            self.unify(*v, types[ind as usize])?;
                         }
                         self.set_a_to_b(a, b);
                     }
@@ -516,7 +518,7 @@ impl Unifier {
             TypeEnum::TVar { .. } => {
                 // TODO: occur check for bounds...
             }
-            TypeEnum::TSeq { map } | TypeEnum::TObj { params: map, .. } => {
+            TypeEnum::TSeq { map } => {
                 for t in map.values() {
                     self.occur_check(a, *t)?;
                 }
@@ -531,6 +533,11 @@ impl Unifier {
             }
             TypeEnum::TRecord { fields } => {
                 for t in fields.values() {
+                    self.occur_check(a, *t)?;
+                }
+            }
+            TypeEnum::TObj { params: map, .. } => {
+                for t in map.values() {
                     self.occur_check(a, *t)?;
                 }
             }
