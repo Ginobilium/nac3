@@ -8,7 +8,7 @@ use super::magic_methods::*;
 use super::symbol_resolver::{SymbolResolver, SymbolType};
 use super::typedef::{Call, Type, TypeEnum, Unifier};
 use itertools::izip;
-use rustpython_parser::ast::{self, fold::Fold};
+use rustpython_parser::ast::{self, fold};
 
 pub struct PrimitiveStore {
     int32: Type,
@@ -26,12 +26,64 @@ pub struct Inferencer<'a> {
     primitives: &'a PrimitiveStore,
 }
 
-impl<'a> Fold<()> for Inferencer<'a> {
+impl<'a> fold::Fold<()> for Inferencer<'a> {
     type TargetU = Option<Type>;
     type Error = String;
 
     fn map_user(&mut self, _: ()) -> Result<Self::TargetU, Self::Error> {
         Ok(None)
+    }
+
+    fn fold_expr(&mut self, node: ast::Expr<()>) -> Result<ast::Expr<Self::TargetU>, Self::Error> {
+        let expr = match &node.node {
+            ast::ExprKind::Call { .. } => unimplemented!(),
+            ast::ExprKind::Lambda { .. } => unimplemented!(),
+            ast::ExprKind::ListComp { .. } => unimplemented!(),
+            _ => fold::fold_expr(self, node)?,
+        };
+        let custom = match &expr.node {
+            ast::ExprKind::Constant { value, .. } => Some(self.infer_constant(value)?),
+            ast::ExprKind::Name { id, .. } => Some(self.infer_identifier(id)?),
+            ast::ExprKind::List { elts, .. } => Some(self.infer_list(elts)?),
+            ast::ExprKind::Tuple { elts, .. } => Some(self.infer_tuple(elts)?),
+            ast::ExprKind::Attribute {
+                value,
+                attr,
+                ctx: _,
+            } => Some(self.infer_attribute(value, attr)?),
+            ast::ExprKind::BoolOp { op: _, values } => Some(self.infer_bool_ops(values)?),
+            ast::ExprKind::BinOp { left, op, right } => Some(self.infer_bin_ops(left, op, right)?),
+            ast::ExprKind::UnaryOp { op, operand } => Some(self.infer_unary_ops(op, operand)?),
+            ast::ExprKind::Compare {
+                left,
+                ops,
+                comparators,
+            } => Some(self.infer_compare(left, ops, comparators)?),
+            ast::ExprKind::Call {
+                func,
+                args,
+                keywords,
+            } => unimplemented!(),
+            ast::ExprKind::Subscript {
+                value,
+                slice,
+                ctx: _,
+            } => Some(self.infer_subscript(value.as_ref(), slice.as_ref())?),
+            ast::ExprKind::IfExp { test, body, orelse } => {
+                Some(self.infer_if_expr(test, body.as_ref(), orelse.as_ref())?)
+            }
+            ast::ExprKind::ListComp {
+                elt: _,
+                generators: _,
+            } => expr.custom, // already computed
+            ast::ExprKind::Slice { .. } => None, // we don't need it for slice
+            _ => return Err("not supported yet".into()),
+        };
+        Ok(ast::Expr {
+            custom,
+            location: expr.location,
+            node: expr.node,
+        })
     }
 }
 
@@ -219,8 +271,8 @@ impl<'a> Inferencer<'a> {
     fn infer_if_expr(
         &mut self,
         test: &ast::Expr<Option<Type>>,
-        body: ast::Expr<Option<Type>>,
-        orelse: ast::Expr<Option<Type>>,
+        body: &ast::Expr<Option<Type>>,
+        orelse: &ast::Expr<Option<Type>>,
     ) -> InferenceResult {
         self.constrain(test.custom.unwrap(), self.primitives.bool)?;
         let ty = self.unifier.get_fresh_var().0;
