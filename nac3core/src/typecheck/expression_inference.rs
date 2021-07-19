@@ -31,7 +31,7 @@ impl<'a> ast::fold::Fold<()> for InferenceContext<'a> {
                 ast::ExprKind::Name {id, ctx: _} => Ok(Some(self.resolve(id)?)),
                 ast::ExprKind::List {elts, ctx: _} => self.infer_list(elts),
                 ast::ExprKind::Tuple {elts, ctx: _} => self.infer_tuple(elts),
-                ast::ExprKind::Attribute {value, attr, ctx: _} => self.infer_arrtibute(value, attr),
+                ast::ExprKind::Attribute {value, attr, ctx: _} => self.infer_attribute(value, attr),
                 ast::ExprKind::BoolOp {op: _, values} => self.infer_bool_ops(values),
                 ast::ExprKind::BinOp {left, op, right} => self.infer_bin_ops(left, op, right),
                 ast::ExprKind::UnaryOp {op, operand} => self.infer_unary_ops(op, operand),
@@ -131,7 +131,7 @@ impl<'a> InferenceContext<'a> {
         }
     }
 
-    fn infer_arrtibute(&self, value: &ast::Expr<Option<Type>>, attr: &str) -> Result<Option<Type>, String> {
+    fn infer_attribute(&self, value: &ast::Expr<Option<Type>>, attr: &str) -> Result<Option<Type>, String> {
         let ty = value.custom.clone().ok_or_else(|| "no value".to_string())?;
         if let TypeEnum::TypeVariable(id) = ty.as_ref() {
             let v = self.get_variable_def(*id);
