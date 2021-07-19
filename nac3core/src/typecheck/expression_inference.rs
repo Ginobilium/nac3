@@ -94,7 +94,7 @@ impl<'a> InferenceContext<'a> {
         }
     }
 
-    fn infer_list(&self, elts: &Vec<ast::Expr<Option<Type>>>) -> Result<Option<Type>, String> {
+    fn infer_list(&self, elts: &[ast::Expr<Option<Type>>]) -> Result<Option<Type>, String> {
         if elts.is_empty() {
             Ok(Some(TypeEnum::ParametricType(primitives::LIST_TYPE, vec![TypeEnum::BotType.into()]).into()))
         } else {
@@ -116,7 +116,7 @@ impl<'a> InferenceContext<'a> {
         }
     }
 
-    fn infer_tuple(&self, elts: &Vec<ast::Expr<Option<Type>>>) -> Result<Option<Type>, String> {
+    fn infer_tuple(&self, elts: &[ast::Expr<Option<Type>>]) -> Result<Option<Type>, String> {
         let types = elts
             .iter()
             .map(|x| (x.custom).clone())
@@ -131,7 +131,7 @@ impl<'a> InferenceContext<'a> {
         }
     }
 
-    fn infer_arrtibute(&self, value: &Box<ast::Expr<Option<Type>>>, attr: &str) -> Result<Option<Type>, String> {
+    fn infer_arrtibute(&self, value: &ast::Expr<Option<Type>>, attr: &str) -> Result<Option<Type>, String> {
         let ty = value.custom.clone().ok_or_else(|| "no value".to_string())?;
         if let TypeEnum::TypeVariable(id) = ty.as_ref() {
             let v = self.get_variable_def(*id);
@@ -160,7 +160,7 @@ impl<'a> InferenceContext<'a> {
         }
     }
 
-    fn infer_bool_ops(&self, values: &Vec<ast::Expr<Option<Type>>>) -> Result<Option<Type>, String> {
+    fn infer_bool_ops(&self, values: &[ast::Expr<Option<Type>>]) -> Result<Option<Type>, String> {
         assert_eq!(values.len(), 2); 
         let left = values[0].custom.clone().ok_or_else(|| "no value".to_string())?;
         let right = values[1].custom.clone().ok_or_else(|| "no value".to_string())?;
@@ -172,7 +172,7 @@ impl<'a> InferenceContext<'a> {
         }
     }
 
-    fn infer_bin_ops(&self, left: &Box<ast::Expr<Option<Type>>>, op: &ast::Operator, right: &Box<ast::Expr<Option<Type>>>) -> Result<Option<Type>, String> {
+    fn infer_bin_ops(&self, left: &ast::Expr<Option<Type>>, op: &ast::Operator, right: &ast::Expr<Option<Type>>) -> Result<Option<Type>, String> {
         inference_core::resolve_call(
             &self, 
             Some(left.custom.clone().ok_or_else(|| "no value".to_string())?), 
@@ -180,27 +180,26 @@ impl<'a> InferenceContext<'a> {
             &[right.custom.clone().ok_or_else(|| "no value".to_string())?])
     }
 
-    fn infer_unary_ops(&self, op: &ast::Unaryop, operand: &Box<ast::Expr<Option<Type>>>) -> Result<Option<Type>, String> {
+    fn infer_unary_ops(&self, op: &ast::Unaryop, operand: &ast::Expr<Option<Type>>) -> Result<Option<Type>, String> {
         if let ast::Unaryop::Not = op {
-            if (**operand).custom == Some(self.get_primitive(primitives::BOOL_TYPE)) {
+            if operand.custom == Some(self.get_primitive(primitives::BOOL_TYPE)) {
                 Ok(Some(self.get_primitive(primitives::BOOL_TYPE)))
             } else {
                 Err("logical not must be applied to bool".into())
             }
         } else {
-            inference_core::resolve_call(&self, (**operand).custom.clone(), magic_methods::unaryop_name(op), &[])
+            inference_core::resolve_call(&self, operand.custom.clone(), magic_methods::unaryop_name(op), &[])
         }
     }
 
-    fn infer_compare(&self, left: &Box<ast::Expr<Option<Type>>>, ops: &Vec<ast::Cmpop>, comparators: &Vec<ast::Expr<Option<Type>>>) -> Result<Option<Type>, String> {
-        assert!(comparators.len() > 0);
+    fn infer_compare(&self, left: &ast::Expr<Option<Type>>, ops: &[ast::Cmpop], comparators: &[ast::Expr<Option<Type>>]) -> Result<Option<Type>, String> {
         if left.custom.is_none() || (!comparators.iter().all(|x| x.custom.is_some())) {
             Err("comparison operands must have type".into())
         } else {
             let bool_type = Some(self.get_primitive(primitives::BOOL_TYPE));
             let ty_first = inference_core::resolve_call(
                 &self, 
-                Some(left.custom.clone().ok_or_else(|| "comparator must be able to be typed".to_string())?.clone()), 
+                Some(left.custom.clone().ok_or_else(|| "comparator must be able to be typed".to_string())?), 
                 magic_methods::comparison_name(&ops[0]).ok_or_else(|| "unsupported comparison".to_string())?, 
                 &[comparators[0].custom.clone().ok_or_else(|| "comparator must be able to be typed".to_string())?])?;
             if ty_first != bool_type {
@@ -225,7 +224,7 @@ impl<'a> InferenceContext<'a> {
         }
     }
 
-    fn infer_call(&self, func: &Box<ast::Expr<Option<Type>>>, args: &Vec<ast::Expr<Option<Type>>>, _keywords: &Vec<ast::Keyword<Option<Type>>>) -> Result<Option<Type>, String> {
+    fn infer_call(&self, func: &ast::Expr<Option<Type>>, args: &[ast::Expr<Option<Type>>], _keywords: &[ast::Keyword<Option<Type>>]) -> Result<Option<Type>, String> {
         if args.iter().all(|x| x.custom.is_some()) {
             match &func.node {
                 ast::ExprKind::Name {id, ctx: _} 
@@ -249,20 +248,20 @@ impl<'a> InferenceContext<'a> {
         }
     }
 
-    fn infer_subscript(&self, value: &Box<ast::Expr<Option<Type>>>, slice: &Box<ast::Expr<Option<Type>>>) -> Result<Option<Type>, String> {
+    fn infer_subscript(&self, value: &ast::Expr<Option<Type>>, slice: &ast::Expr<Option<Type>>) -> Result<Option<Type>, String> {
         let val_type = value.custom.as_ref().ok_or_else(|| "no value".to_string())?.as_ref();
         if let TypeEnum::ParametricType(primitives::LIST_TYPE, ls) = val_type {
             if let ast::ExprKind::Slice {lower, upper, step} = &slice.node {
                 let int32_type = self.get_primitive(primitives::INT32_TYPE);
                 let l = lower.as_ref().map_or(
                     Ok(&int32_type),
-                    |x| x.custom.as_ref().ok_or("lower bound cannot be typped".to_string()))?;
+                    |x| x.custom.as_ref().ok_or_else(|| "lower bound cannot be typped".to_string()))?;
                 let u = upper.as_ref().map_or(
                     Ok(&int32_type),
-                    |x| x.custom.as_ref().ok_or("upper bound cannot be typped".to_string()))?;
+                    |x| x.custom.as_ref().ok_or_else(|| "upper bound cannot be typped".to_string()))?;
                 let s = step.as_ref().map_or(
                     Ok(&int32_type),
-                    |x| x.custom.as_ref().ok_or("step cannot be typped".to_string()))?;
+                    |x| x.custom.as_ref().ok_or_else(|| "step cannot be typped".to_string()))?;
                 
                 if l == &int32_type && u == &int32_type && s == &int32_type {
                     Ok(value.custom.clone())
@@ -290,19 +289,17 @@ impl<'a> InferenceContext<'a> {
         }
     }
 
-    fn infer_if_expr(&self, test: &Box<ast::Expr<Option<Type>>>, body: &Box<ast::Expr<Option<Type>>>, orelse: &Box<ast::Expr<Option<Type>>>) -> Result<Option<Type>, String> {
+    fn infer_if_expr(&self, test: &ast::Expr<Option<Type>>, body: &ast::Expr<Option<Type>>, orelse: &ast::Expr<Option<Type>>) -> Result<Option<Type>, String> {
         if test.custom != Some(self.get_primitive(primitives::BOOL_TYPE)) {
             Err("test should be bool".into())
+        } else if body.custom == orelse.custom {
+            Ok(body.custom.clone())
         } else {
-            if body.custom == orelse.custom {
-                Ok(body.custom.clone())
-            } else {
-                Err("divergent type at if expression".into())
-            }
+            Err("divergent type at if expression".into())
         }
     }
 
-    fn _infer_list_comprehesion(&self, elt: &Box<ast::Expr<Option<Type>>>, generators: &Vec<ast::Comprehension<Option<Type>>>) -> Result<Option<Type>, String> {
+    fn _infer_list_comprehesion(&self, elt: &ast::Expr<Option<Type>>, generators: &[ast::Comprehension<Option<Type>>]) -> Result<Option<Type>, String> {
         if generators[0]
             .ifs
             .iter()
@@ -372,7 +369,7 @@ impl<'a> InferenceContext<'a> {
                                     target: target_folded,
                                     ifs: ifs_folded,
                                     iter: iter_folded,
-                                    is_async: is_async
+                                    is_async
                                 }]
                             }
                         })
@@ -431,8 +428,8 @@ impl<'a> ExpressionInferencer<'a> {
 
 pub mod test {
 
-    use crate::typecheck::{symbol_resolver::SymbolResolver, typedef::*, symbol_resolver::*, location::*};
-    use rustpython_parser::ast::{self, Expr, fold::Fold};
+    use crate::typecheck::{symbol_resolver::SymbolResolver, symbol_resolver::*, location::*};
+    use rustpython_parser::ast::Expr;
     use super::*;
     
     pub fn new_ctx<'a>() -> ExpressionInferencer<'a> {
@@ -480,7 +477,7 @@ pub mod test {
         let num: i64 = 99999999999;
 
         let ast: Expr = Expr {
-            location: location,
+            location,
             custom: (),
             node: ast::ExprKind::Constant {
                 value: ast::Constant::Int(num.into()),
@@ -493,7 +490,7 @@ pub mod test {
         assert_eq!(
             new_ast, 
             Expr {
-                location: location,
+                location,
                 custom: Some(inferencer.ctx.get_primitive(primitives::INT64_TYPE)),
                 node: ast::ExprKind::Constant {
                     value: ast::Constant::Int(num.into()),
@@ -509,13 +506,13 @@ pub mod test {
         let i32_t = inferencer.ctx.get_primitive(primitives::INT32_TYPE);
         let float_t = inferencer.ctx.get_primitive(primitives::FLOAT_TYPE);
         let ast = rustpython_parser::parser::parse_expression("(123, 123.123, 999999999)").unwrap();
-        let loc = ast.location.clone();
+        let loc = ast.location;
         let folded = inferencer.fold_expr(ast).unwrap();
         assert_eq!(
             folded,
             ast::Expr {
                 location: loc,
-                custom: Some(TypeEnum::ParametricType(primitives::TUPLE_TYPE, vec![i32_t.clone().into(), float_t.clone().into(), i32_t.clone().into()]).into()),
+                custom: Some(TypeEnum::ParametricType(primitives::TUPLE_TYPE, vec![i32_t.clone(), float_t.clone(), i32_t.clone()]).into()),
                 node: ast::ExprKind::Tuple {
                     ctx: ast::ExprContext::Load, 
                     elts: vec![
@@ -529,7 +526,7 @@ pub mod test {
                         },
                         ast::Expr {
                             location: ast::Location::new(1, 7),
-                            custom: Some(float_t.clone()),
+                            custom: Some(float_t),
                             node: ast::ExprKind::Constant {
                                 value: ast::Constant::Float(123.123),
                                 kind: None
@@ -537,7 +534,7 @@ pub mod test {
                         },
                         ast::Expr {
                             location: ast::Location::new(1, 16),
-                            custom: Some(i32_t.clone()),
+                            custom: Some(i32_t),
                             node: ast::ExprKind::Constant {
                                 value: ast::Constant::Int(999999999.into()),
                                 kind: None
@@ -587,7 +584,7 @@ pub mod test {
             new_ast,
             Expr {
                 location,
-                custom: Some(TypeEnum::ParametricType(primitives::LIST_TYPE, vec![inferencer.ctx.get_primitive(primitives::INT32_TYPE).into()]).into()),
+                custom: Some(TypeEnum::ParametricType(primitives::LIST_TYPE, vec![inferencer.ctx.get_primitive(primitives::INT32_TYPE)]).into()),
                 node: ast::ExprKind::List {
                     ctx: ast::ExprContext::Load,
                     elts: vec![
@@ -599,7 +596,7 @@ pub mod test {
                                 kind: None,
                             },
                         },
-    
+
                         Expr {
                             location,
                             custom: Some(inferencer.ctx.get_primitive(primitives::INT32_TYPE)),
