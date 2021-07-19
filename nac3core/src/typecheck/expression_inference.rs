@@ -20,7 +20,7 @@ impl<'a> ast::fold::Fold<()> for InferenceContext<'a> {
         // assert_eq!(node.custom, None);
         
         let expr = match &node.node {
-            ast::ExprKind::ListComp { .. } => self.fold_listcomp(node)?,
+            ast::ExprKind::ListComp { .. } => return self.fold_listcomp(node),
             _ => rustpython_parser::ast::fold::fold_expr(self, node)?
         };
 
