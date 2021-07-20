@@ -11,7 +11,7 @@ use itertools::izip;
 use rustpython_parser::ast::{
     self,
     fold::{self, Fold},
-    Arguments, Expr, ExprKind, Located, Location,
+    Arguments, Comprehension, ExprKind, Located, Location,
 };
 
 pub struct PrimitiveStore {
@@ -48,7 +48,9 @@ impl<'a> fold::Fold<()> for Inferencer<'a> {
             ast::ExprKind::Lambda { args, body } => {
                 self.fold_lambda(node.location, *args, *body)?
             }
-            ast::ExprKind::ListComp { elt, generators } => unimplemented!(),
+            ast::ExprKind::ListComp { elt, generators } => {
+                self.fold_listcomp(node.location, *elt, generators)?
+            }
             _ => fold::fold_expr(self, node)?,
         };
         let custom = match &expr.node {
@@ -70,18 +72,13 @@ impl<'a> fold::Fold<()> for Inferencer<'a> {
                 comparators,
             } => Some(self.infer_compare(left, ops, comparators)?),
             ast::ExprKind::Call { .. } => expr.custom,
-            ast::ExprKind::Subscript {
-                value,
-                slice,
-                ctx: _,
-            } => Some(self.infer_subscript(value.as_ref(), slice.as_ref())?),
+            ast::ExprKind::Subscript { value, slice, .. } => {
+                Some(self.infer_subscript(value.as_ref(), slice.as_ref())?)
+            }
             ast::ExprKind::IfExp { test, body, orelse } => {
                 Some(self.infer_if_expr(test, body.as_ref(), orelse.as_ref())?)
             }
-            ast::ExprKind::ListComp {
-                elt: _,
-                generators: _,
-            } => expr.custom, // already computed
+            ast::ExprKind::ListComp { .. } | ast::ExprKind::Lambda { .. } => expr.custom, // already computed
             ast::ExprKind::Slice { .. } => None, // we don't need it for slice
             _ => return Err("not supported yet".into()),
         };
@@ -183,6 +180,66 @@ impl<'a> Inferencer<'a> {
                 body: body.into(),
             },
             custom: Some(self.unifier.add_ty(TypeEnum::TFunc(fun))),
+        })
+    }
+
+    fn fold_listcomp(
+        &mut self,
+        location: Location,
+        elt: ast::Expr<()>,
+        mut generators: Vec<Comprehension>,
+    ) -> Result<ast::Expr<Option<Type>>, String> {
+        if generators.len() != 1 {
+            return Err(
+                "Only 1 generator statement for list comprehension is supported.".to_string(),
+            );
+        }
+        let variable_mapping = self.variable_mapping.clone();
+        let mut new_context = Inferencer {
+            resolver: self.resolver,
+            unifier: self.unifier,
+            variable_mapping,
+            calls: self.calls,
+            primitives: self.primitives,
+        };
+        let elt = new_context.fold_expr(elt)?;
+        let generator = generators.pop().unwrap();
+        if generator.is_async {
+            return Err("Async iterator not supported.".to_string());
+        }
+        let target = new_context.fold_expr(*generator.target)?;
+        let iter = new_context.fold_expr(*generator.iter)?;
+        let ifs: Vec<_> = generator
+            .ifs
+            .into_iter()
+            .map(|v| new_context.fold_expr(v))
+            .collect::<Result<_, _>>()?;
+
+        // iter should be a list of targets...
+        // actually it should be an iterator of targets, but we don't have iter type for now
+        let list = new_context.unifier.add_ty(TypeEnum::TList {
+            ty: target.custom.unwrap(),
+        });
+        new_context.unifier.unify(iter.custom.unwrap(), list)?;
+        // if conditions should be bool
+        for v in ifs.iter() {
+            new_context
+                .unifier
+                .unify(v.custom.unwrap(), new_context.primitives.bool)?;
+        }
+
+        Ok(Located {
+            location,
+            custom: Some(list),
+            node: ExprKind::ListComp {
+                elt: Box::new(elt),
+                generators: vec![ast::Comprehension {
+                    target: Box::new(target),
+                    iter: Box::new(iter),
+                    ifs,
+                    is_async: false,
+                }],
+            },
         })
     }
 
