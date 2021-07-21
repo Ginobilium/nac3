@@ -162,7 +162,7 @@ impl TestEnvironment {
 #[test_case(indoc! {"
         f = lambda x: True
         a = [1, 2, 3]
-        b = [f(x) for x in a]
+        b = [f(x) for x in a if f(x)]
     "},
     [("a", "list[int32]"), ("b", "list[bool]"), ("f", "fn[[x=int32], bool]")].iter().cloned().collect()
     ; "listcomp test")]

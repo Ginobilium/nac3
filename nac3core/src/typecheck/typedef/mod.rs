@@ -259,12 +259,13 @@ impl Unifier {
 
         let (ty_a, ty_b) = { (ty_a_cell.borrow(), ty_b_cell.borrow()) };
 
-        self.occur_check(a, b)?;
         match (&*ty_a, &*ty_b) {
             (TypeEnum::TVar { .. }, _) => {
+                self.occur_check(a, b)?;
                 self.set_a_to_b(a, b);
             }
             (TSeq { map: map1 }, TSeq { .. }) => {
+                self.occur_check(a, b)?;
                 drop(ty_b);
                 if let TypeEnum::TSeq { map: map2 } = &mut *ty_b_cell.as_ref().borrow_mut() {
                     // unify them to map2
@@ -281,6 +282,7 @@ impl Unifier {
                 self.set_a_to_b(a, b);
             }
             (TSeq { map: map1 }, TTuple { ty: types }) => {
+                self.occur_check(a, b)?;
                 let len = types.len() as i32;
                 for (k, v) in map1.iter() {
                     // handle negative index
@@ -297,6 +299,7 @@ impl Unifier {
                 self.set_a_to_b(a, b);
             }
             (TSeq { map: map1 }, TList { ty }) => {
+                self.occur_check(a, b)?;
                 for v in map1.values() {
                     self.unify(*v, *ty)?;
                 }
@@ -320,6 +323,7 @@ impl Unifier {
                 self.set_a_to_b(a, b);
             }
             (TRecord { fields: fields1 }, TRecord { .. }) => {
+                self.occur_check(a, b)?;
                 drop(ty_b);
                 if let TypeEnum::TRecord { fields: fields2 } = &mut *ty_b_cell.as_ref().borrow_mut()
                 {
@@ -341,6 +345,7 @@ impl Unifier {
                     fields: fields2, ..
                 },
             ) => {
+                self.occur_check(a, b)?;
                 for (key, value) in fields1.iter() {
                     if let Some(ty) = fields2.get(key) {
                         self.unify(*ty, *value)?;
@@ -351,6 +356,7 @@ impl Unifier {
                 self.set_a_to_b(a, b);
             }
             (TRecord { .. }, TVirtual { ty }) => {
+                self.occur_check(a, b)?;
                 self.unify(a, *ty)?;
             }
             (
@@ -387,6 +393,7 @@ impl Unifier {
                 self.set_a_to_b(a, b);
             }
             (TCall { calls }, TFunc(signature)) => {
+                self.occur_check(a, b)?;
                 let required: Vec<String> = signature
                     .args
                     .iter()
