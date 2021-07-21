@@ -105,7 +105,7 @@ impl<'a> fold::Fold<()> for Inferencer<'a> {
                         .unify(target.custom.unwrap(), value.custom.unwrap())?;
                 }
             }
-            ast::StmtKind::AnnAssign { .. } => {}
+            ast::StmtKind::AnnAssign { .. } | ast::StmtKind::Expr { .. } => {}
             _ => return Err("Unsupported statement type".to_string()),
         };
         Ok(stmt)
