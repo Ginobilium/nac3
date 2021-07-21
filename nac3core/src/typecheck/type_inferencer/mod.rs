@@ -304,7 +304,9 @@ impl<'a> Inferencer<'a> {
 
         Ok(Located {
             location,
-            custom: Some(list),
+            custom: Some(new_context.unifier.add_ty(TypeEnum::TList {
+                ty: elt.custom.unwrap(),
+            })),
             node: ExprKind::ListComp {
                 elt: Box::new(elt),
                 generators: vec![ast::Comprehension {
@@ -474,7 +476,7 @@ impl<'a> Inferencer<'a> {
         for t in elts.iter() {
             self.unifier.unify(ty, t.custom.unwrap())?;
         }
-        Ok(ty)
+        Ok(self.unifier.add_ty(TypeEnum::TList { ty }))
     }
 
     fn infer_tuple(&mut self, elts: &[ast::Expr<Option<Type>>]) -> InferenceResult {

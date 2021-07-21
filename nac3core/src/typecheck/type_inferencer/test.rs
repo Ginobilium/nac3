@@ -159,6 +159,13 @@ impl TestEnvironment {
     [("a", "fn[[x=bool], bool]"), ("b", "fn[[x=int32], int32]"), ("c", "bool"),
      ("d", "int32"), ("foo1", "Foo[bool]"), ("foo2", "Foo[int32]")].iter().cloned().collect()
     ; "obj test")]
+#[test_case(indoc! {"
+        f = lambda x: True
+        a = [1, 2, 3]
+        b = [f(x) for x in a]
+    "},
+    [("a", "list[int32]"), ("b", "list[bool]"), ("f", "fn[[x=int32], bool]")].iter().cloned().collect()
+    ; "listcomp test")]
 fn test_basic(source: &str, mapping: HashMap<&str, &str>) {
     let mut env = TestEnvironment::new();
     let id_to_name = std::mem::take(&mut env.id_to_name);
