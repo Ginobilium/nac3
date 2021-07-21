@@ -8,7 +8,7 @@ use std::ops::Deref;
 use std::rc::Rc;
 
 #[cfg(test)]
-mod test_typedef;
+mod test;
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 /// Handle for a type, implementated as a key in the unification table.
@@ -217,10 +217,14 @@ impl Unifier {
             }
             TypeEnum::TObj { obj_id, params, .. } => {
                 let name = obj_to_name(*obj_id);
-                let mut params = params
-                    .values()
-                    .map(|v| self.stringify(*v, obj_to_name, var_to_name));
-                format!("{}[{}]", name, params.join(", "))
+                if params.len() > 0 {
+                    let mut params = params
+                        .values()
+                        .map(|v| self.stringify(*v, obj_to_name, var_to_name));
+                    format!("{}[{}]", name, params.join(", "))
+                } else {
+                    name
+                }
             }
             TypeEnum::TCall { .. } => "call".to_owned(),
             TypeEnum::TFunc(signature) => {
@@ -431,6 +435,9 @@ impl Unifier {
                         } else {
                             return Err(format!("Unknown keyword argument {}", k));
                         }
+                    }
+                    if !required.is_empty() {
+                        return Err("Expected more arguments".to_string());
                     }
                     self.unify(*ret, signature.ret)?;
                     *fun.borrow_mut() = Some(instantiated);

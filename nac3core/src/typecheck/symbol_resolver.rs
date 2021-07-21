@@ -2,11 +2,6 @@ use super::typedef::Type;
 use super::location::Location;
 use rustpython_parser::ast::Expr;
 
-pub enum SymbolType {
-    TypeName(Type),
-    Identifier(Type),
-}
-
 pub enum SymbolValue<'a> {
     I32(i32),
     I64(i64),

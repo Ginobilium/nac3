@@ -14,20 +14,23 @@ use rustpython_parser::ast::{
     Arguments, Comprehension, ExprKind, Located, Location,
 };
 
+#[cfg(test)]
+mod test;
+
 pub struct PrimitiveStore {
-    int32: Type,
-    int64: Type,
-    float: Type,
-    bool: Type,
-    none: Type,
+    pub int32: Type,
+    pub int64: Type,
+    pub float: Type,
+    pub bool: Type,
+    pub none: Type,
 }
 
 pub struct Inferencer<'a> {
-    resolver: &'a mut Box<dyn SymbolResolver>,
-    unifier: &'a mut Unifier,
-    variable_mapping: HashMap<String, Type>,
-    calls: &'a mut Vec<Rc<Call>>,
-    primitives: &'a PrimitiveStore,
+    pub resolver: &'a mut Box<dyn SymbolResolver>,
+    pub unifier: &'a mut Unifier,
+    pub variable_mapping: HashMap<String, Type>,
+    pub calls: &'a mut Vec<Rc<Call>>,
+    pub primitives: &'a PrimitiveStore,
 }
 
 struct NaiveFolder();
@@ -69,7 +72,8 @@ impl<'a> fold::Fold<()> for Inferencer<'a> {
                     .resolver
                     .parse_type_name(annotation.as_ref())
                     .ok_or_else(|| "cannot parse type name".to_string())?;
-                self.unifier.unify(annotation_type, target.custom.unwrap())?;
+                self.unifier
+                    .unify(annotation_type, target.custom.unwrap())?;
                 let annotation = Box::new(NaiveFolder().fold_expr(*annotation)?);
                 Located {
                     location: node.location,
@@ -102,7 +106,7 @@ impl<'a> fold::Fold<()> for Inferencer<'a> {
                 }
             }
             ast::StmtKind::AnnAssign { .. } => {}
-            _ => return Err("Unsupported statement type".to_string())
+            _ => return Err("Unsupported statement type".to_string()),
         };
         Ok(stmt)
     }
@@ -358,7 +362,7 @@ impl<'a> Inferencer<'a> {
             if id == "int64" && args.len() == 1 {
                 if let ExprKind::Constant {
                     value: ast::Constant::Int(val),
-                    ..
+                    kind,
                 } = &args[0].node
                 {
                     let int64: Result<i64, _> = val.try_into();
@@ -377,7 +381,14 @@ impl<'a> Inferencer<'a> {
                                 location: func.location,
                                 node: ExprKind::Name { id, ctx },
                             }),
-                            args: vec![self.fold_expr(args.pop().unwrap())?],
+                            args: vec![Located {
+                                location: args[0].location,
+                                custom,
+                                node: ExprKind::Constant {
+                                    value: ast::Constant::Int(val.clone()),
+                                    kind: kind.clone(),
+                                },
+                            }],
                             keywords: vec![],
                         },
                     });
