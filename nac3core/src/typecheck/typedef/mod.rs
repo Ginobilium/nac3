@@ -6,6 +6,9 @@ use std::iter::once;
 use std::ops::Deref;
 use std::rc::Rc;
 
+#[cfg(test)]
+mod test_typedef;
+
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 /// Handle for a type, implementated as a key in the unification table.
 pub struct Type(u32);
