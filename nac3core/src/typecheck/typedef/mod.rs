@@ -1,4 +1,5 @@
 use ena::unify::{InPlaceUnificationTable, NoError, UnifyKey, UnifyValue};
+use itertools::Itertools;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt::Debug;
@@ -143,22 +144,16 @@ impl Debug for TypeCell {
     }
 }
 
-pub struct ObjDef {
-    name: String,
-    fields: Mapping<String>,
-}
-
 pub struct Unifier {
     unification_table: InPlaceUnificationTable<Type>,
-    obj_def_table: Vec<ObjDef>,
     var_id: u32,
 }
 
 impl Unifier {
+    /// Get an empty unifier
     pub fn new() -> Unifier {
         Unifier {
             unification_table: InPlaceUnificationTable::new(),
-            obj_def_table: Vec::new(),
             var_id: 0,
         }
     }
@@ -174,11 +169,78 @@ impl Unifier {
         self.unification_table.probe_value(a).0
     }
 
+    /// Unify two types, i.e. a = b.
     pub fn unify(&mut self, a: Type, b: Type) -> Result<(), String> {
         self.unify_impl(a, b, false)
     }
 
-    /// Unify two types, i.e. a = b.
+    /// Get a fresh type variable.
+    pub fn get_fresh_var(&mut self) -> (Type, u32) {
+        let id = self.var_id + 1;
+        self.var_id += 1;
+        (self.add_ty(TypeEnum::TVar { id }), id)
+    }
+
+    /// Get string representation of the type
+    pub fn stringify<F, G>(&mut self, ty: Type, obj_to_name: &mut F, var_to_name: &mut G) -> String
+    where
+        F: FnMut(usize) -> String,
+        G: FnMut(u32) -> String,
+    {
+        let ty = self.unification_table.probe_value(ty).0;
+        let ty = ty.as_ref().borrow();
+        match &*ty {
+            TypeEnum::TVar { id } => var_to_name(*id),
+            TypeEnum::TSeq { map } => {
+                let mut fields = map.iter().map(|(k, v)| {
+                    format!("{}={}", k, self.stringify(*v, obj_to_name, var_to_name))
+                });
+                format!("seq[{}]", fields.join(", "))
+            }
+            TypeEnum::TTuple { ty } => {
+                let mut fields = ty
+                    .iter()
+                    .map(|v| self.stringify(*v, obj_to_name, var_to_name));
+                format!("tuple[{}]", fields.join(", "))
+            }
+            TypeEnum::TList { ty } => {
+                format!("list[{}]", self.stringify(*ty, obj_to_name, var_to_name))
+            }
+            TypeEnum::TVirtual { ty } => {
+                format!("virtual[{}]", self.stringify(*ty, obj_to_name, var_to_name))
+            }
+            TypeEnum::TRecord { fields } => {
+                let mut fields = fields.iter().map(|(k, v)| {
+                    format!("{}={}", k, self.stringify(*v, obj_to_name, var_to_name))
+                });
+                format!("record[{}]", fields.join(", "))
+            }
+            TypeEnum::TObj { obj_id, params, .. } => {
+                let name = obj_to_name(*obj_id);
+                let mut params = params
+                    .values()
+                    .map(|v| self.stringify(*v, obj_to_name, var_to_name));
+                format!("{}[{}]", name, params.join(", "))
+            }
+            TypeEnum::TCall { .. } => "call".to_owned(),
+            TypeEnum::TFunc(signature) => {
+                let params = signature
+                    .args
+                    .iter()
+                    .map(|arg| {
+                        format!(
+                            "{}={}",
+                            arg.name,
+                            self.stringify(arg.ty, obj_to_name, var_to_name)
+                        )
+                    })
+                    .join(", ");
+                let ret = self.stringify(signature.ret, obj_to_name, var_to_name);
+                format!("fn[[{}], {}]", params, ret)
+            }
+        }
+    }
+
     fn unify_impl(&mut self, a: Type, b: Type, swapped: bool) -> Result<(), String> {
         use TypeEnum::*;
         let (ty_a_cell, ty_b_cell) = {
@@ -491,7 +553,7 @@ impl Unifier {
     /// If this returns Some(T), T would be the substituted type.
     /// If this returns None, the result type would be the original type
     /// (no substitution has to be done).
-    pub fn subst(&mut self, a: Type, mapping: &VarMap) -> Option<Type> {
+    fn subst(&mut self, a: Type, mapping: &VarMap) -> Option<Type> {
         let ty_cell = self.unification_table.probe_value(a);
         let ty = ty_cell.borrow();
         // this function would only be called when we instantiate functions.
@@ -640,7 +702,7 @@ impl Unifier {
     }
 
     /// Check whether two types are equal.
-    pub fn eq(&mut self, a: Type, b: Type) -> bool {
+    fn eq(&mut self, a: Type, b: Type) -> bool {
         if a == b {
             return true;
         }
@@ -699,12 +761,5 @@ impl Unifier {
             }
         }
         true
-    }
-
-    /// Get a fresh type variable.
-    pub fn get_fresh_var(&mut self) -> (Type, u32) {
-        let id = self.var_id + 1;
-        self.var_id += 1;
-        (self.add_ty(TypeEnum::TVar { id }), id)
     }
 }
