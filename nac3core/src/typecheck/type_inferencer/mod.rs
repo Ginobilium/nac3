@@ -31,7 +31,7 @@ pub struct Inferencer<'a> {
     pub variable_mapping: HashMap<String, Type>,
     pub calls: &'a mut Vec<Rc<Call>>,
     pub primitives: &'a PrimitiveStore,
-    pub return_type: Option<Type>
+    pub return_type: Option<Type>,
 }
 
 struct NaiveFolder();
@@ -107,20 +107,18 @@ impl<'a> fold::Fold<()> for Inferencer<'a> {
                 }
             }
             ast::StmtKind::AnnAssign { .. } | ast::StmtKind::Expr { .. } => {}
-            ast::StmtKind::Return { value } => {
-                match (value, self.return_type) {
-                    (Some(v), Some(v1)) => {
-                        self.unifier.unify(v.custom.unwrap(), v1)?;
-                    }
-                    (Some(_), None) => {
-                        return Err("Unexpected return value".to_string());
-                    }
-                    (None, Some(_)) => {
-                        return Err("Expected return value".to_string());
-                    }
-                    (None, None) => {}
+            ast::StmtKind::Return { value } => match (value, self.return_type) {
+                (Some(v), Some(v1)) => {
+                    self.unifier.unify(v.custom.unwrap(), v1)?;
                 }
-            }
+                (Some(_), None) => {
+                    return Err("Unexpected return value".to_string());
+                }
+                (None, Some(_)) => {
+                    return Err("Expected return value".to_string());
+                }
+                (None, None) => {}
+            },
             _ => return Err("Unsupported statement type".to_string()),
         };
         Ok(stmt)
@@ -151,7 +149,7 @@ impl<'a> fold::Fold<()> for Inferencer<'a> {
                 attr,
                 ctx: _,
             } => Some(self.infer_attribute(value, attr)?),
-            ast::ExprKind::BoolOp { op: _, values } => Some(self.infer_bool_ops(values)?),
+            ast::ExprKind::BoolOp { values, .. } => Some(self.infer_bool_ops(values)?),
             ast::ExprKind::BinOp { left, op, right } => Some(self.infer_bin_ops(left, op, right)?),
             ast::ExprKind::UnaryOp { op, operand } => Some(self.infer_unary_ops(op, operand)?),
             ast::ExprKind::Compare {
@@ -242,7 +240,7 @@ impl<'a> Inferencer<'a> {
             variable_mapping,
             calls: self.calls,
             primitives: self.primitives,
-            return_type: self.return_type
+            return_type: self.return_type,
         };
         let fun = FunSignature {
             args: fn_args
@@ -291,7 +289,7 @@ impl<'a> Inferencer<'a> {
             variable_mapping,
             calls: self.calls,
             primitives: self.primitives,
-            return_type: self.return_type
+            return_type: self.return_type,
         };
         let elt = new_context.fold_expr(elt)?;
         let generator = generators.pop().unwrap();
@@ -392,23 +390,11 @@ impl<'a> Inferencer<'a> {
                         return Err("Integer out of bound".into());
                     }
                     return Ok(Located {
-                        location,
+                        location: args[0].location,
                         custom,
-                        node: ExprKind::Call {
-                            func: Box::new(Located {
-                                custom: None,
-                                location: func.location,
-                                node: ExprKind::Name { id, ctx },
-                            }),
-                            args: vec![Located {
-                                location: args[0].location,
-                                custom,
-                                node: ExprKind::Constant {
-                                    value: ast::Constant::Int(val.clone()),
-                                    kind: kind.clone(),
-                                },
-                            }],
-                            keywords: vec![],
+                        node: ExprKind::Constant {
+                            value: ast::Constant::Int(val.clone()),
+                            kind: kind.clone(),
                         },
                     });
                 }

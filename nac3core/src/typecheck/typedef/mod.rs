@@ -46,7 +46,6 @@ pub struct FunSignature {
 #[derive(Clone)]
 pub enum TypeEnum {
     TVar {
-        // TODO: upper/lower bound
         id: u32,
     },
     TSeq {
@@ -101,6 +100,17 @@ impl TypeEnum {
             TypeEnum::TCall { .. } => "TCall",
             TypeEnum::TFunc { .. } => "TFunc",
         }
+    }
+
+    pub fn is_concrete(&self) -> bool {
+        matches!(
+            self,
+            TypeEnum::TTuple { .. }
+                | TypeEnum::TList { .. }
+                | TypeEnum::TObj { .. }
+                | TypeEnum::TVirtual { .. }
+                | TypeEnum::TFunc { .. }
+        )
     }
 }
 

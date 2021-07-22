@@ -5,3 +5,4 @@ pub mod symbol_resolver;
 pub mod typedef;
 pub mod type_inferencer;
 mod unification_table;
+mod function_check;
