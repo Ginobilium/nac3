@@ -177,7 +177,7 @@ impl Unifier {
             }
             TypeEnum::TObj { obj_id, params, .. } => {
                 let name = obj_to_name(*obj_id);
-                if params.len() > 0 {
+                if !params.is_empty() {
                     let mut params = params
                         .values()
                         .map(|v| self.stringify(*v, obj_to_name, var_to_name));

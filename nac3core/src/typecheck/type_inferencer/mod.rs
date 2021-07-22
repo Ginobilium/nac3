@@ -31,6 +31,7 @@ pub struct Inferencer<'a> {
     pub variable_mapping: HashMap<String, Type>,
     pub calls: &'a mut Vec<Rc<Call>>,
     pub primitives: &'a PrimitiveStore,
+    pub return_type: Option<Type>
 }
 
 struct NaiveFolder();
@@ -106,6 +107,20 @@ impl<'a> fold::Fold<()> for Inferencer<'a> {
                 }
             }
             ast::StmtKind::AnnAssign { .. } | ast::StmtKind::Expr { .. } => {}
+            ast::StmtKind::Return { value } => {
+                match (value, self.return_type) {
+                    (Some(v), Some(v1)) => {
+                        self.unifier.unify(v.custom.unwrap(), v1)?;
+                    }
+                    (Some(_), None) => {
+                        return Err("Unexpected return value".to_string());
+                    }
+                    (None, Some(_)) => {
+                        return Err("Expected return value".to_string());
+                    }
+                    (None, None) => {}
+                }
+            }
             _ => return Err("Unsupported statement type".to_string()),
         };
         Ok(stmt)
@@ -227,6 +242,7 @@ impl<'a> Inferencer<'a> {
             variable_mapping,
             calls: self.calls,
             primitives: self.primitives,
+            return_type: self.return_type
         };
         let fun = FunSignature {
             args: fn_args
@@ -275,6 +291,7 @@ impl<'a> Inferencer<'a> {
             variable_mapping,
             calls: self.calls,
             primitives: self.primitives,
+            return_type: self.return_type
         };
         let elt = new_context.fold_expr(elt)?;
         let generator = generators.pop().unwrap();

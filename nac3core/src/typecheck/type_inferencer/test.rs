@@ -123,6 +123,7 @@ impl TestEnvironment {
             variable_mapping: Default::default(),
             calls: &mut self.calls,
             primitives: &mut self.primitives,
+            return_type: None
         }
     }
 }
