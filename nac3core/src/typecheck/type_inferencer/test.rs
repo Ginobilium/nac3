@@ -8,12 +8,12 @@ use rustpython_parser::parser::parse_program;
 use test_case::test_case;
 
 struct Resolver {
-    type_mapping: HashMap<String, Type>,
+    identifier_mapping: HashMap<String, Type>,
 }
 
 impl SymbolResolver for Resolver {
     fn get_symbol_type(&mut self, str: &str) -> Option<Type> {
-        self.type_mapping.get(str).cloned()
+        self.identifier_mapping.get(str).cloned()
     }
 
     fn parse_type_name(&mut self, _: &ast::Expr<()>) -> Option<Type> {
@@ -35,12 +35,13 @@ struct TestEnvironment {
     pub calls: Vec<Rc<Call>>,
     pub primitives: PrimitiveStore,
     pub id_to_name: HashMap<usize, String>,
+    pub identifier_mapping: HashMap<String, Type>,
 }
 
 impl TestEnvironment {
     fn new() -> TestEnvironment {
         let mut unifier = Unifier::new();
-        let mut type_mapping = HashMap::new();
+        let mut identifier_mapping = HashMap::new();
         let int32 = unifier.add_ty(TypeEnum::TObj {
             obj_id: 0,
             fields: HashMap::new(),
@@ -66,7 +67,7 @@ impl TestEnvironment {
             fields: HashMap::new(),
             params: HashMap::new(),
         });
-        type_mapping.insert("None".into(), none);
+        identifier_mapping.insert("None".into(), none);
 
         let primitives = PrimitiveStore {
             int32,
@@ -84,7 +85,7 @@ impl TestEnvironment {
             params: [(id, v0)].iter().cloned().collect(),
         });
 
-        type_mapping.insert(
+        identifier_mapping.insert(
             "Foo".into(),
             unifier.add_ty(TypeEnum::TFunc(FunSignature {
                 args: vec![],
@@ -105,13 +106,14 @@ impl TestEnvironment {
         .cloned()
         .collect();
 
-        let resolver = Box::new(Resolver { type_mapping }) as Box<dyn SymbolResolver>;
+        let resolver = Box::new(Resolver { identifier_mapping: identifier_mapping.clone() }) as Box<dyn SymbolResolver>;
 
         TestEnvironment {
             unifier,
             resolver,
             primitives,
             id_to_name,
+            identifier_mapping,
             calls: Vec::new(),
         }
     }
@@ -168,15 +170,20 @@ impl TestEnvironment {
     [("a", "list[int32]"), ("b", "list[bool]"), ("f", "fn[[x=int32], bool]")].iter().cloned().collect()
     ; "listcomp test")]
 fn test_basic(source: &str, mapping: HashMap<&str, &str>) {
+    println!("source:\n{}", source);
     let mut env = TestEnvironment::new();
     let id_to_name = std::mem::take(&mut env.id_to_name);
+    let mut defined_identifiers = env.identifier_mapping.keys().cloned().collect();
     let mut inferencer = env.get_inferencer();
     let statements = parse_program(source).unwrap();
-    statements
+    let statements = statements
         .into_iter()
         .map(|v| inferencer.fold_stmt(v))
         .collect::<Result<Vec<_>, _>>()
         .unwrap();
+
+    inferencer.check_block(&statements, &mut defined_identifiers).unwrap();
+
     for (k, v) in inferencer.variable_mapping.iter() {
         let name = inferencer.unifier.stringify(
             *v,

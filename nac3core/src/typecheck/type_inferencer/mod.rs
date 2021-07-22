@@ -107,6 +107,7 @@ impl<'a> fold::Fold<()> for Inferencer<'a> {
                 }
             }
             ast::StmtKind::AnnAssign { .. } | ast::StmtKind::Expr { .. } => {}
+            ast::StmtKind::Break | ast::StmtKind::Continue => {}
             ast::StmtKind::Return { value } => match (value, self.return_type) {
                 (Some(v), Some(v1)) => {
                     self.unifier.unify(v.custom.unwrap(), v1)?;
@@ -130,12 +131,14 @@ impl<'a> fold::Fold<()> for Inferencer<'a> {
                 func,
                 args,
                 keywords,
-            } => self.fold_call(node.location, *func, args, keywords)?,
+            } => {
+                return self.fold_call(node.location, *func, args, keywords);
+            }
             ast::ExprKind::Lambda { args, body } => {
-                self.fold_lambda(node.location, *args, *body)?
+                return self.fold_lambda(node.location, *args, *body);
             }
             ast::ExprKind::ListComp { elt, generators } => {
-                self.fold_listcomp(node.location, *elt, generators)?
+                return self.fold_listcomp(node.location, *elt, generators);
             }
             _ => fold::fold_expr(self, node)?,
         };
