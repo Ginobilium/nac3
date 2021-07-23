@@ -278,11 +278,24 @@ impl Unifier {
                 self.check_var_range(*id, b, &range.borrow())?;
                 self.set_a_to_b(a, b);
             }
-            (TVar { meta: Record(_), id, range, .. }, TVirtual { ty }) => {
-                // TODO: look at this rule
+            (TVar { meta: Record(map), id, range, .. }, TVirtual { ty }) => {
                 self.occur_check(a, b)?;
+                let ty = self.get_ty(*ty);
+                if let TObj { fields, .. } = ty.as_ref() {
+                    for (k, v) in map.borrow().iter() {
+                        if let Some(ty) = fields.get(k) {
+                            if !matches!(self.get_ty(*ty).as_ref(), TFunc { .. }) {
+                                return Err(format!("Cannot access field {} for virtual type", k));
+                            }
+                            self.unify(*v, *ty)?;
+                        }
+                    }
+                } else {
+                    // require annotation...
+                    return Err("Requires type annotation for virtual".to_string());
+                }
                 self.check_var_range(*id, b, &range.borrow())?;
-                self.unify(a, *ty)?;
+                self.unify(a, b)?;
             }
             (
                 TObj { obj_id: id1, params: params1, .. },
@@ -394,21 +407,23 @@ impl Unifier {
         match ty.as_ref() {
             TypeEnum::TVar { id, meta: Generic, .. } => var_to_name(*id),
             TypeEnum::TVar { meta: Sequence(map), .. } => {
-                let fields = map.borrow().iter().map(|(k, v)| {
-                    format!("{}={}", k, self.stringify(*v, obj_to_name, var_to_name))
-                }).join(", ");
+                let fields = map
+                    .borrow()
+                    .iter()
+                    .map(|(k, v)| format!("{}={}", k, self.stringify(*v, obj_to_name, var_to_name)))
+                    .join(", ");
                 format!("seq[{}]", fields)
             }
             TypeEnum::TVar { meta: Record(fields), .. } => {
-                let fields = fields.borrow().iter().map(|(k, v)| {
-                    format!("{}={}", k, self.stringify(*v, obj_to_name, var_to_name))
-                }).join(", ");
+                let fields = fields
+                    .borrow()
+                    .iter()
+                    .map(|(k, v)| format!("{}={}", k, self.stringify(*v, obj_to_name, var_to_name)))
+                    .join(", ");
                 format!("record[{}]", fields)
             }
             TypeEnum::TTuple { ty } => {
-                let mut fields = ty
-                    .iter()
-                    .map(|v| self.stringify(*v, obj_to_name, var_to_name));
+                let mut fields = ty.iter().map(|v| self.stringify(*v, obj_to_name, var_to_name));
                 format!("tuple[{}]", fields.join(", "))
             }
             TypeEnum::TList { ty } => {
@@ -420,9 +435,8 @@ impl Unifier {
             TypeEnum::TObj { obj_id, params, .. } => {
                 let name = obj_to_name(*obj_id);
                 if !params.is_empty() {
-                    let mut params = params
-                        .values()
-                        .map(|v| self.stringify(*v, obj_to_name, var_to_name));
+                    let mut params =
+                        params.values().map(|v| self.stringify(*v, obj_to_name, var_to_name));
                     format!("{}[{}]", name, params.join(", "))
                 } else {
                     name
@@ -434,11 +448,7 @@ impl Unifier {
                     .args
                     .iter()
                     .map(|arg| {
-                        format!(
-                            "{}={}",
-                            arg.name,
-                            self.stringify(arg.ty, obj_to_name, var_to_name)
-                        )
+                        format!("{}={}", arg.name, self.stringify(arg.ty, obj_to_name, var_to_name))
                     })
                     .join(", ");
                 let ret = self.stringify(signature.ret, obj_to_name, var_to_name);
