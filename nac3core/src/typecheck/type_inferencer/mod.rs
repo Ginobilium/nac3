@@ -54,17 +54,11 @@ impl<'a> fold::Fold<()> for Inferencer<'a> {
     fn fold_stmt(&mut self, node: ast::Stmt<()>) -> Result<ast::Stmt<Self::TargetU>, Self::Error> {
         let stmt = match node.node {
             // we don't want fold over type annotation
-            ast::StmtKind::AnnAssign {
-                target,
-                annotation,
-                value,
-                simple,
-            } => {
+            ast::StmtKind::AnnAssign { target, annotation, value, simple } => {
                 let target = Box::new(fold::fold_expr(self, *target)?);
                 let value = if let Some(v) = value {
                     let ty = Box::new(fold::fold_expr(self, *v)?);
-                    self.unifier
-                        .unify(target.custom.unwrap(), ty.custom.unwrap())?;
+                    self.unifier.unify(target.custom.unwrap(), ty.custom.unwrap())?;
                     Some(ty)
                 } else {
                     None
@@ -73,37 +67,27 @@ impl<'a> fold::Fold<()> for Inferencer<'a> {
                     .resolver
                     .parse_type_name(annotation.as_ref())
                     .ok_or_else(|| "cannot parse type name".to_string())?;
-                self.unifier
-                    .unify(annotation_type, target.custom.unwrap())?;
+                self.unifier.unify(annotation_type, target.custom.unwrap())?;
                 let annotation = Box::new(NaiveFolder().fold_expr(*annotation)?);
                 Located {
                     location: node.location,
                     custom: None,
-                    node: ast::StmtKind::AnnAssign {
-                        target,
-                        annotation,
-                        value,
-                        simple,
-                    },
+                    node: ast::StmtKind::AnnAssign { target, annotation, value, simple },
                 }
             }
             _ => fold::fold_stmt(self, node)?,
         };
         match &stmt.node {
             ast::StmtKind::For { target, iter, .. } => {
-                let list = self.unifier.add_ty(TypeEnum::TList {
-                    ty: target.custom.unwrap(),
-                });
+                let list = self.unifier.add_ty(TypeEnum::TList { ty: target.custom.unwrap() });
                 self.unifier.unify(list, iter.custom.unwrap())?;
             }
             ast::StmtKind::If { test, .. } | ast::StmtKind::While { test, .. } => {
-                self.unifier
-                    .unify(test.custom.unwrap(), self.primitives.bool)?;
+                self.unifier.unify(test.custom.unwrap(), self.primitives.bool)?;
             }
             ast::StmtKind::Assign { targets, value, .. } => {
                 for target in targets.iter() {
-                    self.unifier
-                        .unify(target.custom.unwrap(), value.custom.unwrap())?;
+                    self.unifier.unify(target.custom.unwrap(), value.custom.unwrap())?;
                 }
             }
             ast::StmtKind::AnnAssign { .. } | ast::StmtKind::Expr { .. } => {}
@@ -127,11 +111,7 @@ impl<'a> fold::Fold<()> for Inferencer<'a> {
 
     fn fold_expr(&mut self, node: ast::Expr<()>) -> Result<ast::Expr<Self::TargetU>, Self::Error> {
         let expr = match node.node {
-            ast::ExprKind::Call {
-                func,
-                args,
-                keywords,
-            } => {
+            ast::ExprKind::Call { func, args, keywords } => {
                 return self.fold_call(node.location, *func, args, keywords);
             }
             ast::ExprKind::Lambda { args, body } => {
@@ -147,19 +127,15 @@ impl<'a> fold::Fold<()> for Inferencer<'a> {
             ast::ExprKind::Name { id, .. } => Some(self.infer_identifier(id)?),
             ast::ExprKind::List { elts, .. } => Some(self.infer_list(elts)?),
             ast::ExprKind::Tuple { elts, .. } => Some(self.infer_tuple(elts)?),
-            ast::ExprKind::Attribute {
-                value,
-                attr,
-                ctx: _,
-            } => Some(self.infer_attribute(value, attr)?),
+            ast::ExprKind::Attribute { value, attr, ctx: _ } => {
+                Some(self.infer_attribute(value, attr)?)
+            }
             ast::ExprKind::BoolOp { values, .. } => Some(self.infer_bool_ops(values)?),
             ast::ExprKind::BinOp { left, op, right } => Some(self.infer_bin_ops(left, op, right)?),
             ast::ExprKind::UnaryOp { op, operand } => Some(self.infer_unary_ops(op, operand)?),
-            ast::ExprKind::Compare {
-                left,
-                ops,
-                comparators,
-            } => Some(self.infer_compare(left, ops, comparators)?),
+            ast::ExprKind::Compare { left, ops, comparators } => {
+                Some(self.infer_compare(left, ops, comparators)?)
+            }
             ast::ExprKind::Subscript { value, slice, .. } => {
                 Some(self.infer_subscript(value.as_ref(), slice.as_ref())?)
             }
@@ -172,11 +148,7 @@ impl<'a> fold::Fold<()> for Inferencer<'a> {
             ast::ExprKind::Slice { .. } => None, // we don't need it for slice
             _ => return Err("not supported yet".into()),
         };
-        Ok(ast::Expr {
-            custom,
-            location: expr.location,
-            node: expr.node,
-        })
+        Ok(ast::Expr { custom, location: expr.location, node: expr.node })
     }
 }
 
@@ -196,16 +168,12 @@ impl<'a> Inferencer<'a> {
         params: Vec<Type>,
         ret: Type,
     ) -> InferenceResult {
-        let call = Rc::new(Call {
-            posargs: params,
-            kwargs: HashMap::new(),
-            ret,
-            fun: RefCell::new(None),
-        });
+        let call =
+            Rc::new(Call { posargs: params, kwargs: HashMap::new(), ret, fun: RefCell::new(None) });
         self.calls.push(call.clone());
-        let call = self.unifier.add_ty(TypeEnum::TCall { calls: vec![call] });
+        let call = self.unifier.add_ty(TypeEnum::TCall(vec![call].into()));
         let fields = once((method, call)).collect();
-        let record = self.unifier.add_ty(TypeEnum::TRecord { fields });
+        let record = self.unifier.add_record(fields);
         self.constrain(obj, record)?;
         Ok(ret)
     }
@@ -248,11 +216,7 @@ impl<'a> Inferencer<'a> {
         let fun = FunSignature {
             args: fn_args
                 .iter()
-                .map(|(k, ty)| FuncArg {
-                    name: k.clone(),
-                    ty: *ty,
-                    is_optional: false,
-                })
+                .map(|(k, ty)| FuncArg { name: k.clone(), ty: *ty, is_optional: false })
                 .collect(),
             ret,
             vars: Default::default(),
@@ -266,10 +230,7 @@ impl<'a> Inferencer<'a> {
         }
         Ok(Located {
             location,
-            node: ExprKind::Lambda {
-                args: args.into(),
-                body: body.into(),
-            },
+            node: ExprKind::Lambda { args: args.into(), body: body.into() },
             custom: Some(self.unifier.add_ty(TypeEnum::TFunc(fun))),
         })
     }
@@ -282,7 +243,7 @@ impl<'a> Inferencer<'a> {
     ) -> Result<ast::Expr<Option<Type>>, String> {
         if generators.len() != 1 {
             return Err(
-                "Only 1 generator statement for list comprehension is supported.".to_string(),
+                "Only 1 generator statement for list comprehension is supported.".to_string()
             );
         }
         let variable_mapping = self.variable_mapping.clone();
@@ -309,22 +270,16 @@ impl<'a> Inferencer<'a> {
 
         // iter should be a list of targets...
         // actually it should be an iterator of targets, but we don't have iter type for now
-        let list = new_context.unifier.add_ty(TypeEnum::TList {
-            ty: target.custom.unwrap(),
-        });
+        let list = new_context.unifier.add_ty(TypeEnum::TList { ty: target.custom.unwrap() });
         new_context.unifier.unify(iter.custom.unwrap(), list)?;
         // if conditions should be bool
         for v in ifs.iter() {
-            new_context
-                .unifier
-                .unify(v.custom.unwrap(), new_context.primitives.bool)?;
+            new_context.unifier.unify(v.custom.unwrap(), new_context.primitives.bool)?;
         }
 
         Ok(Located {
             location,
-            custom: Some(new_context.unifier.add_ty(TypeEnum::TList {
-                ty: elt.custom.unwrap(),
-            })),
+            custom: Some(new_context.unifier.add_ty(TypeEnum::TList { ty: elt.custom.unwrap() })),
             node: ExprKind::ListComp {
                 elt: Box::new(elt),
                 generators: vec![ast::Comprehension {
@@ -344,77 +299,68 @@ impl<'a> Inferencer<'a> {
         mut args: Vec<ast::Expr<()>>,
         keywords: Vec<Located<ast::KeywordData>>,
     ) -> Result<ast::Expr<Option<Type>>, String> {
-        let func = if let Located {
-            location: func_location,
-            custom,
-            node: ExprKind::Name { id, ctx },
-        } = func
-        {
-            // handle special functions that cannot be typed in the usual way...
-            if id == "virtual" {
-                if args.is_empty() || args.len() > 2 || !keywords.is_empty() {
-                    return Err("`virtual` can only accept 1/2 positional arguments.".to_string());
-                }
-                let arg0 = self.fold_expr(args.remove(0))?;
-                let ty = if let Some(arg) = args.pop() {
-                    self.resolver
-                        .parse_type_name(&arg)
-                        .ok_or_else(|| "error parsing type".to_string())?
-                } else {
-                    self.unifier.get_fresh_var().0
-                };
-                let custom = Some(self.unifier.add_ty(TypeEnum::TVirtual { ty }));
-                return Ok(Located {
-                    location,
-                    custom,
-                    node: ExprKind::Call {
-                        func: Box::new(Located {
-                            custom: None,
-                            location: func.location,
-                            node: ExprKind::Name { id, ctx },
-                        }),
-                        args: vec![arg0],
-                        keywords: vec![],
-                    },
-                });
-            }
-            // int64 is special because its argument can be a constant larger than int32
-            if id == "int64" && args.len() == 1 {
-                if let ExprKind::Constant {
-                    value: ast::Constant::Int(val),
-                    kind,
-                } = &args[0].node
-                {
-                    let int64: Result<i64, _> = val.try_into();
-                    let custom;
-                    if int64.is_ok() {
-                        custom = Some(self.primitives.int64);
-                    } else {
-                        return Err("Integer out of bound".into());
+        let func =
+            if let Located { location: func_location, custom, node: ExprKind::Name { id, ctx } } =
+                func
+            {
+                // handle special functions that cannot be typed in the usual way...
+                if id == "virtual" {
+                    if args.is_empty() || args.len() > 2 || !keywords.is_empty() {
+                        return Err(
+                            "`virtual` can only accept 1/2 positional arguments.".to_string()
+                        );
                     }
+                    let arg0 = self.fold_expr(args.remove(0))?;
+                    let ty = if let Some(arg) = args.pop() {
+                        self.resolver
+                            .parse_type_name(&arg)
+                            .ok_or_else(|| "error parsing type".to_string())?
+                    } else {
+                        self.unifier.get_fresh_var().0
+                    };
+                    let custom = Some(self.unifier.add_ty(TypeEnum::TVirtual { ty }));
                     return Ok(Located {
-                        location: args[0].location,
+                        location,
                         custom,
-                        node: ExprKind::Constant {
-                            value: ast::Constant::Int(val.clone()),
-                            kind: kind.clone(),
+                        node: ExprKind::Call {
+                            func: Box::new(Located {
+                                custom: None,
+                                location: func.location,
+                                node: ExprKind::Name { id, ctx },
+                            }),
+                            args: vec![arg0],
+                            keywords: vec![],
                         },
                     });
                 }
-            }
-            Located {
-                location: func_location,
-                custom,
-                node: ExprKind::Name { id, ctx },
-            }
-        } else {
-            func
-        };
+                // int64 is special because its argument can be a constant larger than int32
+                if id == "int64" && args.len() == 1 {
+                    if let ExprKind::Constant { value: ast::Constant::Int(val), kind } =
+                        &args[0].node
+                    {
+                        let int64: Result<i64, _> = val.try_into();
+                        let custom;
+                        if int64.is_ok() {
+                            custom = Some(self.primitives.int64);
+                        } else {
+                            return Err("Integer out of bound".into());
+                        }
+                        return Ok(Located {
+                            location: args[0].location,
+                            custom,
+                            node: ExprKind::Constant {
+                                value: ast::Constant::Int(val.clone()),
+                                kind: kind.clone(),
+                            },
+                        });
+                    }
+                }
+                Located { location: func_location, custom, node: ExprKind::Name { id, ctx } }
+            } else {
+                func
+            };
         let func = Box::new(self.fold_expr(func)?);
-        let args = args
-            .into_iter()
-            .map(|v| self.fold_expr(v))
-            .collect::<Result<Vec<_>, _>>()?;
+        let args = args.into_iter().map(|v| self.fold_expr(v)).collect::<Result<Vec<_>, _>>()?;
         let keywords = keywords
             .into_iter()
             .map(|v| fold::fold_keyword(self, v))
@@ -430,18 +376,10 @@ impl<'a> Inferencer<'a> {
             ret,
         });
         self.calls.push(call.clone());
-        let call = self.unifier.add_ty(TypeEnum::TCall { calls: vec![call] });
+        let call = self.unifier.add_ty(TypeEnum::TCall(vec![call].into()));
         self.unifier.unify(func.custom.unwrap(), call)?;
 
-        Ok(Located {
-            location,
-            custom: Some(ret),
-            node: ExprKind::Call {
-                func,
-                args,
-                keywords,
-            },
-        })
+        Ok(Located { location, custom: Some(ret), node: ExprKind::Call { func, args, keywords } })
     }
 
     fn infer_identifier(&mut self, id: &str) -> InferenceResult {
@@ -493,7 +431,7 @@ impl<'a> Inferencer<'a> {
     fn infer_attribute(&mut self, value: &ast::Expr<Option<Type>>, attr: &str) -> InferenceResult {
         let (attr_ty, _) = self.unifier.get_fresh_var();
         let fields = once((attr.to_string(), attr_ty)).collect();
-        let record = self.unifier.add_ty(TypeEnum::TRecord { fields });
+        let record = self.unifier.add_record(fields);
         self.constrain(value.custom.unwrap(), record)?;
         Ok(attr_ty)
     }
@@ -540,9 +478,8 @@ impl<'a> Inferencer<'a> {
     ) -> InferenceResult {
         let boolean = self.primitives.bool;
         for (a, b, c) in izip!(once(left).chain(comparators), comparators, ops) {
-            let method = comparison_name(c)
-                .ok_or_else(|| "unsupported comparator".to_string())?
-                .to_string();
+            let method =
+                comparison_name(c).ok_or_else(|| "unsupported comparator".to_string())?.to_string();
             self.build_method_call(method, a.custom.unwrap(), vec![b.custom.unwrap()], boolean)?;
         }
         Ok(boolean)
@@ -556,26 +493,18 @@ impl<'a> Inferencer<'a> {
         let ty = self.unifier.get_fresh_var().0;
         match &slice.node {
             ast::ExprKind::Slice { lower, upper, step } => {
-                for v in [lower.as_ref(), upper.as_ref(), step.as_ref()]
-                    .iter()
-                    .flatten()
-                {
+                for v in [lower.as_ref(), upper.as_ref(), step.as_ref()].iter().flatten() {
                     self.constrain(v.custom.unwrap(), self.primitives.int32)?;
                 }
                 let list = self.unifier.add_ty(TypeEnum::TList { ty });
                 self.constrain(value.custom.unwrap(), list)?;
                 Ok(list)
             }
-            ast::ExprKind::Constant {
-                value: ast::Constant::Int(val),
-                ..
-            } => {
+            ast::ExprKind::Constant { value: ast::Constant::Int(val), .. } => {
                 // the index is a constant, so value can be a sequence.
-                let ind: i32 = val
-                    .try_into()
-                    .map_err(|_| "Index must be int32".to_string())?;
+                let ind: i32 = val.try_into().map_err(|_| "Index must be int32".to_string())?;
                 let map = once((ind, ty)).collect();
-                let seq = self.unifier.add_ty(TypeEnum::TSeq { map });
+                let seq = self.unifier.add_sequence(map);
                 self.constrain(value.custom.unwrap(), seq)?;
                 Ok(ty)
             }

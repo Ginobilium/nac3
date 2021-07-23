@@ -1,7 +1,68 @@
-use super::super::typedef::*;
+use super::*;
 use itertools::Itertools;
 use std::collections::HashMap;
 use test_case::test_case;
+
+impl Unifier {
+    /// Check whether two types are equal.
+    fn eq(&mut self, a: Type, b: Type) -> bool {
+        use TypeVarMeta::*;
+        if a == b {
+            return true;
+        }
+        let (ty_a, ty_b) = {
+            let table = &mut self.unification_table;
+            if table.unioned(a, b) {
+                return true;
+            }
+            (table.probe_value(a).clone(), table.probe_value(b).clone())
+        };
+
+        match (&*ty_a, &*ty_b) {
+            (
+                TypeEnum::TVar { meta: Generic, id: id1, .. },
+                TypeEnum::TVar { meta: Generic, id: id2, .. },
+            ) => id1 == id2,
+            (
+                TypeEnum::TVar { meta: Sequence(map1), .. },
+                TypeEnum::TVar { meta: Sequence(map2), .. },
+            ) => self.map_eq(&map1.borrow(), &map2.borrow()),
+            (TypeEnum::TTuple { ty: ty1 }, TypeEnum::TTuple { ty: ty2 }) => {
+                ty1.len() == ty2.len()
+                    && ty1.iter().zip(ty2.iter()).all(|(t1, t2)| self.eq(*t1, *t2))
+            }
+            (TypeEnum::TList { ty: ty1 }, TypeEnum::TList { ty: ty2 })
+            | (TypeEnum::TVirtual { ty: ty1 }, TypeEnum::TVirtual { ty: ty2 }) => {
+                self.eq(*ty1, *ty2)
+            }
+            (
+                TypeEnum::TVar { meta: Record(fields1), .. },
+                TypeEnum::TVar { meta: Record(fields2), .. },
+            ) => self.map_eq(&fields1.borrow(), &fields2.borrow()),
+            (
+                TypeEnum::TObj { obj_id: id1, params: params1, .. },
+                TypeEnum::TObj { obj_id: id2, params: params2, .. },
+            ) => id1 == id2 && self.map_eq(params1, params2),
+            // TCall and TFunc are not yet implemented
+            _ => false,
+        }
+    }
+
+    fn map_eq<K>(&mut self, map1: &Mapping<K>, map2: &Mapping<K>) -> bool
+    where
+        K: std::hash::Hash + std::cmp::Eq + std::clone::Clone,
+    {
+        if map1.len() != map2.len() {
+            return false;
+        }
+        for (k, v) in map1.iter() {
+            if !map2.get(k).map(|v1| self.eq(*v, *v1)).unwrap_or(false) {
+                return false;
+            }
+        }
+        true
+    }
+}
 
 struct TestEnvironment {
     pub unifier: Unifier,
@@ -47,10 +108,7 @@ impl TestEnvironment {
             }),
         );
 
-        TestEnvironment {
-            unifier,
-            type_mapping,
-        }
+        TestEnvironment { unifier, type_mapping }
     }
 
     fn parse(&mut self, typ: &str, mapping: &Mapping<String>) -> Type {
@@ -65,9 +123,7 @@ impl TestEnvironment {
         mapping: &Mapping<String>,
     ) -> (Type, &'b str) {
         // for testing only, so we can just panic when the input is malformed
-        let end = typ
-            .find(|c| ['[', ',', ']', '='].contains(&c))
-            .unwrap_or_else(|| typ.len());
+        let end = typ.find(|c| ['[', ',', ']', '='].contains(&c)).unwrap_or_else(|| typ.len());
         match &typ[..end] {
             "Tuple" => {
                 let mut s = &typ[end..];
@@ -97,7 +153,7 @@ impl TestEnvironment {
                     fields.insert(key, result.0);
                     s = result.1;
                 }
-                (self.unifier.add_ty(TypeEnum::TRecord { fields }), &s[1..])
+                (self.unifier.add_record(fields), &s[1..])
             }
             x => {
                 let mut s = &typ[end..];
@@ -106,7 +162,7 @@ impl TestEnvironment {
                     // we should not resolve the type of type variables.
                     let mut ty = *self.type_mapping.get(x).unwrap();
                     let te = self.unifier.get_ty(ty);
-                    if let TypeEnum::TObj { params, .. } = &*te.as_ref().borrow() {
+                    if let TypeEnum::TObj { params, .. } = &*te.as_ref() {
                         if !params.is_empty() {
                             assert!(&s[0..1] == "[");
                             let mut p = Vec::new();
@@ -192,6 +248,7 @@ fn test_unify(
             env.unifier.unify(t1, t2).unwrap();
         }
         for (a, b) in verify_pairs.iter() {
+            println!("{} = {}", a, b);
             let t1 = env.parse(a, &mapping);
             let t2 = env.parse(b, &mapping);
             assert!(env.unifier.eq(t1, t2));
@@ -258,10 +315,8 @@ fn test_invalid_unification(
         let t2 = env.parse(b, &mapping);
         pairs.push((t1, t2));
     }
-    let (t1, t2) = (
-        env.parse(errornous_pair.0 .0, &mapping),
-        env.parse(errornous_pair.0 .1, &mapping),
-    );
+    let (t1, t2) =
+        (env.parse(errornous_pair.0 .0, &mapping), env.parse(errornous_pair.0 .1, &mapping));
     for (a, b) in pairs {
         env.unifier.unify(a, b).unwrap();
     }
