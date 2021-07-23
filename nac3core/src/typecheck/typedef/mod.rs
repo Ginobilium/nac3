@@ -207,7 +207,6 @@ impl Unifier {
                             if !self.shape_match(*v1, *v2) {
                                 continue;
                             }
-                            self.unify(*v1, *v2)?;
                             range2.push(*v2);
                         }
                     }
@@ -221,7 +220,7 @@ impl Unifier {
             }
             (TVar { meta: Generic, id, range, .. }, _) => {
                 self.occur_check(a, b)?;
-                self.check_var_range(*id, b, &range.borrow())?;
+                self.check_var_compatible(*id, b, &range.borrow())?;
                 self.set_a_to_b(a, b);
             }
             (TVar { meta: Sequence(map), id, range, .. }, TTuple { ty }) => {
@@ -238,7 +237,7 @@ impl Unifier {
                     }
                     self.unify(*v, ty[ind as usize])?;
                 }
-                self.check_var_range(*id, b, &range.borrow())?;
+                self.check_var_compatible(*id, b, &range.borrow())?;
                 self.set_a_to_b(a, b);
             }
             (TVar { meta: Sequence(map), id, range, .. }, TList { ty }) => {
@@ -246,7 +245,7 @@ impl Unifier {
                 for v in map.borrow().values() {
                     self.unify(*v, *ty)?;
                 }
-                self.check_var_range(*id, b, &range.borrow())?;
+                self.check_var_compatible(*id, b, &range.borrow())?;
                 self.set_a_to_b(a, b);
             }
             (TTuple { ty: ty1 }, TTuple { ty: ty2 }) => {
@@ -275,7 +274,7 @@ impl Unifier {
                         return Err(format!("No such attribute {}", k));
                     }
                 }
-                self.check_var_range(*id, b, &range.borrow())?;
+                self.check_var_compatible(*id, b, &range.borrow())?;
                 self.set_a_to_b(a, b);
             }
             (TVar { meta: Record(map), id, range, .. }, TVirtual { ty }) => {
@@ -288,14 +287,16 @@ impl Unifier {
                                 return Err(format!("Cannot access field {} for virtual type", k));
                             }
                             self.unify(*v, *ty)?;
+                        } else {
+                            return Err(format!("No such attribute {}", k));
                         }
                     }
                 } else {
                     // require annotation...
                     return Err("Requires type annotation for virtual".to_string());
                 }
-                self.check_var_range(*id, b, &range.borrow())?;
-                self.unify(a, b)?;
+                self.check_var_compatible(*id, b, &range.borrow())?;
+                self.set_a_to_b(a, b);
             }
             (
                 TObj { obj_id: id1, params: params1, .. },
@@ -455,24 +456,6 @@ impl Unifier {
                 format!("fn[[{}], {}]", params, ret)
             }
         }
-    }
-
-    fn check_var_range(&mut self, id: u32, b: Type, range: &[Type]) -> Result<(), String> {
-        let mut in_range = range.is_empty();
-        for t in range.iter() {
-            if self.shape_match(*t, b) {
-                self.unify(*t, b)?;
-                in_range = true;
-            }
-        }
-        if !in_range {
-            return Err(format!(
-                "Cannot unify {} with {} due to incompatible value range",
-                id,
-                self.get_ty(b).get_type_name()
-            ));
-        }
-        Ok(())
     }
 
     fn set_a_to_b(&mut self, a: Type, b: Type) {
@@ -665,13 +648,13 @@ impl Unifier {
         Ok(())
     }
 
-    pub fn shape_match(&mut self, a: Type, b: Type) -> bool {
+    fn shape_match(&mut self, a: Type, b: Type) -> bool {
         use TypeEnum::*;
-        let a = self.get_ty(a);
-        let b = self.get_ty(b);
-        match (a.as_ref(), b.as_ref()) {
-            (TVar { .. }, _) => true,
-            (_, TVar { .. }) => true,
+        let x = self.get_ty(a);
+        let y = self.get_ty(b);
+        match (x.as_ref(), y.as_ref()) {
+            (TVar { id, range, .. }, _) => self.check_var_compatible(*id, b, &range.borrow()).is_ok(),
+            (_, TVar { id, range, .. }) => self.check_var_compatible(*id, a, &range.borrow()).is_ok(),
             (TTuple { ty: ty1 }, TTuple { ty: ty2 }) => {
                 ty1.len() == ty2.len()
                     && zip(ty1.iter(), ty2.iter()).all(|(a, b)| self.shape_match(*a, *b))
@@ -682,5 +665,22 @@ impl Unifier {
             // don't deal with function shape for now
             _ => false,
         }
+    }
+
+    fn check_var_compatible(&mut self, id: u32, b: Type, range: &[Type]) -> Result<(), String> {
+        let mut in_range = range.is_empty();
+        for t in range.iter() {
+            if self.shape_match(*t, b) {
+                in_range = true;
+            }
+        }
+        if !in_range {
+            return Err(format!(
+                "Cannot unify type variable {} with {} due to incompatible value range",
+                id,
+                self.get_ty(b).get_type_name()
+            ));
+        }
+        Ok(())
     }
 }

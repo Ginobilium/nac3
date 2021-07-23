@@ -322,3 +322,85 @@ fn test_invalid_unification(
     }
     assert_eq!(env.unifier.unify(t1, t2), Err(errornous_pair.1.to_string()));
 }
+
+#[test]
+fn test_virtual() {
+    let mut env = TestEnvironment::new();
+    let int = env.parse("int", &HashMap::new());
+    let fun = env.unifier.add_ty(TypeEnum::TFunc(FunSignature {
+        args: vec![],
+        ret: int,
+        vars: HashMap::new(),
+    }));
+    let bar = env.unifier.add_ty(TypeEnum::TObj {
+        obj_id: 5,
+        fields: [("f".to_string(), fun), ("a".to_string(), int)].iter().cloned().collect(),
+        params: HashMap::new(),
+    });
+    let v0 = env.unifier.get_fresh_var().0;
+    let v1 = env.unifier.get_fresh_var().0;
+
+    let a = env.unifier.add_ty(TypeEnum::TVirtual { ty: bar });
+    let b = env.unifier.add_ty(TypeEnum::TVirtual { ty: v0 });
+    let c = env.unifier.add_record([("f".to_string(), v1)].iter().cloned().collect());
+    env.unifier.unify(a, b).unwrap();
+    env.unifier.unify(b, c).unwrap();
+    assert!(env.unifier.eq(v1, fun));
+
+    let d = env.unifier.add_record([("a".to_string(), v1)].iter().cloned().collect());
+    assert_eq!(env.unifier.unify(b, d), Err("Cannot access field a for virtual type".to_string()));
+
+    let d = env.unifier.add_record([("b".to_string(), v1)].iter().cloned().collect());
+    assert_eq!(env.unifier.unify(b, d), Err("No such attribute b".to_string()));
+}
+
+#[test]
+fn test_typevar_range() {
+    let mut env = TestEnvironment::new();
+    let int = env.parse("int", &HashMap::new());
+    let boolean = env.parse("bool", &HashMap::new());
+    let float = env.parse("float", &HashMap::new());
+    let int_list = env.parse("List[int]", &HashMap::new());
+    let float_list = env.parse("List[float]", &HashMap::new());
+
+    // unification between v and int
+    // where v in (int, bool)
+    let v = env.unifier.get_fresh_var_with_range(&[int, boolean]).0;
+    env.unifier.unify(int, v).unwrap();
+
+    // unification between v and List[int]
+    // where v in (int, bool)
+    let v = env.unifier.get_fresh_var_with_range(&[int, boolean]).0;
+    assert_eq!(
+        env.unifier.unify(int_list, v),
+        Err("Cannot unify type variable 3 with TList due to incompatible value range".to_string())
+    );
+
+    // unification between v and float
+    // where v in (int, bool)
+    let v = env.unifier.get_fresh_var_with_range(&[int, boolean]).0;
+    assert_eq!(
+        env.unifier.unify(float, v),
+        Err("Cannot unify type variable 4 with TObj due to incompatible value range".to_string())
+    );
+
+    let v1 = env.unifier.get_fresh_var_with_range(&[int, boolean]).0;
+    let v1_list = env.unifier.add_ty(TypeEnum::TList { ty: v1 });
+    let v = env.unifier.get_fresh_var_with_range(&[int, v1_list]).0;
+    // unification between v and int
+    // where v in (int, List[v1]), v1 in (int, bool)
+    env.unifier.unify(int, v).unwrap();
+
+    let v = env.unifier.get_fresh_var_with_range(&[int, v1_list]).0;
+    // unification between v and List[int]
+    // where v in (int, List[v1]), v1 in (int, bool)
+    env.unifier.unify(int_list, v).unwrap();
+
+    let v = env.unifier.get_fresh_var_with_range(&[int, v1_list]).0;
+    // unification between v and List[float]
+    // where v in (int, List[v1]), v1 in (int, bool)
+    assert_eq!(
+        env.unifier.unify(float_list, v),
+        Err("Cannot unify type variable 8 with TList due to incompatible value range".to_string())
+    );
+}
