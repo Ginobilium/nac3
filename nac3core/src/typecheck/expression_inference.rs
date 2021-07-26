@@ -22,14 +22,14 @@ impl<'a> ast::fold::Fold<()> for TypeInferencer<'a> {
 
     fn fold_expr(&mut self, node: ast::Expr<()>) -> Result<ast::Expr<Self::TargetU>, Self::Error> {
         
-        self.error_stack.push((node.node.name().into(), node.location));
+        self.error_stack.push(("Checking ".to_string() + node.node.name(), node.location));
 
         let expr = match &node.node {
             ast::ExprKind::ListComp { .. } => return self.fold_listcomp(node),
             _ => rustpython_parser::ast::fold::fold_expr(self, node)?
         };
 
-        Ok(ast::Expr {
+        let ret = Ok(ast::Expr {
             // compute type info and store in the custom field
             custom: match &expr.node {
                 ast::ExprKind::Constant {value, kind: _} => self.infer_constant(value),
@@ -50,7 +50,9 @@ impl<'a> ast::fold::Fold<()> for TypeInferencer<'a> {
             }?,
             location: expr.location,
             node: expr.node
-        })
+        });
+        self.error_stack.pop();
+        ret
     }
 }
 
@@ -320,7 +322,7 @@ impl<'a> TypeInferencer<'a> {
     // some pre-folds need special handling
     fn fold_listcomp(&mut self, expr: ast::Expr<()>) -> Result<ast::Expr<Option<Type>>, String> {
         
-        self.error_stack.push(("folding list comprehension at ".into(), expr.location));
+        self.error_stack.push(("list comprehension at ".into(), expr.location));
 
         if let ast::Expr {
             location, 
@@ -343,7 +345,7 @@ impl<'a> TypeInferencer<'a> {
                 is_async} = gen;
             let iter_folded = Box::new(self.fold_expr(*iter)?);
 
-            if let TypeEnum::ParametricType(
+            let ret = if let TypeEnum::ParametricType(
                 primitives::LIST_TYPE, 
                 ls) = iter_folded
                     .custom
@@ -390,14 +392,17 @@ impl<'a> TypeInferencer<'a> {
                 result
             } else {
                 Err("iteration is supported for list only".into())
-            }
+            };
+            self.error_stack.pop();
+            ret
         } else {
             panic!("this function is for list comprehensions only!");
         }
     }
 
     fn infer_simple_binding<T>(&mut self, name: &ast::Expr<T>, ty: Type) -> Result<(), String> {
-        match &name.node {
+        self.error_stack.push(("resolving list comprehension variables".into(), name.location));
+        let ret = match &name.node {
             ast::ExprKind::Name {id, ctx: _} => {
                 if id == "_" {
                     Ok(())
@@ -424,7 +429,9 @@ impl<'a> TypeInferencer<'a> {
                 }
             }
             _ => Err("not supported".into())
-        }
+        };
+        self.error_stack.pop();
+        ret
     }
 
     fn fold_expr(&mut self, node: ast::Expr<()>) -> Result<ast::Expr<Option<Type>>, String> {
@@ -437,10 +444,14 @@ impl<'a> TypeInferencer<'a> {
     }
 }
 
+
 pub mod test {
+
+    use std::vec;
 
     use crate::typecheck::{symbol_resolver::SymbolResolver, symbol_resolver::*, location::*};
     use rustpython_parser::ast::Expr;
+    use test_case::test_case; // FIXME
     use super::*;
     
     pub fn new_ctx<'a>() -> TypeInferencer<'a> {
@@ -626,7 +637,7 @@ pub mod test {
         );
     }
 
-    #[test]
+    #[test]    
     fn test_mix() {
         let mut inf = new_ctx();
         let ast1 = rustpython_parser::parser::parse_expression("False == [True or True, False][0]").unwrap();
@@ -642,7 +653,7 @@ pub mod test {
         let ast11 = rustpython_parser::parser::parse_expression("(1, 2, 3, 4)[1]").unwrap();
         let ast12 = rustpython_parser::parser::parse_expression("(1, True, 3, False)[1]").unwrap();
 
-        let ast13 = rustpython_parser::parser::parse_expression("[1, True, 2]").unwrap();
+        // let ast13 = rustpython_parser::parser::parse_expression("[1, True, 2]").unwrap();
         
         let folded = inf.fold_expr(ast1).unwrap();
         let folded_2 = inf.fold_expr(ast2).unwrap();
@@ -670,6 +681,22 @@ pub mod test {
         println!("{:?}", folded_10.custom);
         println!("{:?}", folded_11.custom);
         println!("{:?}", folded_12.custom);
-        let folded_13 = inf.fold_expr(ast13);
+        // let folded_13 = inf.fold_expr(ast13);
+    }
+
+    #[test]
+    fn test_err_msg() {
+        let mut inf = new_ctx();
+        for prog in vec![
+            "[1, True, 2]",
+            "True if 1 else False",
+            "1 if True else False",
+
+        ] {
+            let ast = rustpython_parser::parser::parse_expression(prog).unwrap();
+            let _folded = inf.fold_expr(ast);
+            println!("");
+        }
+        // println!("{:?}", folded);
     }
 }
