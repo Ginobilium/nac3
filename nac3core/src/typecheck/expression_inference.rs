@@ -451,6 +451,8 @@ pub mod test {
 
     use crate::typecheck::{symbol_resolver::SymbolResolver, symbol_resolver::*, location::*};
     use rustpython_parser::ast::Expr;
+    
+    #[cfg(test)]
     use test_case::test_case; // FIXME
     use super::*;
     
