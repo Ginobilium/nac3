@@ -6,7 +6,6 @@ use crate::typecheck::magic_methods;
 use crate::typecheck::typedef::{Type, TypeEnum};
 use crate::typecheck::primitives;
 use rustpython_parser::ast;
-use rustpython_parser::ast::fold::Fold;
 
 pub struct TypeInferencer<'a> {
     pub ctx: InferenceContext<'a>,
@@ -22,6 +21,7 @@ impl<'a> ast::fold::Fold<()> for TypeInferencer<'a> {
     }
 
     fn fold_expr(&mut self, node: ast::Expr<()>) -> Result<ast::Expr<Self::TargetU>, Self::Error> {
+        
         self.error_stack.push((node.node.name().into(), node.location));
 
         let expr = match &node.node {
@@ -319,6 +319,9 @@ impl<'a> TypeInferencer<'a> {
 
     // some pre-folds need special handling
     fn fold_listcomp(&mut self, expr: ast::Expr<()>) -> Result<ast::Expr<Option<Type>>, String> {
+        
+        self.error_stack.push(("folding list comprehension at ".into(), expr.location));
+
         if let ast::Expr {
             location, 
             custom: _, 
@@ -427,6 +430,7 @@ impl<'a> TypeInferencer<'a> {
     fn fold_expr(&mut self, node: ast::Expr<()>) -> Result<ast::Expr<Option<Type>>, String> {
         let result = <Self as ast::fold::Fold<()>>::fold_expr(self, node);
         if result.is_err() {
+            println!("{:?}", result);
             println!("{:?}", self.error_stack.pop().unwrap());
         }
         result
@@ -656,7 +660,6 @@ pub mod test {
         
         println!("{:?}", folded.custom);
         println!("{:?}", folded_2.custom);
-        let folded_13 = inf.fold_expr(ast13);
         println!("{:?}", folded_3.custom);
         println!("{:?}", folded_4.custom);
         println!("{:?}", folded_5.custom);
@@ -667,5 +670,6 @@ pub mod test {
         println!("{:?}", folded_10.custom);
         println!("{:?}", folded_11.custom);
         println!("{:?}", folded_12.custom);
+        let folded_13 = inf.fold_expr(ast13);
     }
 }
