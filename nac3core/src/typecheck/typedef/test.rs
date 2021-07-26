@@ -439,4 +439,15 @@ fn test_typevar_range() {
         env.unifier.unify(a_list, int_list),
         Err("Cannot unify type variable 19 with TObj due to incompatible value range".into())
     );
+
+    let a = env.unifier.get_fresh_var_with_range(&[int, float]).0;
+    let b = env.unifier.get_fresh_var().0;
+    let a_list = env.unifier.add_ty(TypeEnum::TList { ty: a});
+    let a_list = env.unifier.get_fresh_var_with_range(&[a_list]).0;
+    let b_list = env.unifier.add_ty(TypeEnum::TList { ty: b});
+    env.unifier.unify(a_list, b_list).unwrap();
+    assert_eq!(
+        env.unifier.unify(b, boolean),
+        Err("Cannot unify type variable 21 with TObj due to incompatible value range".into())
+    );
 }

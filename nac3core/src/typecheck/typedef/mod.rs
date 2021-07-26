@@ -204,7 +204,7 @@ impl Unifier {
                     }
                     for v1 in old_range2.iter() {
                         for v2 in range1.iter() {
-                            if let Ok(result) = self.shape_match(*v1, *v2){
+                            if let Ok(result) = self.get_intersection(*v1, *v2){
                                 range2.push(result.unwrap_or(*v2));
                             }
                         }
@@ -219,8 +219,9 @@ impl Unifier {
             }
             (TVar { meta: Generic, id, range, .. }, _) => {
                 self.occur_check(a, b)?;
-                self.check_var_compatible(*id, b, &range.borrow())?;
-                self.set_a_to_b(a, b);
+                let x = self.check_var_compatibility(*id, b, &range.borrow())?.unwrap_or(b);
+                self.unify(x, b)?;
+                self.set_a_to_b(a, x);
             }
             (TVar { meta: Sequence(map), id, range, .. }, TTuple { ty }) => {
                 self.occur_check(a, b)?;
@@ -236,16 +237,18 @@ impl Unifier {
                     }
                     self.unify(*v, ty[ind as usize])?;
                 }
-                self.check_var_compatible(*id, b, &range.borrow())?;
-                self.set_a_to_b(a, b);
+                let x = self.check_var_compatibility(*id, b, &range.borrow())?.unwrap_or(b);
+                self.unify(x, b)?;
+                self.set_a_to_b(a, x);
             }
             (TVar { meta: Sequence(map), id, range, .. }, TList { ty }) => {
                 self.occur_check(a, b)?;
                 for v in map.borrow().values() {
                     self.unify(*v, *ty)?;
                 }
-                self.check_var_compatible(*id, b, &range.borrow())?;
-                self.set_a_to_b(a, b);
+                let x = self.check_var_compatibility(*id, b, &range.borrow())?.unwrap_or(b);
+                self.unify(x, b)?;
+                self.set_a_to_b(a, x);
             }
             (TTuple { ty: ty1 }, TTuple { ty: ty2 }) => {
                 if ty1.len() != ty2.len() {
@@ -273,8 +276,9 @@ impl Unifier {
                         return Err(format!("No such attribute {}", k));
                     }
                 }
-                self.check_var_compatible(*id, b, &range.borrow())?;
-                self.set_a_to_b(a, b);
+                let x = self.check_var_compatibility(*id, b, &range.borrow())?.unwrap_or(b);
+                self.unify(x, b)?;
+                self.set_a_to_b(a, x);
             }
             (TVar { meta: Record(map), id, range, .. }, TVirtual { ty }) => {
                 self.occur_check(a, b)?;
@@ -294,8 +298,9 @@ impl Unifier {
                     // require annotation...
                     return Err("Requires type annotation for virtual".to_string());
                 }
-                self.check_var_compatible(*id, b, &range.borrow())?;
-                self.set_a_to_b(a, b);
+                let x = self.check_var_compatibility(*id, b, &range.borrow())?.unwrap_or(b);
+                self.unify(x, b)?;
+                self.set_a_to_b(a, x);
             }
             (
                 TObj { obj_id: id1, params: params1, .. },
@@ -647,7 +652,7 @@ impl Unifier {
         Ok(())
     }
 
-    fn shape_match(&mut self, a: Type, b: Type) -> Result<Option<Type>, ()> {
+    fn get_intersection(&mut self, a: Type, b: Type) -> Result<Option<Type>, ()> {
         use TypeEnum::*;
         let x = self.get_ty(a);
         let y = self.get_ty(b);
@@ -665,7 +670,7 @@ impl Unifier {
                     }
                     for v1 in range2.iter() {
                         for v2 in range1.iter() {
-                            let result = self.shape_match(*v1, *v2);
+                            let result = self.get_intersection(*v1, *v2);
                             if let Ok(result) = result {
                                 range.push(result.unwrap_or(*v2));
                             }
@@ -690,7 +695,7 @@ impl Unifier {
                     Ok(Some(a))
                 } else {
                     for v in range.iter() {
-                        let result = self.shape_match(a, *v);
+                        let result = self.get_intersection(a, *v);
                         if let Ok(result) = result {
                             return Ok(result.or(Some(a)));
                         }
@@ -699,7 +704,7 @@ impl Unifier {
                 }
             }
             (TVar { id, range, .. }, _) => {
-                self.check_var_compatible(*id, b, &range.borrow()).or(Err(()))
+                self.check_var_compatibility(*id, b, &range.borrow()).or(Err(()))
             }
             (TTuple { ty: ty1 }, TTuple { ty: ty2 }) => {
                 if ty1.len() != ty2.len() {
@@ -708,7 +713,7 @@ impl Unifier {
                 let mut need_new = false;
                 let mut ty = ty1.clone();
                 for (a, b) in zip(ty1.iter(), ty2.iter()) {
-                    let result = self.shape_match(*a, *b)?;
+                    let result = self.get_intersection(*a, *b)?;
                     ty.push(result.unwrap_or(*a));
                     if result.is_some() {
                         need_new = true;
@@ -721,10 +726,10 @@ impl Unifier {
                 }
             }
             (TList { ty: ty1 }, TList { ty: ty2 }) => {
-                Ok(self.shape_match(*ty1, *ty2)?.map(|ty| self.add_ty(TList { ty })))
+                Ok(self.get_intersection(*ty1, *ty2)?.map(|ty| self.add_ty(TList { ty })))
             }
             (TVirtual { ty: ty1 }, TVirtual { ty: ty2 }) => {
-                Ok(self.shape_match(*ty1, *ty2)?.map(|ty| self.add_ty(TVirtual { ty })))
+                Ok(self.get_intersection(*ty1, *ty2)?.map(|ty| self.add_ty(TVirtual { ty })))
             }
             (TObj { obj_id: id1, .. }, TObj { obj_id: id2, .. }) => {
                 if id1 == id2 {
@@ -738,7 +743,7 @@ impl Unifier {
         }
     }
 
-    fn check_var_compatible(
+    fn check_var_compatibility(
         &mut self,
         id: u32,
         b: Type,
@@ -748,7 +753,7 @@ impl Unifier {
             return Ok(None);
         }
         for t in range.iter() {
-            let result = self.shape_match(*t, b);
+            let result = self.get_intersection(*t, b);
             if let Ok(result) = result {
                 return Ok(result);
             }
