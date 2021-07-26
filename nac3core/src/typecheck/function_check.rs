@@ -132,6 +132,7 @@ impl<'a> Inferencer<'a> {
         Ok(())
     }
 
+    // check statements for proper identifier def-use and return on all paths
     fn check_stmt(
         &mut self,
         stmt: &Stmt<Option<Type>>,
@@ -195,7 +196,19 @@ impl<'a> Inferencer<'a> {
                 }
                 Ok(false)
             }
-            // break, return, raise, etc.
+            StmtKind::Return { value } => {
+                if let Some(value) = value {
+                    self.check_expr(value, defined_identifiers)?;
+                }
+                Ok(true)
+            }
+            StmtKind::Raise { exc, .. } => {
+                if let Some(value) = exc {
+                    self.check_expr(value, defined_identifiers)?;
+                }
+                Ok(true)
+            }
+            // break, raise, etc.
             _ => Ok(false),
         }
     }
