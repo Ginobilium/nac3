@@ -56,8 +56,17 @@ impl<'a> InferenceContext<'a> {
     where
         F: FnOnce(&mut Self) -> R,
     {
-        self.stack.level += 1;
+        self.start_scope();
         let result = f(self);
+        let poped_names = self.end_scope();
+        (poped_names, result)
+    }
+
+    pub fn start_scope(&mut self) {
+        self.stack.level += 1;
+    }
+
+    pub fn end_scope(&mut self) -> Vec<(String, Type, Location)> {
         self.stack.level -= 1;
         let mut poped_names = Vec::new();
         while !self.stack.sym_def.is_empty() {
@@ -72,7 +81,7 @@ impl<'a> InferenceContext<'a> {
                 break;
             }
         }
-        (poped_names, result)
+        poped_names
     }
 
     /// assign a type to an identifier.
