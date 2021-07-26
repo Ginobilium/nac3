@@ -219,6 +219,13 @@ impl Unifier {
             }
             (TVar { meta: Generic, id, range, .. }, _) => {
                 self.occur_check(a, b)?;
+                // We check for the range of the type variable to see if unification is allowed.
+                // Note that although b may be compatible with a, we may have to constrain type
+                // variables in b to make sure that instantiations of b would always be compatible
+                // with a.
+                // The return value x of check_var_compatibility would be a new type that is
+                // guaranteed to be compatible with a under all possible instantiations. So we
+                // unify x with b to recursively apply the constrains, and then set a to x.
                 let x = self.check_var_compatibility(*id, b, &range.borrow())?.unwrap_or(b);
                 self.unify(x, b)?;
                 self.set_a_to_b(a, x);
@@ -319,6 +326,8 @@ impl Unifier {
                 self.set_a_to_b(a, b);
             }
             (TCall(calls1), TCall(calls2)) => {
+                // we do not unify individual calls, instead we defer until the unification wtih a
+                // function definition.
                 calls2.borrow_mut().extend_from_slice(&calls1.borrow());
             }
             (TCall(calls), TFunc(signature)) => {
@@ -330,6 +339,7 @@ impl Unifier {
                     .map(|v| v.name.clone())
                     .rev()
                     .collect();
+                // we unify every calls to the function signature.
                 for c in calls.borrow().iter() {
                     let Call { posargs, kwargs, ret, fun } = c.as_ref();
                     let instantiated = self.instantiate_fun(b, signature);
@@ -341,6 +351,8 @@ impl Unifier {
                     } else {
                         unreachable!();
                     }
+                    // we check to make sure that all required arguments (those without default
+                    // arguments) are provided, and do not provide the same argument twice.
                     let mut required = required.clone();
                     let mut all_names: Vec<_> =
                         signature.args.iter().map(|v| (v.name.clone(), v.ty)).rev().collect();
