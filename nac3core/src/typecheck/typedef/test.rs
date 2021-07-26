@@ -403,4 +403,40 @@ fn test_typevar_range() {
         env.unifier.unify(float_list, v),
         Err("Cannot unify type variable 8 with TList due to incompatible value range".to_string())
     );
+
+    let a = env.unifier.get_fresh_var_with_range(&[int, float]).0;
+    let b = env.unifier.get_fresh_var_with_range(&[boolean, float]).0;
+    env.unifier.unify(a, b).unwrap();
+    env.unifier.unify(a, float).unwrap();
+
+    let a = env.unifier.get_fresh_var_with_range(&[int, float]).0;
+    let b = env.unifier.get_fresh_var_with_range(&[boolean, float]).0;
+    env.unifier.unify(a, b).unwrap();
+    assert_eq!(
+        env.unifier.unify(a, int),
+        Err("Cannot unify type variable 12 with TObj due to incompatible value range".into())
+    );
+
+    let a = env.unifier.get_fresh_var_with_range(&[int, float]).0;
+    let b = env.unifier.get_fresh_var_with_range(&[boolean, float]).0;
+    let a_list = env.unifier.add_ty(TypeEnum::TList { ty: a});
+    let a_list = env.unifier.get_fresh_var_with_range(&[a_list]).0;
+    let b_list = env.unifier.add_ty(TypeEnum::TList { ty: b});
+    let b_list = env.unifier.get_fresh_var_with_range(&[b_list]).0;
+    env.unifier.unify(a_list, b_list).unwrap();
+    let float_list = env.unifier.add_ty(TypeEnum::TList { ty: float});
+    env.unifier.unify(a_list, float_list).unwrap();
+    // previous unifications should not affect a and b
+    env.unifier.unify(a, int).unwrap();
+
+    let a = env.unifier.get_fresh_var_with_range(&[int, float]).0;
+    let b = env.unifier.get_fresh_var_with_range(&[boolean, float]).0;
+    let a_list = env.unifier.add_ty(TypeEnum::TList { ty: a});
+    let b_list = env.unifier.add_ty(TypeEnum::TList { ty: b});
+    env.unifier.unify(a_list, b_list).unwrap();
+    let int_list = env.unifier.add_ty(TypeEnum::TList { ty: int});
+    assert_eq!(
+        env.unifier.unify(a_list, int_list),
+        Err("Cannot unify type variable 19 with TObj due to incompatible value range".into())
+    );
 }
