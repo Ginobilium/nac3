@@ -444,17 +444,14 @@ impl<'a> TypeInferencer<'a> {
     }
 }
 
-
+#[cfg(test)]
 pub mod test {
-
-    use std::vec;
-
     use crate::typecheck::{symbol_resolver::SymbolResolver, symbol_resolver::*, location::*};
     use rustpython_parser::ast::Expr;
+    use super::*;
     
     #[cfg(test)]
-    use test_case::test_case; // FIXME
-    use super::*;
+    use test_case::test_case;
     
     pub fn new_ctx<'a>() -> TypeInferencer<'a> {
         struct S;
@@ -639,66 +636,33 @@ pub mod test {
         );
     }
 
-    #[test]    
-    fn test_mix() {
+    #[test_case("False == [True or True, False][0]")]
+    #[test_case("1 < 2 < 3")]
+    #[test_case("1 + [123, 1232][0]")]
+    #[test_case("not True")]
+    #[test_case("[[1]][0][0]")]
+    #[test_case("[[1]][0]")]
+    #[test_case("[[(1, 2), (2, 3), (3, 4)], [(2, 4), (4, 6)]][0]")]
+    #[test_case("[1, 2, 3, 4, 5][1: 2]")]
+    #[test_case("4 if False and True else 8")]
+    #[test_case("(1, 2, 3, 4)[1]")]
+    #[test_case("(1, True, 3, False)[1]")]
+    fn test_mix(prog: &'static str) {
         let mut inf = new_ctx();
-        let ast1 = rustpython_parser::parser::parse_expression("False == [True or True, False][0]").unwrap();
-        let ast2 = rustpython_parser::parser::parse_expression("False == [True or True, False][0]").unwrap();
-        let ast3 = rustpython_parser::parser::parse_expression("1 < 2 < 3").unwrap();
-        let ast4 = rustpython_parser::parser::parse_expression("1 + [12312, 1231][0]").unwrap();
-        let ast5 = rustpython_parser::parser::parse_expression("not True").unwrap();
-        let ast6 = rustpython_parser::parser::parse_expression("[[1]][0][0]").unwrap();
-        let ast7 = rustpython_parser::parser::parse_expression("[[1]][0]").unwrap();
-        let ast8 = rustpython_parser::parser::parse_expression("[[(1, 2), (2, 3), (3, 4)], [(2, 4), (4, 6)]][0]").unwrap();
-        let ast9 = rustpython_parser::parser::parse_expression("[1, 2, 3, 4, 5][1: 2]").unwrap();
-        let ast10 = rustpython_parser::parser::parse_expression("4 if False and True else 8").unwrap();
-        let ast11 = rustpython_parser::parser::parse_expression("(1, 2, 3, 4)[1]").unwrap();
-        let ast12 = rustpython_parser::parser::parse_expression("(1, True, 3, False)[1]").unwrap();
-
-        // let ast13 = rustpython_parser::parser::parse_expression("[1, True, 2]").unwrap();
-        
-        let folded = inf.fold_expr(ast1).unwrap();
-        let folded_2 = inf.fold_expr(ast2).unwrap();
-        let folded_3 = inf.fold_expr(ast3).unwrap();
-        let folded_4 = inf.fold_expr(ast4).unwrap();
-        let folded_5 = inf.fold_expr(ast5).unwrap();
-        let folded_6 = inf.fold_expr(ast6).unwrap();
-        let folded_7 = inf.fold_expr(ast7).unwrap();
-        let folded_8 = inf.fold_expr(ast8).unwrap();
-        let folded_9 = inf.fold_expr(ast9).unwrap();
-        let folded_10 = inf.fold_expr(ast10).unwrap();
-        let folded_11 = inf.fold_expr(ast11).unwrap();
-        let folded_12 = inf.fold_expr(ast12).unwrap();
-
-        
-        println!("{:?}", folded.custom);
-        println!("{:?}", folded_2.custom);
-        println!("{:?}", folded_3.custom);
-        println!("{:?}", folded_4.custom);
-        println!("{:?}", folded_5.custom);
-        println!("{:?}", folded_6.custom);
-        println!("{:?}", folded_7.custom);
-        println!("{:?}", folded_8.custom);
-        println!("{:?}", folded_9.custom);
-        println!("{:?}", folded_10.custom);
-        println!("{:?}", folded_11.custom);
-        println!("{:?}", folded_12.custom);
-        // let folded_13 = inf.fold_expr(ast13);
+        let ast = rustpython_parser::parser::parse_expression(prog).unwrap();
+        let folded = inf.fold_expr(ast).unwrap();
+        // println!("{:?}\n", folded.custom);
     }
 
-    #[test]
-    fn test_err_msg() {
+    #[test_case("[1, True, 2]")]
+    #[test_case("True if 1 else False")]
+    #[test_case("1 if True else False")]
+    #[test_case("1 and 2")]
+    #[test_case("False or 1")]
+    fn test_err_msg(prog: &'static str) {
         let mut inf = new_ctx();
-        for prog in vec![
-            "[1, True, 2]",
-            "True if 1 else False",
-            "1 if True else False",
-
-        ] {
-            let ast = rustpython_parser::parser::parse_expression(prog).unwrap();
-            let _folded = inf.fold_expr(ast);
-            println!("");
-        }
-        // println!("{:?}", folded);
+        let ast = rustpython_parser::parser::parse_expression(prog).unwrap();
+        let _folded = inf.fold_expr(ast);
+        println!("")
     }
 }
