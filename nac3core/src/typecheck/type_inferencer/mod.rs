@@ -28,6 +28,7 @@ pub struct PrimitiveStore {
 pub struct Inferencer<'a> {
     pub resolver: &'a mut Box<dyn SymbolResolver>,
     pub unifier: &'a mut Unifier,
+    pub virtual_checks: &'a mut Vec<(Type, Type)>,
     pub variable_mapping: HashMap<String, Type>,
     pub calls: &'a mut Vec<Rc<Call>>,
     pub primitives: &'a PrimitiveStore,
@@ -208,6 +209,7 @@ impl<'a> Inferencer<'a> {
         let mut new_context = Inferencer {
             resolver: self.resolver,
             unifier: self.unifier,
+            virtual_checks: self.virtual_checks,
             variable_mapping,
             calls: self.calls,
             primitives: self.primitives,
@@ -250,6 +252,7 @@ impl<'a> Inferencer<'a> {
         let mut new_context = Inferencer {
             resolver: self.resolver,
             unifier: self.unifier,
+            virtual_checks: self.virtual_checks,
             variable_mapping,
             calls: self.calls,
             primitives: self.primitives,
@@ -318,6 +321,7 @@ impl<'a> Inferencer<'a> {
                     } else {
                         self.unifier.get_fresh_var().0
                     };
+                    self.virtual_checks.push((arg0.custom.unwrap(), ty));
                     let custom = Some(self.unifier.add_ty(TypeEnum::TVirtual { ty }));
                     return Ok(Located {
                         location,
