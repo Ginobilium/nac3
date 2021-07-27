@@ -659,6 +659,9 @@ pub mod test {
     #[test_case("1 if True else False")]
     #[test_case("1 and 2")]
     #[test_case("False or 1")]
+    #[test_case("1 + False")]
+    #[test_case("1 < 2 > False")]
+    #[test_case("not 2")]
     fn test_err_msg(prog: &'static str) {
         let mut inf = new_ctx();
         let ast = rustpython_parser::parser::parse_expression(prog).unwrap();

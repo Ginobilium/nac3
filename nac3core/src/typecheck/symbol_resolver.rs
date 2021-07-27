@@ -1,6 +1,11 @@
 use super::typedef::Type;
 use super::location::Location;
-use rustpython_parser::ast::Expr;
+
+pub enum SymbolType {
+    TypeName(Type),
+    Identifier(Type),
+}
+
 pub enum SymbolValue<'a> {
     I32(i32),
     I64(i64),
@@ -9,10 +14,10 @@ pub enum SymbolValue<'a> {
     Tuple(&'a [SymbolValue<'a>]),
     Bytes(&'a [u8]),
 }
+
 pub trait SymbolResolver {
-    fn get_symbol_type(&mut self, str: &str) -> Option<Type>;
-    fn parse_type_name(&mut self, expr: &Expr<()>) -> Option<Type>;
-    fn get_symbol_value(&mut self, str: &str) -> Option<SymbolValue>;
-    fn get_symbol_location(&mut self, str: &str) -> Option<Location>;
+    fn get_symbol_type(&self, str: &str) -> Option<SymbolType>;
+    fn get_symbol_value(&self, str: &str) -> Option<SymbolValue>;
+    fn get_symbol_location(&self, str: &str) -> Option<Location>;
     // handle function call etc.
 }
