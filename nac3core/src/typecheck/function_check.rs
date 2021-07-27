@@ -8,19 +8,23 @@ impl<'a> Inferencer<'a> {
         &mut self,
         pattern: &Expr<Option<Type>>,
         defined_identifiers: &mut Vec<String>,
-    ) {
+    ) -> Result<(), String> {
         match &pattern.node {
             ExprKind::Name { id, .. } => {
                 if !defined_identifiers.contains(id) {
                     defined_identifiers.push(id.clone());
                 }
+                Ok(())
             }
             ExprKind::Tuple { elts, .. } => {
                 for elt in elts.iter() {
-                    self.check_pattern(elt, defined_identifiers);
+                    self.check_pattern(elt, defined_identifiers)?;
                 }
+                Ok(())
             }
-            _ => unimplemented!(),
+            _ => {
+                self.check_expr(pattern, defined_identifiers)
+            }
         }
     }
 
@@ -106,7 +110,7 @@ impl<'a> Inferencer<'a> {
                 } = &generators[0];
                 self.check_expr(iter, defined_identifiers)?;
                 let mut defined_identifiers = defined_identifiers.to_vec();
-                self.check_pattern(target, &mut defined_identifiers);
+                self.check_pattern(target, &mut defined_identifiers)?;
                 for term in once(elt.as_ref()).chain(ifs.iter()) {
                     self.check_expr(term, &defined_identifiers)?;
                 }
@@ -151,7 +155,7 @@ impl<'a> Inferencer<'a> {
                     self.check_stmt(stmt, defined_identifiers)?;
                 }
                 let mut defined_identifiers = defined_identifiers.clone();
-                self.check_pattern(target, &mut defined_identifiers);
+                self.check_pattern(target, &mut defined_identifiers)?;
                 for stmt in body.iter() {
                     self.check_stmt(stmt, &mut defined_identifiers)?;
                 }
@@ -185,14 +189,14 @@ impl<'a> Inferencer<'a> {
             StmtKind::Assign { targets, value, .. } => {
                 self.check_expr(value, defined_identifiers)?;
                 for target in targets {
-                    self.check_pattern(target, defined_identifiers);
+                    self.check_pattern(target, defined_identifiers)?;
                 }
                 Ok(false)
             }
             StmtKind::AnnAssign { target, value, .. } => {
                 if let Some(value) = value {
                     self.check_expr(value, defined_identifiers)?;
-                    self.check_pattern(target, defined_identifiers);
+                    self.check_pattern(target, defined_identifiers)?;
                 }
                 Ok(false)
             }

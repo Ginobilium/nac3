@@ -222,6 +222,13 @@ impl TestEnvironment {
     [("a", "virtual[Bar]"), ("b", "int32")].iter().cloned().collect(),
     &[("Bar", "Bar"), ("Bar2", "Bar")]
     ; "virtual test")]
+#[test_case(indoc! {"
+        a = [virtual(Bar(), Bar), virtual(Bar2())]
+        b = [x.b() for x in a]
+    "},
+    [("a", "list[virtual[Bar]]"), ("b", "list[int32]")].iter().cloned().collect(),
+    &[("Bar", "Bar"), ("Bar2", "Bar")]
+    ; "virtual list test")]
 fn test_basic(source: &str, mapping: HashMap<&str, &str>, virtuals: &[(&str, &str)]) {
     println!("source:\n{}", source);
     let mut env = TestEnvironment::new();
