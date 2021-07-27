@@ -2,7 +2,7 @@ use rustpython_parser::ast;
 use std::vec::Vec;
 
 #[derive(Clone, Copy, PartialEq)]
-pub struct FileID(u32);
+pub struct FileID(pub u32);
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum Location {

@@ -173,7 +173,8 @@ mod tests {
     use std::rc::Rc;
 
     fn get_inference_context(ctx: GlobalContext) -> InferenceContext {
-        InferenceContext::new(ctx, Box::new(|_| Err("unbounded identifier".into())))
+        // InferenceContext::new(ctx, Box::new(|_| Err("unbounded identifier".into())))
+        crate::typecheck::type_check::test::new_ctx().ctx
     }
 
     #[test]

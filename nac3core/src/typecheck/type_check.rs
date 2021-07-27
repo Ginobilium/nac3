@@ -7,6 +7,15 @@ use crate::typecheck::typedef::{Type, TypeEnum};
 use crate::typecheck::primitives;
 use rustpython_parser::ast;
 
+struct NaiveFolder;
+impl ast::fold::Fold<()> for NaiveFolder {
+    type TargetU = Option<Type>;
+    type Error = String;
+    fn map_user(&mut self, _user: ()) -> Result<Self::TargetU, Self::Error> {
+        Ok(None)
+    }
+}
+
 pub struct TypeInferencer<'a> {
     pub ctx: InferenceContext<'a>,
     pub error_stack: Vec<(String, ast::Location)>
@@ -44,7 +53,7 @@ impl<'a> ast::fold::Fold<()> for TypeInferencer<'a> {
                 ast::ExprKind::Call {func, args, keywords} => self.infer_call(func, args, keywords),
                 ast::ExprKind::Subscript {value, slice, ctx: _} => self.infer_subscript(value, slice),
                 ast::ExprKind::IfExp {test, body, orelse} => self.infer_if_expr(test, body, orelse),
-                ast::ExprKind::ListComp {elt: _, generators: _} => panic!("should not earch here, the list comp should be folded before"), // already folded
+                ast::ExprKind::ListComp {elt: _, generators: _} => unreachable!("should not earch here, the list comp should have been folded before"), // already folded
                 ast::ExprKind::Slice { .. } => Ok(None), // special handling for slice, which is supported
                 _ => Err("not supported yet".into())
             }?,
@@ -53,6 +62,65 @@ impl<'a> ast::fold::Fold<()> for TypeInferencer<'a> {
         });
         self.error_stack.pop();
         ret
+    }
+
+    fn fold_stmt(&mut self, node: ast::Stmt<()>) -> Result<ast::Stmt<Self::TargetU>, Self::Error> {
+        let stmt = match node.node {
+            ast::StmtKind::AnnAssign {target, annotation, value, simple} => {
+                let target_folded = Box::new(self.fold_expr( *target)?);
+                let value = if let Some(v) = value {
+                    let value_folded = Box::new(self.fold_expr(*v)?);
+                    if target_folded.custom == value_folded.custom {
+                        Some(value_folded)
+                    } else {
+                        return Err("Assignment LHF does not have the same type as RHS".into())
+                    }
+                } else {
+                    None
+                };
+                // TODO check consistency with type annotation
+                ast::Located {
+                    location: node.location,
+                    custom: None,
+                    node: ast::StmtKind::AnnAssign {
+                        target: target_folded, 
+                        annotation: Box::new(NaiveFolder.fold_expr(*annotation)?), 
+                        value, 
+                        simple
+                    },
+                }
+            }
+            _ => ast::fold::fold_stmt(self, node)?
+        };
+
+        match &stmt.node {
+            ast::StmtKind::For { target, iter, .. } => {
+                if let Some(TypeEnum::ParametricType(primitives::LIST_TYPE, ls)) = iter.custom.as_deref() {
+                    unimplemented!()
+                    // TODO
+                } else {
+                    return Err("can only iterate over list".into())
+                }
+            }
+            ast::StmtKind::If { test, .. } | ast::StmtKind::While { test, .. } => {
+                if test.custom != Some(self.ctx.get_primitive(primitives::BOOL_TYPE)) {
+                    return Err("Test should be bool".into());
+                }
+            }
+            ast::StmtKind::Assign { targets, value, .. } => {
+                unimplemented!();
+                // TODO
+            }
+            ast::StmtKind::AnnAssign { .. } | ast::StmtKind::Expr { .. } => {}
+            ast::StmtKind::Break | ast::StmtKind::Continue => {}
+            ast::StmtKind::Return { value } => {
+                unimplemented!()
+                // TODO
+            }
+            _ => return Err("Unsupported statement type".to_string()),
+        }
+
+        Ok(stmt)
     }
 }
 
@@ -185,6 +253,7 @@ impl<'a> TypeInferencer<'a> {
             Some(left.custom.clone().ok_or_else(|| "no value".to_string())?), 
             magic_methods::binop_name(op), 
             &[right.custom.clone().ok_or_else(|| "no value".to_string())?])
+            .map_err(|_| "unsupported binary operator between the oprands".to_string())
     }
 
     fn infer_unary_ops(&self, op: &ast::Unaryop, operand: &ast::Expr<Option<Type>>) -> Result<Option<Type>, String> {
@@ -196,6 +265,7 @@ impl<'a> TypeInferencer<'a> {
             }
         } else {
             inference_core::resolve_call(&self.ctx, operand.custom.clone(), magic_methods::unaryop_name(op), &[])
+            .map_err(|_| "unsupported unary operator".to_string())
         }
     }
 
@@ -208,7 +278,8 @@ impl<'a> TypeInferencer<'a> {
                 &self.ctx, 
                 Some(left.custom.clone().ok_or_else(|| "comparator must be able to be typed".to_string())?), 
                 magic_methods::comparison_name(&ops[0]).ok_or_else(|| "unsupported comparison".to_string())?, 
-                &[comparators[0].custom.clone().ok_or_else(|| "comparator must be able to be typed".to_string())?])?;
+                &[comparators[0].custom.clone().ok_or_else(|| "comparator must be able to be typed".to_string())?])
+                .map_err(|_| "Comparison between the comparators are not supportes".to_string())?;
             if ty_first != bool_type {
                 return Err("comparison result must be boolean".into());
             }
@@ -222,7 +293,8 @@ impl<'a> TypeInferencer<'a> {
                         &self.ctx, 
                         Some(a.custom.clone().ok_or_else(|| "comparator must be able to be typed".to_string())?.clone()), 
                         magic_methods::comparison_name(op).ok_or_else(|| "unsupported comparison".to_string())?,
-                        &[b.custom.clone().ok_or_else(|| "comparator must be able to be typed".to_string())?.clone()])?;
+                        &[b.custom.clone().ok_or_else(|| "comparator must be able to be typed".to_string())?.clone()])
+                        .map_err(|_| "Comparison between the comparators are not supportes".to_string())?;
                     if ty != bool_type {
                         return Err("comparison result must be boolean".into());
                     }
@@ -354,46 +426,51 @@ impl<'a> TypeInferencer<'a> {
                     .as_ref()
                     .clone() {
 
+                let result: Result<ast::Expr<Option<Type>>, String>;
                 self.ctx.start_scope();
-                self.infer_simple_binding(&target, ls[0].clone())?;
-                let elt_folded = Box::new(self.fold_expr(*elt)?);
-                let target_folded = Box::new(self.fold_expr(*target)?);
-                let ifs_folded = ifs
-                    .into_iter()
-                    .map(|x| self.fold_expr(x))
-                    .collect::<Result<Vec<ast::Expr<Option<Type>>>, _>>()?;
-                
-                let result = 
-                    if ifs_folded
-                    .iter()
-                    .all(|x| x.custom == Some(self.ctx.get_primitive(primitives::BOOL_TYPE))) {
-                    Ok(ast::Expr {
-                        location,
-                        custom: Some(TypeEnum::ParametricType(
-                            primitives::LIST_TYPE, 
-                            vec![elt_folded
-                                .custom
-                                .clone()
-                                .ok_or_else(|| "elements cannot be typped".to_string())?]).into()),
-                        node: ast::ExprKind::ListComp {
-                            elt: elt_folded,
-                            generators: vec![ast::Comprehension {
-                                target: target_folded,
-                                ifs: ifs_folded,
-                                iter: iter_folded,
-                                is_async
-                            }]
-                        }
-                    })
-                } else {
-                    Err("test must be bool".into())
-                };
-                self.ctx.end_scope();
+                {
+                    self.infer_simple_binding(&target, ls[0].clone())?;
+                    let elt_folded = Box::new(self.fold_expr(*elt)?);
+                    let target_folded = Box::new(self.fold_expr(*target)?);
+                    let ifs_folded = ifs
+                        .into_iter()
+                        .map(|x| self.fold_expr(x))
+                        .collect::<Result<Vec<ast::Expr<Option<Type>>>, _>>()?;
+                    
+                    result = 
+                        if ifs_folded
+                        .iter()
+                        .all(|x| x.custom == Some(self.ctx.get_primitive(primitives::BOOL_TYPE))) {
+                        // only pop the error stack when return Ok(..)
+                        self.error_stack.pop();
+                        
+                        Ok(ast::Expr {
+                            location,
+                            custom: Some(TypeEnum::ParametricType(
+                                primitives::LIST_TYPE, 
+                                vec![elt_folded
+                                    .custom
+                                    .clone()
+                                    .ok_or_else(|| "elements cannot be typped".to_string())?]).into()),
+                            node: ast::ExprKind::ListComp {
+                                elt: elt_folded,
+                                generators: vec![ast::Comprehension {
+                                    target: target_folded,
+                                    ifs: ifs_folded,
+                                    iter: iter_folded,
+                                    is_async
+                                }]
+                            }
+                        })
+                    } else {
+                        Err("test must be bool".into())
+                    };
+                }
+                self.ctx.end_scope();                
                 result
             } else {
                 Err("iteration is supported for list only".into())
             };
-            self.error_stack.pop();
             ret
         } else {
             panic!("this function is for list comprehensions only!");
@@ -405,11 +482,13 @@ impl<'a> TypeInferencer<'a> {
         let ret = match &name.node {
             ast::ExprKind::Name {id, ctx: _} => {
                 if id == "_" {
+                    self.error_stack.pop();
                     Ok(())
                 } else if self.ctx.defined(id) {
                     Err("duplicated naming".into())
                 } else {
                     self.ctx.assign(id.clone(), ty, name.location)?;
+                    self.error_stack.pop();
                     Ok(())
                 }
             }
@@ -420,6 +499,7 @@ impl<'a> TypeInferencer<'a> {
                         for (a, b) in elts.iter().zip(ls.iter()) {
                             self.infer_simple_binding(a, b.clone())?;
                         }
+                        self.error_stack.pop();
                         Ok(())
                     } else {
                         Err("different length".into())
@@ -430,7 +510,7 @@ impl<'a> TypeInferencer<'a> {
             }
             _ => Err("not supported".into())
         };
-        self.error_stack.pop();
+        
         ret
     }
 
@@ -662,6 +742,7 @@ pub mod test {
     #[test_case("1 + False")]
     #[test_case("1 < 2 > False")]
     #[test_case("not 2")]
+    #[test_case("-True")]
     fn test_err_msg(prog: &'static str) {
         let mut inf = new_ctx();
         let ast = rustpython_parser::parser::parse_expression(prog).unwrap();
