@@ -56,9 +56,9 @@ impl<'a> fold::Fold<()> for Inferencer<'a> {
         let stmt = match node.node {
             // we don't want fold over type annotation
             ast::StmtKind::AnnAssign { target, annotation, value, simple } => {
-                let target = Box::new(fold::fold_expr(self, *target)?);
+                let target = Box::new(self.fold_expr(*target)?);
                 let value = if let Some(v) = value {
-                    let ty = Box::new(fold::fold_expr(self, *v)?);
+                    let ty = Box::new(self.fold_expr(*v)?);
                     self.unifier.unify(target.custom.unwrap(), ty.custom.unwrap())?;
                     Some(ty)
                 } else {
