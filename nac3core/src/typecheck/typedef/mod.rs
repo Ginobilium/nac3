@@ -83,10 +83,6 @@ impl TypeEnum {
             TypeEnum::TFunc { .. } => "TFunc",
         }
     }
-
-    pub fn is_concrete(&self) -> bool {
-        !matches!(self, TypeEnum::TVar { .. })
-    }
 }
 
 pub struct Unifier {
@@ -141,6 +137,23 @@ impl Unifier {
         self.var_id += 1;
         let range = range.to_vec().into();
         (self.add_ty(TypeEnum::TVar { id, range, meta: TypeVarMeta::Generic }), id)
+    }
+
+    pub fn is_concrete(&mut self, a: Type, allowed_typevars: &[Type]) -> bool {
+        use TypeEnum::*;
+        match &*self.get_ty(a) {
+            TVar { .. } => allowed_typevars.iter().any(|b| self.unification_table.unioned(a, *b)),
+            TCall { .. } => false,
+            TList { ty } => self.is_concrete(*ty, allowed_typevars),
+            TTuple { ty } => ty.iter().all(|ty| self.is_concrete(*ty, allowed_typevars)),
+            TObj { params: vars, .. } => {
+                vars.values().all(|ty| self.is_concrete(*ty, allowed_typevars))
+            }
+            // functions are instantiated for each call sites, so the function type can contain
+            // type variables.
+            TFunc { .. } => true,
+            TVirtual { ty } => self.is_concrete(*ty, allowed_typevars),
+        }
     }
 
     pub fn unify(&mut self, a: Type, b: Type) -> Result<(), String> {
@@ -204,7 +217,7 @@ impl Unifier {
                     }
                     for v1 in old_range2.iter() {
                         for v2 in range1.iter() {
-                            if let Ok(result) = self.get_intersection(*v1, *v2){
+                            if let Ok(result) = self.get_intersection(*v1, *v2) {
                                 range2.push(result.unwrap_or(*v2));
                             }
                         }
@@ -486,7 +499,7 @@ impl Unifier {
         Err(format!("Cannot unify {} with {}", a.get_type_name(), b.get_type_name()))
     }
 
-    /// Instantiate a function if it hasn't been instntiated.
+    /// Instantiate a function if it hasn't been instantiated.
     /// Returns Some(T) where T is the instantiated type.
     /// Returns None if the function is already instantiated.
     fn instantiate_fun(&mut self, ty: Type, fun: &FunSignature) -> Type {

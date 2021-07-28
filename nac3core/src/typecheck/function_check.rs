@@ -35,13 +35,11 @@ impl<'a> Inferencer<'a> {
     ) -> Result<(), String> {
         // there are some cases where the custom field is None
         if let Some(ty) = &expr.custom {
-            let ty = self.unifier.get_ty(*ty);
-            let ty = ty.as_ref();
-            if !ty.is_concrete() {
+            if !self.unifier.is_concrete(*ty, &self.function_data.bound_variables) {
                 return Err(format!(
                     "expected concrete type at {} but got {}",
                     expr.location,
-                    ty.get_type_name()
+                    self.unifier.get_ty(*ty).get_type_name()
                 ));
             }
         }

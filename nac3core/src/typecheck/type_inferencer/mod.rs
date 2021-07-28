@@ -25,14 +25,18 @@ pub struct PrimitiveStore {
     pub none: Type,
 }
 
+pub struct FunctionData {
+    pub resolver: Box<dyn SymbolResolver>,
+    pub return_type: Option<Type>,
+    pub bound_variables: Vec<Type>,
+}
+
 pub struct Inferencer<'a> {
-    pub resolver: &'a mut Box<dyn SymbolResolver>,
+    pub function_data: &'a mut FunctionData,
     pub unifier: &'a mut Unifier,
+    pub primitives: &'a PrimitiveStore,
     pub virtual_checks: &'a mut Vec<(Type, Type)>,
     pub variable_mapping: HashMap<String, Type>,
-    pub calls: &'a mut Vec<Rc<Call>>,
-    pub primitives: &'a PrimitiveStore,
-    pub return_type: Option<Type>,
 }
 
 struct NaiveFolder();
@@ -65,6 +69,7 @@ impl<'a> fold::Fold<()> for Inferencer<'a> {
                     None
                 };
                 let annotation_type = self
+                    .function_data
                     .resolver
                     .parse_type_name(annotation.as_ref())
                     .ok_or_else(|| "cannot parse type name".to_string())?;
@@ -93,7 +98,7 @@ impl<'a> fold::Fold<()> for Inferencer<'a> {
             }
             ast::StmtKind::AnnAssign { .. } | ast::StmtKind::Expr { .. } => {}
             ast::StmtKind::Break | ast::StmtKind::Continue => {}
-            ast::StmtKind::Return { value } => match (value, self.return_type) {
+            ast::StmtKind::Return { value } => match (value, self.function_data.return_type) {
                 (Some(v), Some(v1)) => {
                     self.unifier.unify(v.custom.unwrap(), v1)?;
                 }
@@ -171,7 +176,6 @@ impl<'a> Inferencer<'a> {
     ) -> InferenceResult {
         let call =
             Rc::new(Call { posargs: params, kwargs: HashMap::new(), ret, fun: RefCell::new(None) });
-        self.calls.push(call.clone());
         let call = self.unifier.add_ty(TypeEnum::TCall(vec![call].into()));
         let fields = once((method, call)).collect();
         let record = self.unifier.add_record(fields);
@@ -207,13 +211,11 @@ impl<'a> Inferencer<'a> {
         variable_mapping.extend(fn_args.iter().cloned());
         let ret = self.unifier.get_fresh_var().0;
         let mut new_context = Inferencer {
-            resolver: self.resolver,
+            function_data: self.function_data,
             unifier: self.unifier,
+            primitives: self.primitives,
             virtual_checks: self.virtual_checks,
             variable_mapping,
-            calls: self.calls,
-            primitives: self.primitives,
-            return_type: self.return_type,
         };
         let fun = FunSignature {
             args: fn_args
@@ -250,13 +252,11 @@ impl<'a> Inferencer<'a> {
         }
         let variable_mapping = self.variable_mapping.clone();
         let mut new_context = Inferencer {
-            resolver: self.resolver,
+            function_data: self.function_data,
             unifier: self.unifier,
             virtual_checks: self.virtual_checks,
             variable_mapping,
-            calls: self.calls,
             primitives: self.primitives,
-            return_type: self.return_type,
         };
         let elt = new_context.fold_expr(elt)?;
         let generator = generators.pop().unwrap();
@@ -315,7 +315,7 @@ impl<'a> Inferencer<'a> {
                     }
                     let arg0 = self.fold_expr(args.remove(0))?;
                     let ty = if let Some(arg) = args.pop() {
-                        self.resolver
+                        self.function_data.resolver
                             .parse_type_name(&arg)
                             .ok_or_else(|| "error parsing type".to_string())?
                     } else {
@@ -379,7 +379,6 @@ impl<'a> Inferencer<'a> {
             fun: RefCell::new(None),
             ret,
         });
-        self.calls.push(call.clone());
         let call = self.unifier.add_ty(TypeEnum::TCall(vec![call].into()));
         self.unifier.unify(func.custom.unwrap(), call)?;
 
@@ -390,7 +389,7 @@ impl<'a> Inferencer<'a> {
         if let Some(ty) = self.variable_mapping.get(id) {
             Ok(*ty)
         } else {
-            Ok(self.resolver.get_symbol_type(id).unwrap_or_else(|| {
+            Ok(self.function_data.resolver.get_symbol_type(id).unwrap_or_else(|| {
                 let ty = self.unifier.get_fresh_var().0;
                 self.variable_mapping.insert(id.to_string(), ty);
                 ty

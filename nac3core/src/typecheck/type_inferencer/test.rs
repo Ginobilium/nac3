@@ -37,8 +37,7 @@ impl SymbolResolver for Resolver {
 
 struct TestEnvironment {
     pub unifier: Unifier,
-    pub resolver: Box<dyn SymbolResolver>,
-    pub calls: Vec<Rc<Call>>,
+    pub function_data: FunctionData,
     pub primitives: PrimitiveStore,
     pub id_to_name: HashMap<usize, String>,
     pub identifier_mapping: HashMap<String, Type>,
@@ -149,24 +148,25 @@ impl TestEnvironment {
 
         TestEnvironment {
             unifier,
-            resolver,
+            function_data: FunctionData {
+                resolver,
+                bound_variables: Vec::new(),
+                return_type: None
+            },
             primitives,
             id_to_name,
             identifier_mapping,
-            calls: Vec::new(),
             virtual_checks: Vec::new(),
         }
     }
 
     fn get_inferencer(&mut self) -> Inferencer {
         Inferencer {
-            resolver: &mut self.resolver,
+            function_data: &mut self.function_data,
             unifier: &mut self.unifier,
             variable_mapping: Default::default(),
-            calls: &mut self.calls,
             primitives: &mut self.primitives,
             virtual_checks: &mut self.virtual_checks,
-            return_type: None,
         }
     }
 }
