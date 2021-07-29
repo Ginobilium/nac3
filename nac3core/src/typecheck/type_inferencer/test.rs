@@ -45,6 +45,49 @@ struct TestEnvironment {
 }
 
 impl TestEnvironment {
+    pub fn basic_test_env() -> Option<TestEnvironment> {
+        use rustpython_parser::ast::Operator::*;
+        let mut unifier = Unifier::new();
+        // let mut identifier_mapping = HashMap::new();
+        
+        let int32 = unifier.add_ty(TypeEnum::TObj {
+            obj_id: 0,
+            fields: HashMap::new(),
+            params: HashMap::new(),
+        });
+        let int64 = unifier.add_ty(TypeEnum::TObj {
+            obj_id: 1,
+            fields: HashMap::new(),
+            params: HashMap::new(),
+        });
+        let float = unifier.add_ty(TypeEnum::TObj {
+            obj_id: 2,
+            fields: HashMap::new(),
+            params: HashMap::new(),
+        });
+        let bool = unifier.add_ty(TypeEnum::TObj {
+            obj_id: 3,
+            fields: HashMap::new(),
+            params: HashMap::new(),
+        });
+        let none = unifier.add_ty(TypeEnum::TObj {
+            obj_id: 4,
+            fields: HashMap::new(),
+            params: HashMap::new(),
+        });
+        // identifier_mapping.insert("None".into(), none);
+        let primitives = PrimitiveStore { int32, int64, float, bool, none };
+
+        // if let TypeEnum::TObj {ref fields, ref params, .. } = *unifier.get_ty(int32) {
+        //     for op in [Add, Sub, Mult, MatMult, Div, Mod, Pow, LShift, RShift, BitOr, BitXor, BitAnd, FloorDiv].into_iter() {
+        //         let call = Rc::new(Call {posargs: vec![int32], kwargs: HashMap::new(), ret: int32, fun: RefCell::new(None)});
+        //     };
+        //     None
+        // } else {
+        //     None
+        // }
+    }
+
     fn new() -> TestEnvironment {
         let mut unifier = Unifier::new();
         let mut identifier_mapping = HashMap::new();
