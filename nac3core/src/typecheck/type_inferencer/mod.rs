@@ -1,6 +1,6 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::convert::TryInto;
+use std::convert::{TryInto, From};
 use std::iter::once;
 use std::rc::Rc;
 
@@ -16,6 +16,21 @@ use rustpython_parser::ast::{
 
 #[cfg(test)]
 mod test;
+
+#[derive(PartialEq, Eq, Hash, Copy, Clone, Debug)]
+pub struct CodeLocation {
+    row: usize,
+    col: usize,
+}
+
+impl From<Location> for CodeLocation {
+    fn from(loc: Location) -> CodeLocation {
+        CodeLocation {
+            row: loc.row(),
+            col: loc.column()
+        }
+    }
+}
 
 pub struct PrimitiveStore {
     pub int32: Type,
@@ -37,6 +52,7 @@ pub struct Inferencer<'a> {
     pub primitives: &'a PrimitiveStore,
     pub virtual_checks: &'a mut Vec<(Type, Type)>,
     pub variable_mapping: HashMap<String, Type>,
+    pub calls: &'a mut HashMap<CodeLocation, Rc<Call>>,
 }
 
 struct NaiveFolder();
@@ -215,6 +231,7 @@ impl<'a> Inferencer<'a> {
             unifier: self.unifier,
             primitives: self.primitives,
             virtual_checks: self.virtual_checks,
+            calls: self.calls,
             variable_mapping,
         };
         let fun = FunSignature {
@@ -257,6 +274,7 @@ impl<'a> Inferencer<'a> {
             virtual_checks: self.virtual_checks,
             variable_mapping,
             primitives: self.primitives,
+            calls: self.calls,
         };
         let elt = new_context.fold_expr(elt)?;
         let generator = generators.pop().unwrap();
@@ -379,6 +397,7 @@ impl<'a> Inferencer<'a> {
             fun: RefCell::new(None),
             ret,
         });
+        self.calls.insert(location.into(), call.clone());
         let call = self.unifier.add_ty(TypeEnum::TCall(vec![call].into()));
         self.unifier.unify(func.custom.unwrap(), call)?;
 

@@ -42,6 +42,7 @@ struct TestEnvironment {
     pub id_to_name: HashMap<usize, String>,
     pub identifier_mapping: HashMap<String, Type>,
     pub virtual_checks: Vec<(Type, Type)>,
+    pub calls: HashMap<CodeLocation, Rc<Call>>,
 }
 
 impl TestEnvironment {
@@ -151,12 +152,13 @@ impl TestEnvironment {
             function_data: FunctionData {
                 resolver,
                 bound_variables: Vec::new(),
-                return_type: None
+                return_type: None,
             },
             primitives,
             id_to_name,
             identifier_mapping,
             virtual_checks: Vec::new(),
+            calls: HashMap::new(),
         }
     }
 
@@ -167,6 +169,7 @@ impl TestEnvironment {
             variable_mapping: Default::default(),
             primitives: &mut self.primitives,
             virtual_checks: &mut self.virtual_checks,
+            calls: &mut self.calls,
         }
     }
 }
