@@ -47,6 +47,9 @@ pub enum TypeVarMeta {
 
 #[derive(Clone)]
 pub enum TypeEnum {
+    TRigidVar {
+        id: u32,
+    },
     TVar {
         id: u32,
         meta: TypeVarMeta,
@@ -74,6 +77,7 @@ pub enum TypeEnum {
 impl TypeEnum {
     pub fn get_type_name(&self) -> &'static str {
         match self {
+            TypeEnum::TRigidVar { .. } => "TRigidVar",
             TypeEnum::TVar { .. } => "TVar",
             TypeEnum::TTuple { .. } => "TTuple",
             TypeEnum::TList { .. } => "TList",
@@ -127,6 +131,12 @@ impl Unifier {
         self.unification_table.probe_value(a).clone()
     }
 
+    pub fn get_fresh_rigid_var(&mut self) -> (Type, u32) {
+        let id = self.var_id + 1;
+        self.var_id += 1;
+        (self.add_ty(TypeEnum::TRigidVar { id }), id)
+    }
+
     pub fn get_fresh_var(&mut self) -> (Type, u32) {
         self.get_fresh_var_with_range(&[])
     }
@@ -139,9 +149,17 @@ impl Unifier {
         (self.add_ty(TypeEnum::TVar { id, range, meta: TypeVarMeta::Generic }), id)
     }
 
+    /// Unification would not unify rigid variables with other types, but we want to do this for
+    /// function instantiations, so we make it explicit.
+    pub fn replace_rigid_var(&mut self, rigid: Type, b: Type) {
+        assert!(matches!(&*self.get_ty(rigid), TypeEnum::TRigidVar { .. }));
+        self.set_a_to_b(rigid, b);
+    }
+
     pub fn is_concrete(&mut self, a: Type, allowed_typevars: &[Type]) -> bool {
         use TypeEnum::*;
         match &*self.get_ty(a) {
+            TRigidVar { .. } => true,
             TVar { .. } => allowed_typevars.iter().any(|b| self.unification_table.unioned(a, *b)),
             TCall { .. } => false,
             TList { ty } => self.is_concrete(*ty, allowed_typevars),
@@ -290,11 +308,8 @@ impl Unifier {
             (TVar { meta: Record(map), id, range, .. }, TObj { fields, .. }) => {
                 self.occur_check(a, b)?;
                 for (k, v) in map.borrow().iter() {
-                    if let Some(ty) = fields.get(k) {
-                        self.unify(*ty, *v)?;
-                    } else {
-                        return Err(format!("No such attribute {}", k));
-                    }
+                    let ty = fields.get(k).ok_or_else(|| format!("No such attribute {}", k))?;
+                    self.unify(*ty, *v)?;
                 }
                 let x = self.check_var_compatibility(*id, b, &range.borrow())?.unwrap_or(b);
                 self.unify(x, b)?;
@@ -305,14 +320,11 @@ impl Unifier {
                 let ty = self.get_ty(*ty);
                 if let TObj { fields, .. } = ty.as_ref() {
                     for (k, v) in map.borrow().iter() {
-                        if let Some(ty) = fields.get(k) {
-                            if !matches!(self.get_ty(*ty).as_ref(), TFunc { .. }) {
-                                return Err(format!("Cannot access field {} for virtual type", k));
-                            }
-                            self.unify(*v, *ty)?;
-                        } else {
-                            return Err(format!("No such attribute {}", k));
+                        let ty = fields.get(k).ok_or_else(|| format!("No such attribute {}", k))?;
+                        if !matches!(self.get_ty(*ty).as_ref(), TFunc { .. }) {
+                            return Err(format!("Cannot access field {} for virtual type", k));
                         }
+                        self.unify(*v, *ty)?;
                     }
                 } else {
                     // require annotation...
@@ -382,11 +394,11 @@ impl Unifier {
                         if let Some(i) = required.iter().position(|v| v == k) {
                             required.remove(i);
                         }
-                        if let Some(i) = all_names.iter().position(|v| &v.0 == k) {
-                            self.unify(all_names.remove(i).1, *t)?;
-                        } else {
-                            return Err(format!("Unknown keyword argument {}", k));
-                        }
+                        let i = all_names
+                            .iter()
+                            .position(|v| &v.0 == k)
+                            .ok_or_else(|| format!("Unknown keyword argument {}", k))?;
+                        self.unify(all_names.remove(i).1, *t)?;
                     }
                     if !required.is_empty() {
                         return Err("Expected more arguments".to_string());
@@ -435,6 +447,7 @@ impl Unifier {
         use TypeVarMeta::*;
         let ty = self.unification_table.probe_value(ty).clone();
         match ty.as_ref() {
+            TypeEnum::TRigidVar { id } => var_to_name(*id),
             TypeEnum::TVar { id, meta: Generic, .. } => var_to_name(*id),
             TypeEnum::TVar { meta: Sequence(map), .. } => {
                 let fields = map
@@ -544,6 +557,7 @@ impl Unifier {
         // variables, i.e. things like TRecord, TCall should not occur, and we
         // should be safe to not implement the substitution for those variants.
         match &*ty {
+            TypeEnum::TRigidVar { .. } => None,
             TypeEnum::TVar { id, meta: Generic, .. } => mapping.get(&id).cloned(),
             TypeEnum::TTuple { ty } => {
                 let mut new_ty = Cow::from(ty);
@@ -634,7 +648,7 @@ impl Unifier {
         let ty = self.unification_table.probe_value(b).clone();
 
         match ty.as_ref() {
-            TypeEnum::TVar { meta: Generic, .. } => {}
+            TypeEnum::TRigidVar { .. } | TypeEnum::TVar { meta: Generic, .. } => {}
             TypeEnum::TVar { meta: Sequence(map), .. } => {
                 for t in map.borrow().values() {
                     self.occur_check(a, *t)?;
