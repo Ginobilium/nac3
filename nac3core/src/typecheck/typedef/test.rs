@@ -493,6 +493,12 @@ fn test_instantiation() {
     let t = env.unifier.get_fresh_rigid_var().0;
     let tuple = env.unifier.add_ty(TypeEnum::TTuple { ty: vec![v, v1, v2] });
     let v3 = env.unifier.get_fresh_var_with_range(&[tuple, t]).0;
+    // t = TypeVar('t')
+    // v = TypeVar('v', int, bool)
+    // v1 = TypeVar('v1', 'list[v]', int)
+    // v2 = TypeVar('v2', 'list[int]', float)
+    // v3 = TypeVar('v3', tuple[v, v1, v2], t)
+    // what values can v3 take?
 
     let types = env.unifier.get_instantiations(v3).unwrap();
     let expected_types = indoc! {"
