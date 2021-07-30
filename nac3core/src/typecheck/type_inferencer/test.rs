@@ -110,6 +110,7 @@ impl TestEnvironment {
             id_to_name,
             identifier_mapping,
             virtual_checks: Vec::new(),
+            calls: HashMap::new(),
         }
     }
 
