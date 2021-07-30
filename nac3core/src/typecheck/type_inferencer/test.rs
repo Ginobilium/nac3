@@ -45,10 +45,8 @@ struct TestEnvironment {
 }
 
 impl TestEnvironment {
-    pub fn basic_test_env() -> Option<TestEnvironment> {
-        use rustpython_parser::ast::Operator::*;
+    pub fn basic_test_env() -> TestEnvironment {
         let mut unifier = Unifier::new();
-        // let mut identifier_mapping = HashMap::new();
         
         let int32 = unifier.add_ty(TypeEnum::TObj {
             obj_id: 0,
@@ -77,15 +75,41 @@ impl TestEnvironment {
         });
         // identifier_mapping.insert("None".into(), none);
         let primitives = PrimitiveStore { int32, int64, float, bool, none };
+        set_primirives_magic_methods(&primitives, &mut unifier);
+        
+        let id_to_name = [
+            (0, "int32".to_string()),
+            (1, "int64".to_string()),
+            (2, "float".to_string()),
+            (3, "bool".to_string()),
+            (4, "none".to_string()),
+            (5, "Foo".to_string()),
+            (6, "Bar".to_string()),
+            (7, "Bar2".to_string()),
+        ]
+        .iter()
+        .cloned()
+        .collect();
 
-        // if let TypeEnum::TObj {ref fields, ref params, .. } = *unifier.get_ty(int32) {
-        //     for op in [Add, Sub, Mult, MatMult, Div, Mod, Pow, LShift, RShift, BitOr, BitXor, BitAnd, FloorDiv].into_iter() {
-        //         let call = Rc::new(Call {posargs: vec![int32], kwargs: HashMap::new(), ret: int32, fun: RefCell::new(None)});
-        //     };
-        //     None
-        // } else {
-        //     None
-        // }
+        let mut identifier_mapping = HashMap::new();
+        identifier_mapping.insert("None".into(), none);
+       
+        let resolver =
+            Box::new(Resolver { identifier_mapping: identifier_mapping.clone(), class_names: Default::default() })
+                as Box<dyn SymbolResolver>;
+
+        TestEnvironment {
+            unifier,
+            function_data: FunctionData {
+                resolver,
+                bound_variables: Vec::new(),
+                return_type: None
+            },
+            primitives,
+            id_to_name,
+            identifier_mapping,
+            virtual_checks: Vec::new(),
+        }
     }
 
     fn new() -> TestEnvironment {
