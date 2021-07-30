@@ -308,11 +308,8 @@ impl Unifier {
             (TVar { meta: Record(map), id, range, .. }, TObj { fields, .. }) => {
                 self.occur_check(a, b)?;
                 for (k, v) in map.borrow().iter() {
-                    if let Some(ty) = fields.get(k) {
-                        self.unify(*ty, *v)?;
-                    } else {
-                        return Err(format!("No such attribute {}", k));
-                    }
+                    let ty = fields.get(k).ok_or_else(|| format!("No such attribute {}", k))?;
+                    self.unify(*ty, *v)?;
                 }
                 let x = self.check_var_compatibility(*id, b, &range.borrow())?.unwrap_or(b);
                 self.unify(x, b)?;
@@ -323,14 +320,11 @@ impl Unifier {
                 let ty = self.get_ty(*ty);
                 if let TObj { fields, .. } = ty.as_ref() {
                     for (k, v) in map.borrow().iter() {
-                        if let Some(ty) = fields.get(k) {
-                            if !matches!(self.get_ty(*ty).as_ref(), TFunc { .. }) {
-                                return Err(format!("Cannot access field {} for virtual type", k));
-                            }
-                            self.unify(*v, *ty)?;
-                        } else {
-                            return Err(format!("No such attribute {}", k));
+                        let ty = fields.get(k).ok_or_else(|| format!("No such attribute {}", k))?;
+                        if !matches!(self.get_ty(*ty).as_ref(), TFunc { .. }) {
+                            return Err(format!("Cannot access field {} for virtual type", k));
                         }
+                        self.unify(*v, *ty)?;
                     }
                 } else {
                     // require annotation...
@@ -400,11 +394,11 @@ impl Unifier {
                         if let Some(i) = required.iter().position(|v| v == k) {
                             required.remove(i);
                         }
-                        if let Some(i) = all_names.iter().position(|v| &v.0 == k) {
-                            self.unify(all_names.remove(i).1, *t)?;
-                        } else {
-                            return Err(format!("Unknown keyword argument {}", k));
-                        }
+                        let i = all_names
+                            .iter()
+                            .position(|v| &v.0 == k)
+                            .ok_or_else(|| format!("Unknown keyword argument {}", k))?;
+                        self.unify(all_names.remove(i).1, *t)?;
                     }
                     if !required.is_empty() {
                         return Err("Expected more arguments".to_string());
