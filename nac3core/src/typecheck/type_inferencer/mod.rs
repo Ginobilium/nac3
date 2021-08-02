@@ -32,6 +32,7 @@ impl From<Location> for CodeLocation {
     }
 }
 
+#[derive(Clone, Copy)]
 pub struct PrimitiveStore {
     pub int32: Type,
     pub int64: Type,

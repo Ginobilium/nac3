@@ -1,4 +1,5 @@
-use std::{collections::HashMap, rc::Rc};
+use std::collections::HashMap;
+use std::rc::Rc;
 use rustpython_parser::ast::{Cmpop, Operator, Unaryop};
 
 pub fn binop_name(op: &Operator) -> &'static str {
@@ -58,347 +59,230 @@ pub fn comparison_name(op: &Cmpop) -> Option<&'static str> {
     }
 }
 
-use crate::typecheck::{type_inferencer::*, typedef::{FunSignature, FuncArg, TypeEnum, Unifier}};
+use crate::typecheck::{type_inferencer::*, typedef::{FunSignature, FuncArg, TypeEnum, Unifier, Type}};
 use rustpython_parser::ast;
-pub fn set_primirives_magic_methods(store: &PrimitiveStore, unifier: &mut Unifier) {
-    // int32 --------
-    if let Some(TypeEnum::TObj {fields, .. }) = Rc::get_mut(&mut unifier.get_ty(store.int32)) {
+
+/// Add, Sub, Mult, Pow
+pub fn impl_basic_arithmetic(unifier: &mut Unifier, store: &PrimitiveStore, ty: Type, other_ty: Type, ret_ty: Type) {
+    if let Some(TypeEnum::TObj {fields, .. }) = Rc::get_mut(&mut unifier.get_ty(ty)) {
         for op in &[
-        ast::Operator::Add, 
-        ast::Operator::Sub, 
-        ast::Operator::Mult,
-        ast::Operator::Mod, 
-        ast::Operator::Pow, 
-        ast::Operator::LShift, 
-        ast::Operator::RShift, 
-        ast::Operator::BitOr, 
-        ast::Operator::BitXor, 
-        ast::Operator::BitAnd, 
-        ast::Operator::FloorDiv
+            ast::Operator::Add, 
+            ast::Operator::Sub, 
+            ast::Operator::Mult,
+            ast::Operator::Pow, 
         ] {
             fields.insert(
-                binop_name(op).to_string(), 
+                binop_name(op).into(),
                 unifier.add_ty(TypeEnum::TFunc(FunSignature {
-                    ret: store.int32,
+                    ret: ret_ty,
                     vars: HashMap::new(),
                     args: vec![FuncArg {
-                        ty: store.int32,
-                        is_optional: false,
-                        name: "other".into() // the name does not matter here
-                    }],
-                }))
-            );
-
-            fields.insert(
-                binop_assign_name(op).to_string(), 
-                unifier.add_ty(TypeEnum::TFunc(FunSignature {
-                    ret: store.none,
-                    vars: HashMap::new(),
-                    args: vec![FuncArg {
-                        ty: store.int32,
+                        ty: other_ty,
                         is_optional: false,
                         name: "other".into()
                     }]
                 }))
             );
-        };
-        // int div int gets float
+
+            fields.insert(
+                binop_assign_name(op).into(),
+                unifier.add_ty(TypeEnum::TFunc(FunSignature {
+                    ret: store.none,
+                    vars: HashMap::new(),
+                    args: vec![FuncArg {
+                        ty: other_ty,
+                        is_optional: false,
+                        name: "other".into()
+                    }]
+                }))
+            );
+        }
+    } else { unreachable!() }
+}
+
+/// LShift, RShift, BitOr, BitXor, BitAnd
+pub fn impl_bitwise_arithmetic(unifier: &mut Unifier, store: &PrimitiveStore, ty: Type) {
+    if let Some(TypeEnum::TObj {fields, ..}) = Rc::get_mut(&mut unifier.get_ty(ty)) {
+        for op in &[
+            ast::Operator::LShift, 
+            ast::Operator::RShift, 
+            ast::Operator::BitOr, 
+            ast::Operator::BitXor, 
+            ast::Operator::BitAnd, 
+        ] {
+            fields.insert(
+                binop_name(op).into(), 
+                unifier.add_ty(TypeEnum::TFunc(FunSignature {
+                    ret: ty,
+                    vars: HashMap::new(),
+                    args: vec![FuncArg {
+                        ty,
+                        is_optional: false,
+                        name: "other".into()
+                    }]
+                }))
+            );
+
+            fields.insert(
+                binop_assign_name(op).into(), 
+                unifier.add_ty(TypeEnum::TFunc(FunSignature {
+                    ret: store.none,
+                    vars: HashMap::new(),
+                    args: vec![FuncArg {
+                        ty,
+                        is_optional: false,
+                        name: "other".into()
+                    }]
+                }))
+            );
+        }
+    }
+}
+
+/// Div
+pub fn impl_div(unifier: &mut Unifier, store: &PrimitiveStore, ty: Type, other_ty: Type) {
+    if let Some(TypeEnum::TObj {fields, ..}) = Rc::get_mut(&mut unifier.get_ty(ty)) {
         fields.insert(
-            binop_assign_name(&ast::Operator::Div).into(),
-            unifier.add_ty(TypeEnum::TFunc(FunSignature {
+            binop_name(&ast::Operator::Div).into(), 
+            unifier.add_ty(TypeEnum::TFunc(FunSignature{
                 ret: store.float,
                 vars: HashMap::new(),
                 args: vec![FuncArg {
-                    ty: store.int32,
+                    ty: other_ty,
                     is_optional: false,
                     name: "other".into()
                 }]
             }))
         );
 
-        for op in &[
-            ast::Cmpop::Eq,
-            ast::Cmpop::NotEq,
-            ast::Cmpop::Lt,
-            ast::Cmpop::LtE,
-            ast::Cmpop::Gt,
-            ast::Cmpop::GtE,
-        ] {
-            fields.insert(
-                comparison_name(op).unwrap().to_string(), 
-                unifier.add_ty(TypeEnum::TFunc(FunSignature {
-                    ret: store.bool,
-                    vars: HashMap::new(),
-                    args: vec![FuncArg {
-                        ty: store.int32,
-                        is_optional: false,
-                        name: "other".into()
-                    }],
-                }))
-            );
-        }
-
-        for op in &[
-            ast::Unaryop::UAdd,
-            ast::Unaryop::USub,
-            ast::Unaryop::Not,
-            ast::Unaryop::Invert,
-        ] {
-            fields.insert(
-                unaryop_name(op).into(), 
-                unifier.add_ty(TypeEnum::TFunc(FunSignature {
-                    ret: store.int32,
-                    vars: HashMap::new(),
-                    args: vec![]
-                }))
-            );
-        }
-    } else { unreachable!() }
-    // int32 --------
-    // int64 --------
-    if let Some(TypeEnum::TObj {fields, .. }) = Rc::get_mut(&mut unifier.get_ty(store.int64)) {
-        for op in &[
-        ast::Operator::Add, 
-        ast::Operator::Sub, 
-        ast::Operator::Mult,
-        ast::Operator::Mod, 
-        ast::Operator::Pow, 
-        ast::Operator::LShift, 
-        ast::Operator::RShift, 
-        ast::Operator::BitOr, 
-        ast::Operator::BitXor, 
-        ast::Operator::BitAnd, 
-        ast::Operator::FloorDiv
-        ] {
-            fields.insert(
-                binop_name(op).to_string(), 
-                unifier.add_ty(TypeEnum::TFunc(FunSignature {
-                    ret: store.int64,
-                    vars: HashMap::new(),
-                    args: vec![FuncArg {
-                        ty: store.int64,
-                        is_optional: false,
-                        name: "other".into() // the name does not matter here
-                    }],
-                }))
-            );
-
-            fields.insert(
-                binop_assign_name(op).to_string(), 
-                unifier.add_ty(TypeEnum::TFunc(FunSignature {
-                    ret: store.none,
-                    vars: HashMap::new(),
-                    args: vec![FuncArg {
-                        ty: store.int64,
-                        is_optional: false,
-                        name: "other".into()
-                    }]
-                }))
-            );
-        };
         fields.insert(
-            binop_assign_name(&ast::Operator::Div).into(),
-            unifier.add_ty(TypeEnum::TFunc(FunSignature {
-                ret: store.float,
+            binop_assign_name(&ast::Operator::Div).into(), 
+            unifier.add_ty(TypeEnum::TFunc(FunSignature{
+                ret: store.none,
                 vars: HashMap::new(),
                 args: vec![FuncArg {
-                    ty: store.int64,
+                    ty: other_ty,
+                    is_optional: false,
+                    name: "other".into()
+                }]
+            }))
+        );
+    } else { unreachable!() }
+}
+
+/// FloorDiv
+pub fn impl_floordiv(unifier: &mut Unifier, store: &PrimitiveStore, ty: Type, other_ty: Type, ret_ty: Type) {
+    if let Some(TypeEnum::TObj {fields, ..}) = Rc::get_mut(&mut unifier.get_ty(ty)) {
+        fields.insert(
+            binop_name(&ast::Operator::FloorDiv).into(), 
+            unifier.add_ty(TypeEnum::TFunc(FunSignature{
+                ret: ret_ty,
+                vars: HashMap::new(),
+                args: vec![FuncArg {
+                    ty: other_ty,
                     is_optional: false,
                     name: "other".into()
                 }]
             }))
         );
 
-        for op in &[
-            ast::Cmpop::Eq,
-            ast::Cmpop::NotEq,
-            ast::Cmpop::Lt,
-            ast::Cmpop::LtE,
-            ast::Cmpop::Gt,
-            ast::Cmpop::GtE,
-        ] {
-            fields.insert(
-                comparison_name(op).unwrap().to_string(), 
-                unifier.add_ty(TypeEnum::TFunc(FunSignature {
-                    ret: store.bool,
-                    vars: HashMap::new(),
-                    args: vec![FuncArg {
-                        ty: store.int64,
-                        is_optional: false,
-                        name: "other".into()
-                    }],
-                }))
-            );
-        }
+        fields.insert(
+            binop_assign_name(&ast::Operator::FloorDiv).into(), 
+            unifier.add_ty(TypeEnum::TFunc(FunSignature{
+                ret: store.none,
+                vars: HashMap::new(),
+                args: vec![FuncArg {
+                    ty: other_ty,
+                    is_optional: false,
+                    name: "other".into()
+                }]
+            }))
+        );
+    } else { unreachable!() }
+}
 
+/// Mod
+pub fn impl_mod(unifier: &mut Unifier, store: &PrimitiveStore, ty: Type, other_ty: Type, ret_ty: Type) {
+    if let Some(TypeEnum::TObj {fields, .. }) = Rc::get_mut(&mut unifier.get_ty(ty)) {
+        fields.insert(
+            binop_name(&ast::Operator::Mod).into(),
+            unifier.add_ty(TypeEnum::TFunc(FunSignature {
+                ret: ret_ty,
+                vars: HashMap::new(),
+                args: vec![FuncArg {
+                    ty: other_ty,
+                    is_optional: false,
+                    name: "other".into()
+                }]
+            }))
+        );
+
+        fields.insert(
+            binop_assign_name(&ast::Operator::Mod).into(),
+            unifier.add_ty(TypeEnum::TFunc(FunSignature {
+                ret: store.none,
+                vars: HashMap::new(),
+                args: vec![FuncArg {
+                    ty: other_ty,
+                    is_optional: false,
+                    name: "other".into()
+                }]
+            }))
+        );
+    } else { unreachable!() }
+}
+
+/// UAdd, USub
+pub fn impl_unary_op(unifier: &mut Unifier, _store: &PrimitiveStore, ty: Type) {
+    if let Some(TypeEnum::TObj {fields, ..}) = Rc::get_mut(&mut unifier.get_ty(ty)) {
         for op in &[
             ast::Unaryop::UAdd,
-            ast::Unaryop::USub,
-            ast::Unaryop::Not,
-            ast::Unaryop::Invert,
+            ast::Unaryop::USub
         ] {
             fields.insert(
                 unaryop_name(op).into(), 
                 unifier.add_ty(TypeEnum::TFunc(FunSignature {
-                    ret: store.int64,
+                    ret: ty,
                     vars: HashMap::new(),
                     args: vec![]
                 }))
             );
         }
     } else { unreachable!() }
-    // int64 --------
-    // float --------
-    if let Some(TypeEnum::TObj {fields, .. }) = Rc::get_mut(&mut unifier.get_ty(store.float)) {
-        for op in &[
-        ast::Operator::Add, 
-        ast::Operator::Sub, 
-        ast::Operator::Mult, 
-        ast::Operator::Div, 
-        ast::Operator::Mod, 
-        ast::Operator::Pow,
-        ast::Operator::FloorDiv,
-        ] {
-            fields.insert(
-                binop_name(op).to_string(), 
-                unifier.add_ty(TypeEnum::TFunc(FunSignature {
-                    ret: store.float,
-                    vars: HashMap::new(),
-                    args: vec![FuncArg {
-                        ty: store.float,
-                        is_optional: false,
-                        name: "other".into() // the name does not matter here
-                    }],
-                }))
-            );
+}
 
-            fields.insert(
-                binop_assign_name(op).to_string(), 
-                unifier.add_ty(TypeEnum::TFunc(FunSignature {
-                    ret: store.none,
-                    vars: HashMap::new(),
-                    args: vec![FuncArg {
-                        ty: store.float,
-                        is_optional: false,
-                        name: "other".into()
-                    }]
-                }))
-            );
-        };
+/// Invert
+pub fn impl_invert(unifier: &mut Unifier, _store: &PrimitiveStore, ty: Type) {
+    if let Some(TypeEnum::TObj {fields, .. }) = Rc::get_mut(&mut unifier.get_ty(ty)) {
+        fields.insert(
+            unaryop_name(&ast::Unaryop::Invert).into(), 
+            unifier.add_ty(TypeEnum::TFunc(FunSignature {
+                ret: ty,
+                vars: HashMap::new(),
+                args: vec![]
+            }))
+        );
+    }
+}
 
-        for op in &[
-            ast::Cmpop::Eq,
-            ast::Cmpop::NotEq,
-            ast::Cmpop::Lt,
-            ast::Cmpop::LtE,
-            ast::Cmpop::Gt,
-            ast::Cmpop::GtE,
-        ] {
-            fields.insert(
-                comparison_name(op).unwrap().to_string(), 
-                unifier.add_ty(TypeEnum::TFunc(FunSignature {
-                    ret: store.bool,
-                    vars: HashMap::new(),
-                    args: vec![FuncArg {
-                        ty: store.float,
-                        is_optional: false,
-                        name: "other".into()
-                    }],
-                }))
-            );
-        }
-
-        for op in &[
-            ast::Unaryop::UAdd,
-            ast::Unaryop::USub,
-            ast::Unaryop::Not,
-        ] {
-            fields.insert(
-                unaryop_name(op).into(), 
-                unifier.add_ty(TypeEnum::TFunc(FunSignature {
-                    ret: store.int64,
-                    vars: HashMap::new(),
-                    args: vec![]
-                }))
-            );
-        }
+/// Not
+pub fn impl_not(unifier: &mut Unifier, store: &PrimitiveStore, ty: Type) {
+    if let Some(TypeEnum::TObj {fields, ..}) = Rc::get_mut(&mut unifier.get_ty(ty)) {
+        fields.insert(
+            unaryop_name(&ast::Unaryop::Not).into(), 
+            unifier.add_ty(TypeEnum::TFunc(FunSignature {
+                ret: store.bool,
+                vars: HashMap::new(),
+                args: vec![]
+            }))
+        );
     } else { unreachable!() }
-    // float --------
-    // bool ---------
-    if let Some(TypeEnum::TObj {fields, .. }) = Rc::get_mut(&mut unifier.get_ty(store.bool)) {
-        for op in &[
-        ast::Operator::Add, 
-        ast::Operator::Sub, 
-        ast::Operator::Mult, 
-        ast::Operator::Mod, 
-        ast::Operator::Pow, 
-        ast::Operator::LShift, 
-        ast::Operator::RShift, 
-        ast::Operator::FloorDiv
-        ] {
-            fields.insert(
-                binop_name(op).into(),
-                unifier.add_ty(TypeEnum::TFunc(FunSignature {
-                    ret: store.int32,
-                    vars: HashMap::new(),
-                    args: vec![FuncArg {
-                        ty: store.bool,
-                        is_optional: false,
-                        name: "other".into()
-                    }]
-                }))
-            );
+}
 
-            fields.insert(
-                binop_name(op).into(),
-                unifier.add_ty(TypeEnum::TFunc(FunSignature {
-                    ret: store.int32,
-                    vars: HashMap::new(),
-                    args: vec![FuncArg {
-                        ty: store.int32,
-                        is_optional: false,
-                        name: "other".into()
-                    }]
-                }))
-            );
-
-            // binop_assignment will change type?
-            /* fields.insert(
-                binop_assignment_name(op).into(),
-                unifier.add_ty(TypeEnum::TFunc(FunSignature {
-                    ret: store.none,
-                    vars: HashMap::new(),
-                    args: vec![FuncArg {
-                        ty: store.bool,
-                        is_optional: false,
-                        name: "other".into()
-                    }]
-                }))
-            ); */
-        };
-
-        for op in &[
-            ast::Operator::BitOr,
-            ast::Operator::BitXor,
-            ast::Operator::BitAnd
-        ] {
-            fields.insert(
-                binop_name(op).into(),
-                unifier.add_ty(TypeEnum::TFunc(FunSignature {
-                    ret: store.bool,
-                    vars: HashMap::new(),
-                    args: vec![FuncArg {
-                        ty: store.int32,
-                        is_optional: false,
-                        name: "other".into()
-                    }]
-                }))
-            );
-        };
-
-        for op in &[
-            ast::Cmpop::Eq,
-            ast::Cmpop::NotEq,
+/// Lt, LtE, Gt, GtE
+pub fn impl_comparison(unifier: &mut Unifier, store: &PrimitiveStore, ty: Type, other_ty: Type) {
+    if let Some(TypeEnum::TObj {fields, ..}) = Rc::get_mut(&mut unifier.get_ty(ty)) {
+            for op in &[
             ast::Cmpop::Lt,
             ast::Cmpop::LtE,
             ast::Cmpop::Gt,
@@ -407,16 +291,112 @@ pub fn set_primirives_magic_methods(store: &PrimitiveStore, unifier: &mut Unifie
             fields.insert(
                 comparison_name(op).unwrap().into(), 
                 unifier.add_ty(TypeEnum::TFunc(FunSignature {
-                    ret: store.int32,
+                    ret: store.bool,
                     vars: HashMap::new(),
                     args: vec![FuncArg {
-                        ty: store.bool,
+                        ty: other_ty,
                         is_optional: false,
                         name: "other".into()
                     }]
                 }))
             );
         }
-    }
-    // bool --------
+    } else { unreachable!() }
+}
+
+/// Eq, NotEq
+pub fn impl_eq(unifier: &mut Unifier, store: &PrimitiveStore, ty: Type) {
+    if let Some(TypeEnum::TObj {fields, ..}) = Rc::get_mut(&mut unifier.get_ty(ty)) {
+        for op in &[
+            ast::Cmpop::Eq,
+            ast::Cmpop::NotEq,
+        ] {
+            fields.insert(
+                comparison_name(op).unwrap().into(), 
+                unifier.add_ty(TypeEnum::TFunc(FunSignature {
+                    ret: store.bool,
+                    vars: HashMap::new(),
+                    args: vec![FuncArg {
+                        ty,
+                        is_optional: false,
+                        name: "other".into()
+                    }]
+                }))
+            );
+        }
+    } else { unreachable!() }
+}
+
+pub fn set_primirives_magic_methods(store: &PrimitiveStore, unifier: &mut Unifier) {
+    let PrimitiveStore {
+        int32: int32_t, 
+        int64: int64_t, 
+        float: float_t, 
+        bool: bool_t,
+        none: _none_t
+    } = *store;
+    // int32 --------
+    impl_basic_arithmetic(unifier, store, int32_t, int32_t, int32_t);
+    impl_basic_arithmetic(unifier, store, int32_t, int64_t, int64_t);
+    impl_basic_arithmetic(unifier, store, int32_t, float_t, float_t);
+    impl_bitwise_arithmetic(unifier, store, int32_t);
+    impl_div(unifier, store, int32_t, int32_t);
+    impl_div(unifier, store, int32_t, int64_t);
+    impl_div(unifier, store, int32_t, float_t);
+    impl_floordiv(unifier, store, int32_t, int32_t, int32_t);
+    impl_floordiv(unifier, store, int32_t, int64_t, int32_t);
+    impl_floordiv(unifier, store, int32_t, float_t, float_t);
+    impl_mod(unifier, store, int32_t, int32_t, int32_t);
+    impl_mod(unifier, store, int32_t, int64_t, int32_t);
+    impl_mod(unifier, store, int32_t, float_t, float_t);
+    impl_unary_op(unifier, store, int32_t);
+    impl_invert(unifier, store, int32_t);
+    impl_not(unifier, store, int32_t);
+    impl_comparison(unifier, store, int32_t, int32_t);
+    impl_comparison(unifier, store, int32_t, int64_t);
+    impl_comparison(unifier, store, int32_t, float_t);
+    impl_eq(unifier, store, int32_t);
+    // int64 --------
+    impl_basic_arithmetic(unifier, store, int64_t, int32_t, int64_t);
+    impl_basic_arithmetic(unifier, store, int64_t, int64_t, int64_t);
+    impl_basic_arithmetic(unifier, store, int64_t, float_t, float_t);
+    impl_bitwise_arithmetic(unifier, store, int64_t);
+    impl_div(unifier, store, int64_t, int32_t);
+    impl_div(unifier, store, int64_t, int64_t);
+    impl_div(unifier, store, int64_t, float_t);
+    impl_floordiv(unifier, store, int64_t, int32_t, int64_t);
+    impl_floordiv(unifier, store, int64_t, int64_t, int64_t);
+    impl_floordiv(unifier, store, int64_t, float_t, float_t);
+    impl_mod(unifier, store, int64_t, int32_t, int64_t);
+    impl_mod(unifier, store, int64_t, int64_t, int64_t);
+    impl_mod(unifier, store, int64_t, float_t, float_t);
+    impl_unary_op(unifier, store, int64_t);
+    impl_invert(unifier, store, int64_t);
+    impl_not(unifier, store, int64_t);
+    impl_comparison(unifier, store, int64_t, int32_t);
+    impl_comparison(unifier, store, int64_t, int64_t);
+    impl_comparison(unifier, store, int64_t, float_t);
+    impl_eq(unifier, store, int64_t);
+    // float --------
+    impl_basic_arithmetic(unifier, store, float_t, int32_t, float_t);
+    impl_basic_arithmetic(unifier, store, float_t, int64_t, float_t);
+    impl_basic_arithmetic(unifier, store, float_t, float_t, float_t);
+    impl_div(unifier, store, float_t, int32_t);
+    impl_div(unifier, store, float_t, int64_t);
+    impl_div(unifier, store, float_t, float_t);
+    impl_floordiv(unifier, store, float_t, int32_t, float_t);
+    impl_floordiv(unifier, store, float_t, int64_t, float_t);
+    impl_floordiv(unifier, store, float_t, float_t, float_t);
+    impl_mod(unifier, store, float_t, int32_t, float_t);
+    impl_mod(unifier, store, float_t, int64_t, float_t);
+    impl_mod(unifier, store, float_t, float_t, float_t);
+    impl_unary_op(unifier, store, float_t);
+    impl_not(unifier, store, float_t);
+    impl_comparison(unifier, store, float_t, int32_t);
+    impl_comparison(unifier, store, float_t, int64_t);
+    impl_comparison(unifier, store, float_t, float_t);
+    impl_eq(unifier, store, float_t);
+    // bool ---------
+    impl_not(unifier, store, bool_t);
+    impl_eq(unifier, store, bool_t);
 }
