@@ -156,6 +156,71 @@ impl Unifier {
         self.set_a_to_b(rigid, b);
     }
 
+    pub fn get_instantiations(&mut self, ty: Type) -> Option<Vec<Type>> {
+        match &*self.get_ty(ty) {
+            TypeEnum::TVar { range, .. } => {
+                let range = range.borrow();
+                if range.is_empty() {
+                    None
+                } else {
+                    Some(
+                        range
+                            .iter()
+                            .map(|ty| self.get_instantiations(*ty).unwrap_or_else(|| vec![*ty]))
+                            .flatten()
+                            .collect_vec(),
+                    )
+                }
+            }
+            TypeEnum::TList { ty } => self
+                .get_instantiations(*ty)
+                .map(|ty| ty.iter().map(|&ty| self.add_ty(TypeEnum::TList { ty })).collect_vec()),
+            TypeEnum::TVirtual { ty } => self.get_instantiations(*ty).map(|ty| {
+                ty.iter().map(|&ty| self.add_ty(TypeEnum::TVirtual { ty })).collect_vec()
+            }),
+            TypeEnum::TTuple { ty } => {
+                let tuples = ty
+                    .iter()
+                    .map(|ty| self.get_instantiations(*ty).unwrap_or_else(|| vec![*ty]))
+                    .multi_cartesian_product()
+                    .collect_vec();
+                if tuples.len() == 1 {
+                    None
+                } else {
+                    Some(
+                        tuples.into_iter().map(|ty| self.add_ty(TypeEnum::TTuple { ty })).collect(),
+                    )
+                }
+            }
+            TypeEnum::TObj { params, .. } => {
+                let (keys, params): (Vec<&u32>, Vec<&Type>) = params.iter().unzip();
+                let params = params
+                    .into_iter()
+                    .map(|ty| self.get_instantiations(*ty).unwrap_or_else(|| vec![*ty]))
+                    .multi_cartesian_product()
+                    .collect_vec();
+                if params.len() <= 1 {
+                    None
+                } else {
+                    Some(
+                        params
+                            .into_iter()
+                            .map(|params| {
+                                self.subst(
+                                    ty,
+                                    &zip(keys.iter().cloned().cloned(), params.iter().cloned())
+                                        .collect(),
+                                )
+                                .unwrap_or(ty)
+                            })
+                            .collect(),
+                    )
+                }
+            }
+            _ => None,
+        }
+    }
+
     pub fn is_concrete(&mut self, a: Type, allowed_typevars: &[Type]) -> bool {
         use TypeEnum::*;
         match &*self.get_ty(a) {
