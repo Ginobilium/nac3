@@ -1,5 +1,5 @@
+use std::borrow::Borrow;
 use std::collections::HashMap;
-use std::rc::Rc;
 use rustpython_parser::ast::{Cmpop, Operator, Unaryop};
 
 pub fn binop_name(op: &Operator) -> &'static str {
@@ -64,14 +64,14 @@ use rustpython_parser::ast;
 
 /// Add, Sub, Mult, Pow
 pub fn impl_basic_arithmetic(unifier: &mut Unifier, store: &PrimitiveStore, ty: Type, other_ty: Type, ret_ty: Type) {
-    if let Some(TypeEnum::TObj {fields, .. }) = Rc::get_mut(&mut unifier.get_ty(ty)) {
+    if let TypeEnum::TObj {fields, .. } = unifier.get_ty(ty).borrow() {
         for op in &[
             ast::Operator::Add, 
             ast::Operator::Sub, 
             ast::Operator::Mult,
             ast::Operator::Pow, 
         ] {
-            fields.insert(
+            fields.borrow_mut().insert(
                 binop_name(op).into(),
                 unifier.add_ty(TypeEnum::TFunc(FunSignature {
                     ret: ret_ty,
@@ -84,7 +84,7 @@ pub fn impl_basic_arithmetic(unifier: &mut Unifier, store: &PrimitiveStore, ty: 
                 }))
             );
 
-            fields.insert(
+            fields.borrow_mut().insert(
                 binop_assign_name(op).into(),
                 unifier.add_ty(TypeEnum::TFunc(FunSignature {
                     ret: store.none,
@@ -102,7 +102,7 @@ pub fn impl_basic_arithmetic(unifier: &mut Unifier, store: &PrimitiveStore, ty: 
 
 /// LShift, RShift, BitOr, BitXor, BitAnd
 pub fn impl_bitwise_arithmetic(unifier: &mut Unifier, store: &PrimitiveStore, ty: Type) {
-    if let Some(TypeEnum::TObj {fields, ..}) = Rc::get_mut(&mut unifier.get_ty(ty)) {
+    if let TypeEnum::TObj {fields, .. } = unifier.get_ty(ty).borrow() {
         for op in &[
             ast::Operator::LShift, 
             ast::Operator::RShift, 
@@ -110,7 +110,7 @@ pub fn impl_bitwise_arithmetic(unifier: &mut Unifier, store: &PrimitiveStore, ty
             ast::Operator::BitXor, 
             ast::Operator::BitAnd, 
         ] {
-            fields.insert(
+            fields.borrow_mut().insert(
                 binop_name(op).into(), 
                 unifier.add_ty(TypeEnum::TFunc(FunSignature {
                     ret: ty,
@@ -123,7 +123,7 @@ pub fn impl_bitwise_arithmetic(unifier: &mut Unifier, store: &PrimitiveStore, ty
                 }))
             );
 
-            fields.insert(
+            fields.borrow_mut().insert(
                 binop_assign_name(op).into(), 
                 unifier.add_ty(TypeEnum::TFunc(FunSignature {
                     ret: store.none,
@@ -141,8 +141,8 @@ pub fn impl_bitwise_arithmetic(unifier: &mut Unifier, store: &PrimitiveStore, ty
 
 /// Div
 pub fn impl_div(unifier: &mut Unifier, store: &PrimitiveStore, ty: Type, other_ty: Type) {
-    if let Some(TypeEnum::TObj {fields, ..}) = Rc::get_mut(&mut unifier.get_ty(ty)) {
-        fields.insert(
+    if let TypeEnum::TObj {fields, .. } = unifier.get_ty(ty).borrow() {
+        fields.borrow_mut().insert(
             binop_name(&ast::Operator::Div).into(), 
             unifier.add_ty(TypeEnum::TFunc(FunSignature{
                 ret: store.float,
@@ -155,7 +155,7 @@ pub fn impl_div(unifier: &mut Unifier, store: &PrimitiveStore, ty: Type, other_t
             }))
         );
 
-        fields.insert(
+        fields.borrow_mut().insert(
             binop_assign_name(&ast::Operator::Div).into(), 
             unifier.add_ty(TypeEnum::TFunc(FunSignature{
                 ret: store.none,
@@ -172,8 +172,8 @@ pub fn impl_div(unifier: &mut Unifier, store: &PrimitiveStore, ty: Type, other_t
 
 /// FloorDiv
 pub fn impl_floordiv(unifier: &mut Unifier, store: &PrimitiveStore, ty: Type, other_ty: Type, ret_ty: Type) {
-    if let Some(TypeEnum::TObj {fields, ..}) = Rc::get_mut(&mut unifier.get_ty(ty)) {
-        fields.insert(
+    if let TypeEnum::TObj {fields, .. } = unifier.get_ty(ty).borrow() {
+        fields.borrow_mut().insert(
             binop_name(&ast::Operator::FloorDiv).into(), 
             unifier.add_ty(TypeEnum::TFunc(FunSignature{
                 ret: ret_ty,
@@ -186,7 +186,7 @@ pub fn impl_floordiv(unifier: &mut Unifier, store: &PrimitiveStore, ty: Type, ot
             }))
         );
 
-        fields.insert(
+        fields.borrow_mut().insert(
             binop_assign_name(&ast::Operator::FloorDiv).into(), 
             unifier.add_ty(TypeEnum::TFunc(FunSignature{
                 ret: store.none,
@@ -203,8 +203,8 @@ pub fn impl_floordiv(unifier: &mut Unifier, store: &PrimitiveStore, ty: Type, ot
 
 /// Mod
 pub fn impl_mod(unifier: &mut Unifier, store: &PrimitiveStore, ty: Type, other_ty: Type, ret_ty: Type) {
-    if let Some(TypeEnum::TObj {fields, .. }) = Rc::get_mut(&mut unifier.get_ty(ty)) {
-        fields.insert(
+    if let TypeEnum::TObj {fields, .. } = unifier.get_ty(ty).borrow() {
+        fields.borrow_mut().insert(
             binop_name(&ast::Operator::Mod).into(),
             unifier.add_ty(TypeEnum::TFunc(FunSignature {
                 ret: ret_ty,
@@ -217,7 +217,7 @@ pub fn impl_mod(unifier: &mut Unifier, store: &PrimitiveStore, ty: Type, other_t
             }))
         );
 
-        fields.insert(
+        fields.borrow_mut().insert(
             binop_assign_name(&ast::Operator::Mod).into(),
             unifier.add_ty(TypeEnum::TFunc(FunSignature {
                 ret: store.none,
@@ -234,12 +234,12 @@ pub fn impl_mod(unifier: &mut Unifier, store: &PrimitiveStore, ty: Type, other_t
 
 /// UAdd, USub
 pub fn impl_unary_op(unifier: &mut Unifier, _store: &PrimitiveStore, ty: Type) {
-    if let Some(TypeEnum::TObj {fields, ..}) = Rc::get_mut(&mut unifier.get_ty(ty)) {
+    if let TypeEnum::TObj {fields, .. } = unifier.get_ty(ty).borrow() {
         for op in &[
             ast::Unaryop::UAdd,
             ast::Unaryop::USub
         ] {
-            fields.insert(
+            fields.borrow_mut().insert(
                 unaryop_name(op).into(), 
                 unifier.add_ty(TypeEnum::TFunc(FunSignature {
                     ret: ty,
@@ -253,8 +253,8 @@ pub fn impl_unary_op(unifier: &mut Unifier, _store: &PrimitiveStore, ty: Type) {
 
 /// Invert
 pub fn impl_invert(unifier: &mut Unifier, _store: &PrimitiveStore, ty: Type) {
-    if let Some(TypeEnum::TObj {fields, .. }) = Rc::get_mut(&mut unifier.get_ty(ty)) {
-        fields.insert(
+    if let TypeEnum::TObj {fields, .. } = unifier.get_ty(ty).borrow() {
+        fields.borrow_mut().insert(
             unaryop_name(&ast::Unaryop::Invert).into(), 
             unifier.add_ty(TypeEnum::TFunc(FunSignature {
                 ret: ty,
@@ -267,8 +267,8 @@ pub fn impl_invert(unifier: &mut Unifier, _store: &PrimitiveStore, ty: Type) {
 
 /// Not
 pub fn impl_not(unifier: &mut Unifier, store: &PrimitiveStore, ty: Type) {
-    if let Some(TypeEnum::TObj {fields, ..}) = Rc::get_mut(&mut unifier.get_ty(ty)) {
-        fields.insert(
+    if let TypeEnum::TObj {fields, .. } = unifier.get_ty(ty).borrow() {
+        fields.borrow_mut().insert(
             unaryop_name(&ast::Unaryop::Not).into(), 
             unifier.add_ty(TypeEnum::TFunc(FunSignature {
                 ret: store.bool,
@@ -281,14 +281,14 @@ pub fn impl_not(unifier: &mut Unifier, store: &PrimitiveStore, ty: Type) {
 
 /// Lt, LtE, Gt, GtE
 pub fn impl_comparison(unifier: &mut Unifier, store: &PrimitiveStore, ty: Type, other_ty: Type) {
-    if let Some(TypeEnum::TObj {fields, ..}) = Rc::get_mut(&mut unifier.get_ty(ty)) {
+    if let TypeEnum::TObj {fields, .. } = unifier.get_ty(ty).borrow() {
             for op in &[
             ast::Cmpop::Lt,
             ast::Cmpop::LtE,
             ast::Cmpop::Gt,
             ast::Cmpop::GtE,
         ] {
-            fields.insert(
+            fields.borrow_mut().insert(
                 comparison_name(op).unwrap().into(), 
                 unifier.add_ty(TypeEnum::TFunc(FunSignature {
                     ret: store.bool,
@@ -306,12 +306,12 @@ pub fn impl_comparison(unifier: &mut Unifier, store: &PrimitiveStore, ty: Type, 
 
 /// Eq, NotEq
 pub fn impl_eq(unifier: &mut Unifier, store: &PrimitiveStore, ty: Type) {
-    if let Some(TypeEnum::TObj {fields, ..}) = Rc::get_mut(&mut unifier.get_ty(ty)) {
+    if let TypeEnum::TObj {fields, .. } = unifier.get_ty(ty).borrow() {
         for op in &[
             ast::Cmpop::Eq,
             ast::Cmpop::NotEq,
         ] {
-            fields.insert(
+            fields.borrow_mut().insert(
                 comparison_name(op).unwrap().into(), 
                 unifier.add_ty(TypeEnum::TFunc(FunSignature {
                     ret: store.bool,
@@ -335,68 +335,71 @@ pub fn set_primirives_magic_methods(store: &PrimitiveStore, unifier: &mut Unifie
         bool: bool_t,
         none: _none_t
     } = *store;
-    // int32 --------
+    /* int32 ======== */
     impl_basic_arithmetic(unifier, store, int32_t, int32_t, int32_t);
-    impl_basic_arithmetic(unifier, store, int32_t, int64_t, int64_t);
-    impl_basic_arithmetic(unifier, store, int32_t, float_t, float_t);
+    // impl_basic_arithmetic(unifier, store, int32_t, int64_t, int64_t);
+    // impl_basic_arithmetic(unifier, store, int32_t, float_t, float_t);
     impl_bitwise_arithmetic(unifier, store, int32_t);
+    // impl_div(unifier, store, int32_t, int32_t);
+    // impl_div(unifier, store, int32_t, int64_t);
     impl_div(unifier, store, int32_t, int32_t);
-    impl_div(unifier, store, int32_t, int64_t);
-    impl_div(unifier, store, int32_t, float_t);
     impl_floordiv(unifier, store, int32_t, int32_t, int32_t);
-    impl_floordiv(unifier, store, int32_t, int64_t, int32_t);
-    impl_floordiv(unifier, store, int32_t, float_t, float_t);
+    // impl_floordiv(unifier, store, int32_t, int64_t, int32_t);
+    // impl_floordiv(unifier, store, int32_t, float_t, float_t);
     impl_mod(unifier, store, int32_t, int32_t, int32_t);
-    impl_mod(unifier, store, int32_t, int64_t, int32_t);
-    impl_mod(unifier, store, int32_t, float_t, float_t);
+    // impl_mod(unifier, store, int32_t, int64_t, int32_t);
+    // impl_mod(unifier, store, int32_t, float_t, float_t);
     impl_unary_op(unifier, store, int32_t);
     impl_invert(unifier, store, int32_t);
     impl_not(unifier, store, int32_t);
     impl_comparison(unifier, store, int32_t, int32_t);
-    impl_comparison(unifier, store, int32_t, int64_t);
-    impl_comparison(unifier, store, int32_t, float_t);
+    // impl_comparison(unifier, store, int32_t, int64_t);
+    // impl_comparison(unifier, store, int32_t, float_t);
     impl_eq(unifier, store, int32_t);
-    // int64 --------
-    impl_basic_arithmetic(unifier, store, int64_t, int32_t, int64_t);
+    
+    /* int64 ======== */ 
+    // impl_basic_arithmetic(unifier, store, int64_t, int32_t, int64_t);
     impl_basic_arithmetic(unifier, store, int64_t, int64_t, int64_t);
-    impl_basic_arithmetic(unifier, store, int64_t, float_t, float_t);
+    // impl_basic_arithmetic(unifier, store, int64_t, float_t, float_t);
     impl_bitwise_arithmetic(unifier, store, int64_t);
-    impl_div(unifier, store, int64_t, int32_t);
+    // impl_div(unifier, store, int64_t, int32_t);
     impl_div(unifier, store, int64_t, int64_t);
-    impl_div(unifier, store, int64_t, float_t);
-    impl_floordiv(unifier, store, int64_t, int32_t, int64_t);
+    // impl_div(unifier, store, int64_t, float_t);
+    // impl_floordiv(unifier, store, int64_t, int32_t, int64_t);
     impl_floordiv(unifier, store, int64_t, int64_t, int64_t);
-    impl_floordiv(unifier, store, int64_t, float_t, float_t);
-    impl_mod(unifier, store, int64_t, int32_t, int64_t);
+    // impl_floordiv(unifier, store, int64_t, float_t, float_t);
+    // impl_mod(unifier, store, int64_t, int32_t, int64_t);
     impl_mod(unifier, store, int64_t, int64_t, int64_t);
-    impl_mod(unifier, store, int64_t, float_t, float_t);
+    // impl_mod(unifier, store, int64_t, float_t, float_t);
     impl_unary_op(unifier, store, int64_t);
     impl_invert(unifier, store, int64_t);
     impl_not(unifier, store, int64_t);
-    impl_comparison(unifier, store, int64_t, int32_t);
+    // impl_comparison(unifier, store, int64_t, int32_t);
     impl_comparison(unifier, store, int64_t, int64_t);
-    impl_comparison(unifier, store, int64_t, float_t);
+    // impl_comparison(unifier, store, int64_t, float_t);
     impl_eq(unifier, store, int64_t);
-    // float --------
-    impl_basic_arithmetic(unifier, store, float_t, int32_t, float_t);
-    impl_basic_arithmetic(unifier, store, float_t, int64_t, float_t);
+    
+    /* float ======== */ 
+    // impl_basic_arithmetic(unifier, store, float_t, int32_t, float_t);
+    // impl_basic_arithmetic(unifier, store, float_t, int64_t, float_t);
     impl_basic_arithmetic(unifier, store, float_t, float_t, float_t);
-    impl_div(unifier, store, float_t, int32_t);
-    impl_div(unifier, store, float_t, int64_t);
+    // impl_div(unifier, store, float_t, int32_t);
+    // impl_div(unifier, store, float_t, int64_t);
     impl_div(unifier, store, float_t, float_t);
-    impl_floordiv(unifier, store, float_t, int32_t, float_t);
-    impl_floordiv(unifier, store, float_t, int64_t, float_t);
+    // impl_floordiv(unifier, store, float_t, int32_t, float_t);
+    // impl_floordiv(unifier, store, float_t, int64_t, float_t);
     impl_floordiv(unifier, store, float_t, float_t, float_t);
-    impl_mod(unifier, store, float_t, int32_t, float_t);
-    impl_mod(unifier, store, float_t, int64_t, float_t);
+    // impl_mod(unifier, store, float_t, int32_t, float_t);
+    // impl_mod(unifier, store, float_t, int64_t, float_t);
     impl_mod(unifier, store, float_t, float_t, float_t);
     impl_unary_op(unifier, store, float_t);
     impl_not(unifier, store, float_t);
-    impl_comparison(unifier, store, float_t, int32_t);
-    impl_comparison(unifier, store, float_t, int64_t);
+    // impl_comparison(unifier, store, float_t, int32_t);
+    // impl_comparison(unifier, store, float_t, int64_t);
     impl_comparison(unifier, store, float_t, float_t);
     impl_eq(unifier, store, float_t);
-    // bool ---------
+    
+    /* bool ======== */ 
     impl_not(unifier, store, bool_t);
     impl_eq(unifier, store, bool_t);
 }

@@ -51,31 +51,32 @@ impl TestEnvironment {
         
         let int32 = unifier.add_ty(TypeEnum::TObj {
             obj_id: 0,
-            fields: HashMap::new(),
+            fields: HashMap::new().into(),
             params: HashMap::new(),
         });
         let int64 = unifier.add_ty(TypeEnum::TObj {
             obj_id: 1,
-            fields: HashMap::new(),
+            fields: HashMap::new().into(),
             params: HashMap::new(),
         });
         let float = unifier.add_ty(TypeEnum::TObj {
             obj_id: 2,
-            fields: HashMap::new(),
+            fields: HashMap::new().into(),
             params: HashMap::new(),
         });
         let bool = unifier.add_ty(TypeEnum::TObj {
             obj_id: 3,
-            fields: HashMap::new(),
+            fields: HashMap::new().into(),
             params: HashMap::new(),
         });
         let none = unifier.add_ty(TypeEnum::TObj {
             obj_id: 4,
-            fields: HashMap::new(),
+            fields: HashMap::new().into(),
             params: HashMap::new(),
         });
         // identifier_mapping.insert("None".into(), none);
         let primitives = PrimitiveStore { int32, int64, float, bool, none };
+        
         set_primirives_magic_methods(&primitives, &mut unifier);
         
         let id_to_name = [
@@ -119,27 +120,27 @@ impl TestEnvironment {
         let mut identifier_mapping = HashMap::new();
         let int32 = unifier.add_ty(TypeEnum::TObj {
             obj_id: 0,
-            fields: HashMap::new(),
+            fields: HashMap::new().into(),
             params: HashMap::new(),
         });
         let int64 = unifier.add_ty(TypeEnum::TObj {
             obj_id: 1,
-            fields: HashMap::new(),
+            fields: HashMap::new().into(),
             params: HashMap::new(),
         });
         let float = unifier.add_ty(TypeEnum::TObj {
             obj_id: 2,
-            fields: HashMap::new(),
+            fields: HashMap::new().into(),
             params: HashMap::new(),
         });
         let bool = unifier.add_ty(TypeEnum::TObj {
             obj_id: 3,
-            fields: HashMap::new(),
+            fields: HashMap::new().into(),
             params: HashMap::new(),
         });
         let none = unifier.add_ty(TypeEnum::TObj {
             obj_id: 4,
-            fields: HashMap::new(),
+            fields: HashMap::new().into(),
             params: HashMap::new(),
         });
         identifier_mapping.insert("None".into(), none);
@@ -150,7 +151,7 @@ impl TestEnvironment {
 
         let foo_ty = unifier.add_ty(TypeEnum::TObj {
             obj_id: 5,
-            fields: [("a".into(), v0)].iter().cloned().collect(),
+            fields: [("a".into(), v0)].iter().cloned().collect::<HashMap<_, _>>().into(),
             params: [(id, v0)].iter().cloned().collect(),
         });
 
@@ -170,7 +171,7 @@ impl TestEnvironment {
         }));
         let bar = unifier.add_ty(TypeEnum::TObj {
             obj_id: 6,
-            fields: [("a".into(), int32), ("b".into(), fun)].iter().cloned().collect(),
+            fields: [("a".into(), int32), ("b".into(), fun)].iter().cloned().collect::<HashMap<_, _>>().into(),
             params: Default::default(),
         });
         identifier_mapping.insert(
@@ -184,7 +185,7 @@ impl TestEnvironment {
 
         let bar2 = unifier.add_ty(TypeEnum::TObj {
             obj_id: 7,
-            fields: [("a".into(), bool), ("b".into(), fun)].iter().cloned().collect(),
+            fields: [("a".into(), bool), ("b".into(), fun)].iter().cloned().collect::<HashMap<_, _>>().into(),
             params: Default::default(),
         });
         identifier_mapping.insert(
@@ -348,5 +349,124 @@ fn test_basic(source: &str, mapping: HashMap<&str, &str>, virtuals: &[(&str, &st
 
         assert_eq!(&a, x);
         assert_eq!(&b, y);
+    }
+}
+
+#[test_case(indoc! {"
+        a = 2
+        b = 2
+        c = a + b
+        d = a - b
+        e = a * b
+        f = a / b
+        g = a // b
+        h = a % b
+    "},
+    [("a", "int32"), 
+    ("b", "int32"), 
+    ("c", "int32"), 
+    ("d", "int32"), 
+    ("e", "int32"), 
+    ("f", "float"), 
+    ("g", "int32"), 
+    ("h", "int32")].iter().cloned().collect()
+    ; "int32")]
+#[test_case(
+    indoc! {"
+        a = 2.4
+        b = 3.6
+        c = a + b
+        d = a - b
+        e = a * b
+        f = a / b
+        g = a // b
+        h = a % b
+    "},
+    [("a", "float"), 
+    ("b", "float"), 
+    ("c", "float"), 
+    ("d", "float"), 
+    ("e", "float"), 
+    ("f", "float"), 
+    ("g", "float"), 
+    ("h", "float")].iter().cloned().collect()
+    ; "float"
+)]
+#[test_case(
+    indoc! {"
+        a = int64(12312312312)
+        b = int64(24242424424)
+        c = a + b
+        d = a - b
+        e = a * b
+        f = a / b
+        g = a // b
+        h = a % b
+        i = a == b
+        j = a > b
+        k = a < b
+        l = a != b
+    "},
+    [("a", "int64"), 
+    ("b", "int64"), 
+    ("c", "int64"), 
+    ("d", "int64"), 
+    ("e", "int64"), 
+    ("f", "float"), 
+    ("g", "int64"), 
+    ("h", "int64"),
+    ("i", "bool"),
+    ("j", "bool"),
+    ("k", "bool"),
+    ("l", "bool")].iter().cloned().collect()
+    ; "int64"
+)]
+#[test_case(
+    indoc! {"
+        a = True
+        b = False
+        c = a == b
+        d = not a
+        e = a != b
+    "},
+    [("a", "bool"), 
+    ("b", "bool"), 
+    ("c", "bool"), 
+    ("d", "bool"), 
+    ("e", "bool")].iter().cloned().collect()
+    ; "boolean"
+)]
+fn test_primitive_magic_methods(source: &str, mapping: HashMap<&str, &str>) {
+    println!("source:\n{}", source);
+    let mut env = TestEnvironment::basic_test_env();
+    let id_to_name = std::mem::take(&mut env.id_to_name);
+    let mut defined_identifiers: Vec<_> = env.identifier_mapping.keys().cloned().collect();
+    defined_identifiers.push("virtual".to_string());
+    let mut inferencer = env.get_inferencer();
+    let statements = parse_program(source).unwrap();
+    let statements = statements
+        .into_iter()
+        .map(|v| inferencer.fold_stmt(v))
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+
+    inferencer.check_block(&statements, &mut defined_identifiers).unwrap();
+
+    for (k, v) in inferencer.variable_mapping.iter() {
+        let name = inferencer.unifier.stringify(
+            *v,
+            &mut |v| id_to_name.get(&v).unwrap().clone(),
+            &mut |v| format!("v{}", v),
+        );
+        println!("{}: {}", k, name);
+    }
+    for (k, v) in mapping.iter() {
+        let ty = inferencer.variable_mapping.get(*k).unwrap();
+        let name = inferencer.unifier.stringify(
+            *ty,
+            &mut |v| id_to_name.get(&v).unwrap().clone(),
+            &mut |v| format!("v{}", v),
+        );
+        assert_eq!(format!("{}: {}", k, v), format!("{}: {}", k, name));
     }
 }

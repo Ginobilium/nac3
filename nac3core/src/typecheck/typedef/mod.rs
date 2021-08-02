@@ -64,7 +64,7 @@ pub enum TypeEnum {
     },
     TObj {
         obj_id: usize,
-        fields: Mapping<String>,
+        fields: RefCell<Mapping<String>>,
         params: VarMap,
     },
     TVirtual {
@@ -373,7 +373,8 @@ impl Unifier {
             (TVar { meta: Record(map), id, range, .. }, TObj { fields, .. }) => {
                 self.occur_check(a, b)?;
                 for (k, v) in map.borrow().iter() {
-                    let ty = fields.get(k).ok_or_else(|| format!("No such attribute {}", k))?;
+                    let temp = fields.borrow();
+                    let ty = temp.get(k).ok_or_else(|| format!("No such attribute {}", k))?;
                     self.unify(*ty, *v)?;
                 }
                 let x = self.check_var_compatibility(*id, b, &range.borrow())?.unwrap_or(b);
@@ -385,7 +386,8 @@ impl Unifier {
                 let ty = self.get_ty(*ty);
                 if let TObj { fields, .. } = ty.as_ref() {
                     for (k, v) in map.borrow().iter() {
-                        let ty = fields.get(k).ok_or_else(|| format!("No such attribute {}", k))?;
+                        let temp = fields.borrow();
+                        let ty = temp.get(k).ok_or_else(|| format!("No such attribute {}", k))?;
                         if !matches!(self.get_ty(*ty).as_ref(), TFunc { .. }) {
                             return Err(format!("Cannot access field {} for virtual type", k));
                         }
@@ -659,8 +661,8 @@ impl Unifier {
                 if need_subst {
                     let obj_id = *obj_id;
                     let params = self.subst_map(&params, mapping).unwrap_or_else(|| params.clone());
-                    let fields = self.subst_map(&fields, mapping).unwrap_or_else(|| fields.clone());
-                    Some(self.add_ty(TypeEnum::TObj { obj_id, params, fields }))
+                    let fields = self.subst_map(&fields.borrow(), mapping).unwrap_or_else(|| fields.borrow().clone());
+                    Some(self.add_ty(TypeEnum::TObj { obj_id, params, fields: fields.into() }))
                 } else {
                     None
                 }

@@ -79,7 +79,7 @@ impl TestEnvironment {
             "int".into(),
             unifier.add_ty(TypeEnum::TObj {
                 obj_id: 0,
-                fields: HashMap::new(),
+                fields: HashMap::new().into(),
                 params: HashMap::new(),
             }),
         );
@@ -87,7 +87,7 @@ impl TestEnvironment {
             "float".into(),
             unifier.add_ty(TypeEnum::TObj {
                 obj_id: 1,
-                fields: HashMap::new(),
+                fields: HashMap::new().into(),
                 params: HashMap::new(),
             }),
         );
@@ -95,7 +95,7 @@ impl TestEnvironment {
             "bool".into(),
             unifier.add_ty(TypeEnum::TObj {
                 obj_id: 2,
-                fields: HashMap::new(),
+                fields: HashMap::new().into(),
                 params: HashMap::new(),
             }),
         );
@@ -104,7 +104,7 @@ impl TestEnvironment {
             "Foo".into(),
             unifier.add_ty(TypeEnum::TObj {
                 obj_id: 3,
-                fields: [("a".into(), v0)].iter().cloned().collect(),
+                fields: [("a".into(), v0)].iter().cloned().collect::<HashMap<_, _>>().into(),
                 params: [(id, v0)].iter().cloned().collect(),
             }),
         );
@@ -335,7 +335,7 @@ fn test_virtual() {
     }));
     let bar = env.unifier.add_ty(TypeEnum::TObj {
         obj_id: 5,
-        fields: [("f".to_string(), fun), ("a".to_string(), int)].iter().cloned().collect(),
+        fields: [("f".to_string(), fun), ("a".to_string(), int)].iter().cloned().collect::<HashMap<_, _>>().into(),
         params: HashMap::new(),
     });
     let v0 = env.unifier.get_fresh_var().0;
