@@ -333,69 +333,39 @@ pub fn set_primirives_magic_methods(store: &PrimitiveStore, unifier: &mut Unifie
         int64: int64_t, 
         float: float_t, 
         bool: bool_t,
-        none: _none_t
+        ..
     } = *store;
     /* int32 ======== */
     impl_basic_arithmetic(unifier, store, int32_t, int32_t, int32_t);
-    // impl_basic_arithmetic(unifier, store, int32_t, int64_t, int64_t);
-    // impl_basic_arithmetic(unifier, store, int32_t, float_t, float_t);
     impl_bitwise_arithmetic(unifier, store, int32_t);
-    // impl_div(unifier, store, int32_t, int32_t);
-    // impl_div(unifier, store, int32_t, int64_t);
     impl_div(unifier, store, int32_t, int32_t);
     impl_floordiv(unifier, store, int32_t, int32_t, int32_t);
-    // impl_floordiv(unifier, store, int32_t, int64_t, int32_t);
-    // impl_floordiv(unifier, store, int32_t, float_t, float_t);
     impl_mod(unifier, store, int32_t, int32_t, int32_t);
-    // impl_mod(unifier, store, int32_t, int64_t, int32_t);
-    // impl_mod(unifier, store, int32_t, float_t, float_t);
     impl_unary_op(unifier, store, int32_t);
     impl_invert(unifier, store, int32_t);
     impl_not(unifier, store, int32_t);
     impl_comparison(unifier, store, int32_t, int32_t);
-    // impl_comparison(unifier, store, int32_t, int64_t);
-    // impl_comparison(unifier, store, int32_t, float_t);
     impl_eq(unifier, store, int32_t);
     
     /* int64 ======== */ 
-    // impl_basic_arithmetic(unifier, store, int64_t, int32_t, int64_t);
     impl_basic_arithmetic(unifier, store, int64_t, int64_t, int64_t);
-    // impl_basic_arithmetic(unifier, store, int64_t, float_t, float_t);
     impl_bitwise_arithmetic(unifier, store, int64_t);
-    // impl_div(unifier, store, int64_t, int32_t);
     impl_div(unifier, store, int64_t, int64_t);
-    // impl_div(unifier, store, int64_t, float_t);
-    // impl_floordiv(unifier, store, int64_t, int32_t, int64_t);
     impl_floordiv(unifier, store, int64_t, int64_t, int64_t);
-    // impl_floordiv(unifier, store, int64_t, float_t, float_t);
-    // impl_mod(unifier, store, int64_t, int32_t, int64_t);
     impl_mod(unifier, store, int64_t, int64_t, int64_t);
-    // impl_mod(unifier, store, int64_t, float_t, float_t);
     impl_unary_op(unifier, store, int64_t);
     impl_invert(unifier, store, int64_t);
     impl_not(unifier, store, int64_t);
-    // impl_comparison(unifier, store, int64_t, int32_t);
     impl_comparison(unifier, store, int64_t, int64_t);
-    // impl_comparison(unifier, store, int64_t, float_t);
     impl_eq(unifier, store, int64_t);
     
     /* float ======== */ 
-    // impl_basic_arithmetic(unifier, store, float_t, int32_t, float_t);
-    // impl_basic_arithmetic(unifier, store, float_t, int64_t, float_t);
     impl_basic_arithmetic(unifier, store, float_t, float_t, float_t);
-    // impl_div(unifier, store, float_t, int32_t);
-    // impl_div(unifier, store, float_t, int64_t);
     impl_div(unifier, store, float_t, float_t);
-    // impl_floordiv(unifier, store, float_t, int32_t, float_t);
-    // impl_floordiv(unifier, store, float_t, int64_t, float_t);
     impl_floordiv(unifier, store, float_t, float_t, float_t);
-    // impl_mod(unifier, store, float_t, int32_t, float_t);
-    // impl_mod(unifier, store, float_t, int64_t, float_t);
     impl_mod(unifier, store, float_t, float_t, float_t);
     impl_unary_op(unifier, store, float_t);
     impl_not(unifier, store, float_t);
-    // impl_comparison(unifier, store, float_t, int32_t);
-    // impl_comparison(unifier, store, float_t, int64_t);
     impl_comparison(unifier, store, float_t, float_t);
     impl_eq(unifier, store, float_t);
     
