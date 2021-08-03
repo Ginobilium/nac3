@@ -1,4 +1,3 @@
-use std::cell::RefCell;
 use std::rc::Rc;
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
@@ -12,11 +11,7 @@ pub struct UnificationTable<V> {
 
 impl<V> UnificationTable<V> {
     pub fn new() -> UnificationTable<V> {
-        UnificationTable {
-            parents: Vec::new(),
-            ranks: Vec::new(),
-            values: Vec::new(),
-        }
+        UnificationTable { parents: Vec::new(), ranks: Vec::new(), values: Vec::new() }
     }
 
     pub fn new_key(&mut self, v: V) -> UnificationKey {
@@ -72,33 +67,17 @@ impl<V> UnificationTable<V> {
     }
 }
 
-impl<V> UnificationTable<Rc<RefCell<V>>>
+impl<V> UnificationTable<Rc<V>>
 where
     V: Clone,
 {
     pub fn into_send(self) -> UnificationTable<V> {
-        let values = self
-            .values
-            .iter()
-            .map(|v| v.as_ref().borrow().clone())
-            .collect();
-        UnificationTable {
-            parents: self.parents,
-            ranks: self.ranks,
-            values,
-        }
+        let values = self.values.iter().map(|v| v.as_ref().clone()).collect();
+        UnificationTable { parents: self.parents, ranks: self.ranks, values }
     }
 
-    pub fn from_send(table: UnificationTable<V>) -> UnificationTable<Rc<RefCell<V>>> {
-        let values = table
-            .values
-            .into_iter()
-            .map(|v| Rc::new(RefCell::new(v)))
-            .collect();
-        UnificationTable {
-            parents: table.parents,
-            ranks: table.ranks,
-            values,
-        }
+    pub fn from_send(table: UnificationTable<V>) -> UnificationTable<Rc<V>> {
+        let values = table.values.into_iter().map(Rc::new).collect();
+        UnificationTable { parents: table.parents, ranks: table.ranks, values }
     }
 }
