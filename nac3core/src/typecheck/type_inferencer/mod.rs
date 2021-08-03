@@ -1,8 +1,7 @@
-use std::cell::RefCell;
+use std::{cell::RefCell, sync::Arc};
 use std::collections::HashMap;
 use std::convert::{TryInto, From};
 use std::iter::once;
-use std::rc::Rc;
 
 use super::magic_methods::*;
 use super::symbol_resolver::SymbolResolver;
@@ -53,7 +52,7 @@ pub struct Inferencer<'a> {
     pub primitives: &'a PrimitiveStore,
     pub virtual_checks: &'a mut Vec<(Type, Type)>,
     pub variable_mapping: HashMap<String, Type>,
-    pub calls: &'a mut HashMap<CodeLocation, Rc<Call>>,
+    pub calls: &'a mut HashMap<CodeLocation, Arc<Call>>,
 }
 
 struct NaiveFolder();
@@ -192,7 +191,7 @@ impl<'a> Inferencer<'a> {
         ret: Type,
     ) -> InferenceResult {
         let call =
-            Rc::new(Call { posargs: params, kwargs: HashMap::new(), ret, fun: RefCell::new(None) });
+            Arc::new(Call { posargs: params, kwargs: HashMap::new(), ret, fun: RefCell::new(None) });
         let call = self.unifier.add_ty(TypeEnum::TCall(vec![call].into()));
         let fields = once((method, call)).collect();
         let record = self.unifier.add_record(fields);
@@ -389,7 +388,7 @@ impl<'a> Inferencer<'a> {
             .map(|v| fold::fold_keyword(self, v))
             .collect::<Result<Vec<_>, _>>()?;
         let ret = self.unifier.get_fresh_var().0;
-        let call = Rc::new(Call {
+        let call = Arc::new(Call {
             posargs: args.iter().map(|v| v.custom.unwrap()).collect(),
             kwargs: keywords
                 .iter()

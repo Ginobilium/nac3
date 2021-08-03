@@ -1,5 +1,5 @@
 use itertools::{chain, zip, Itertools};
-use std::borrow::Cow;
+use std::{borrow::Cow, sync::Arc};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::iter::once;
@@ -70,7 +70,7 @@ pub enum TypeEnum {
     TVirtual {
         ty: Type,
     },
-    TCall(RefCell<Vec<Rc<Call>>>),
+    TCall(RefCell<Vec<Arc<Call>>>),
     TFunc(FunSignature),
 }
 

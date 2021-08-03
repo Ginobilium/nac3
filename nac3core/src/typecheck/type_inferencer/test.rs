@@ -42,7 +42,7 @@ struct TestEnvironment {
     pub id_to_name: HashMap<usize, String>,
     pub identifier_mapping: HashMap<String, Type>,
     pub virtual_checks: Vec<(Type, Type)>,
-    pub calls: HashMap<CodeLocation, Rc<Call>>,
+    pub calls: HashMap<CodeLocation, Arc<Call>>,
 }
 
 impl TestEnvironment {
