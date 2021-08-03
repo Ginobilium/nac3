@@ -1,8 +1,8 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
-use super::typedef::{SharedUnifier, Type};
+use super::typedef::{SharedUnifier, Type, Unifier};
 use crossbeam::queue::SegQueue;
-use crossbeam::sync::ShardedLock;
+use parking_lot::RwLock;
 use rustpython_parser::ast::Stmt;
 
 pub struct DefinitionId(usize);
@@ -45,7 +45,12 @@ pub struct CodeGenTask {
 }
 
 pub struct TopLevelContext {
-    pub definitions: Vec<ShardedLock<TopLevelDef>>,
+    pub definitions: Vec<RwLock<TopLevelDef>>,
     pub unifiers: Vec<SharedUnifier>,
     pub codegen_queue: SegQueue<CodeGenTask>,
+}
+
+pub struct WorkerContext {
+    pub unifier: Unifier,
+    pub top_level_ctx: Arc<RwLock<TopLevelContext>>,
 }

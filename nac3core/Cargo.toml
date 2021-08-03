@@ -11,6 +11,7 @@ inkwell = { git = "https://github.com/TheDan64/inkwell", branch = "master", feat
 rustpython-parser = { git = "https://github.com/RustPython/RustPython", branch = "master" }
 itertools = "0.10.1"
 crossbeam = "0.8.1"
+parking_lot = "0.11.1"
 
 [dev-dependencies]
 test-case = "1.2.0"

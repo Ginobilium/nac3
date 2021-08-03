@@ -467,6 +467,7 @@ dependencies = [
  "itertools",
  "num-bigint 0.3.2",
  "num-traits",
+ "parking_lot",
  "rustpython-parser",
  "test-case",
 ]
