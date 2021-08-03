@@ -1,5 +1,6 @@
 use super::super::location::Location;
 use super::super::symbol_resolver::*;
+use super::super::top_level::DefinitionId;
 use super::super::typedef::*;
 use super::*;
 use indoc::indoc;
@@ -33,6 +34,10 @@ impl SymbolResolver for Resolver {
     fn get_symbol_location(&mut self, _: &str) -> Option<Location> {
         unimplemented!()
     }
+
+    fn get_function_def(&mut self, _: &str) -> DefinitionId {
+        unimplemented!()
+    }
 }
 
 struct TestEnvironment {
@@ -48,7 +53,7 @@ struct TestEnvironment {
 impl TestEnvironment {
     pub fn basic_test_env() -> TestEnvironment {
         let mut unifier = Unifier::new();
-        
+
         let int32 = unifier.add_ty(TypeEnum::TObj {
             obj_id: 0,
             fields: HashMap::new().into(),
@@ -76,9 +81,9 @@ impl TestEnvironment {
         });
         // identifier_mapping.insert("None".into(), none);
         let primitives = PrimitiveStore { int32, int64, float, bool, none };
-        
+
         set_primirives_magic_methods(&primitives, &mut unifier);
-        
+
         let id_to_name = [
             (0, "int32".to_string()),
             (1, "int64".to_string()),
@@ -95,17 +100,18 @@ impl TestEnvironment {
 
         let mut identifier_mapping = HashMap::new();
         identifier_mapping.insert("None".into(), none);
-       
-        let resolver =
-            Box::new(Resolver { identifier_mapping: identifier_mapping.clone(), class_names: Default::default() })
-                as Box<dyn SymbolResolver>;
+
+        let resolver = Box::new(Resolver {
+            identifier_mapping: identifier_mapping.clone(),
+            class_names: Default::default(),
+        }) as Box<dyn SymbolResolver>;
 
         TestEnvironment {
             unifier,
             function_data: FunctionData {
                 resolver,
                 bound_variables: Vec::new(),
-                return_type: None
+                return_type: None,
             },
             primitives,
             id_to_name,
@@ -171,7 +177,11 @@ impl TestEnvironment {
         }));
         let bar = unifier.add_ty(TypeEnum::TObj {
             obj_id: 6,
-            fields: [("a".into(), int32), ("b".into(), fun)].iter().cloned().collect::<HashMap<_, _>>().into(),
+            fields: [("a".into(), int32), ("b".into(), fun)]
+                .iter()
+                .cloned()
+                .collect::<HashMap<_, _>>()
+                .into(),
             params: Default::default(),
         });
         identifier_mapping.insert(
@@ -185,7 +195,11 @@ impl TestEnvironment {
 
         let bar2 = unifier.add_ty(TypeEnum::TObj {
             obj_id: 7,
-            fields: [("a".into(), bool), ("b".into(), fun)].iter().cloned().collect::<HashMap<_, _>>().into(),
+            fields: [("a".into(), bool), ("b".into(), fun)]
+                .iter()
+                .cloned()
+                .collect::<HashMap<_, _>>()
+                .into(),
             params: Default::default(),
         });
         identifier_mapping.insert(
@@ -362,13 +376,13 @@ fn test_basic(source: &str, mapping: HashMap<&str, &str>, virtuals: &[(&str, &st
         g = a // b
         h = a % b
     "},
-    [("a", "int32"), 
-    ("b", "int32"), 
-    ("c", "int32"), 
-    ("d", "int32"), 
-    ("e", "int32"), 
-    ("f", "float"), 
-    ("g", "int32"), 
+    [("a", "int32"),
+    ("b", "int32"),
+    ("c", "int32"),
+    ("d", "int32"),
+    ("e", "int32"),
+    ("f", "float"),
+    ("g", "int32"),
     ("h", "int32")].iter().cloned().collect()
     ; "int32")]
 #[test_case(
@@ -382,13 +396,13 @@ fn test_basic(source: &str, mapping: HashMap<&str, &str>, virtuals: &[(&str, &st
         g = a // b
         h = a % b
     "},
-    [("a", "float"), 
-    ("b", "float"), 
-    ("c", "float"), 
-    ("d", "float"), 
-    ("e", "float"), 
-    ("f", "float"), 
-    ("g", "float"), 
+    [("a", "float"),
+    ("b", "float"),
+    ("c", "float"),
+    ("d", "float"),
+    ("e", "float"),
+    ("f", "float"),
+    ("g", "float"),
     ("h", "float")].iter().cloned().collect()
     ; "float"
 )]
@@ -407,13 +421,13 @@ fn test_basic(source: &str, mapping: HashMap<&str, &str>, virtuals: &[(&str, &st
         k = a < b
         l = a != b
     "},
-    [("a", "int64"), 
-    ("b", "int64"), 
-    ("c", "int64"), 
-    ("d", "int64"), 
-    ("e", "int64"), 
-    ("f", "float"), 
-    ("g", "int64"), 
+    [("a", "int64"),
+    ("b", "int64"),
+    ("c", "int64"),
+    ("d", "int64"),
+    ("e", "int64"),
+    ("f", "float"),
+    ("g", "int64"),
     ("h", "int64"),
     ("i", "bool"),
     ("j", "bool"),
@@ -429,10 +443,10 @@ fn test_basic(source: &str, mapping: HashMap<&str, &str>, virtuals: &[(&str, &st
         d = not a
         e = a != b
     "},
-    [("a", "bool"), 
-    ("b", "bool"), 
-    ("c", "bool"), 
-    ("d", "bool"), 
+    [("a", "bool"),
+    ("b", "bool"),
+    ("c", "bool"),
+    ("d", "bool"),
     ("e", "bool")].iter().cloned().collect()
     ; "boolean"
 )]
@@ -470,3 +484,4 @@ fn test_primitive_magic_methods(source: &str, mapping: HashMap<&str, &str>) {
         assert_eq!(format!("{}: {}", k, v), format!("{}: {}", k, name));
     }
 }
+

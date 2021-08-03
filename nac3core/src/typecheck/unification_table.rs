@@ -71,13 +71,13 @@ impl<V> UnificationTable<Rc<V>>
 where
     V: Clone,
 {
-    pub fn into_send(self) -> UnificationTable<V> {
+    pub fn get_send(&self) -> UnificationTable<V> {
         let values = self.values.iter().map(|v| v.as_ref().clone()).collect();
-        UnificationTable { parents: self.parents, ranks: self.ranks, values }
+        UnificationTable { parents: self.parents.clone(), ranks: self.ranks.clone(), values }
     }
 
-    pub fn from_send(table: UnificationTable<V>) -> UnificationTable<Rc<V>> {
-        let values = table.values.into_iter().map(Rc::new).collect();
-        UnificationTable { parents: table.parents, ranks: table.ranks, values }
+    pub fn from_send(table: &UnificationTable<V>) -> UnificationTable<Rc<V>> {
+        let values = table.values.iter().cloned().map(Rc::new).collect();
+        UnificationTable { parents: table.parents.clone(), ranks: table.ranks.clone(), values }
     }
 }

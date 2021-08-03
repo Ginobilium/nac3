@@ -1,9 +1,10 @@
 use itertools::{chain, zip, Itertools};
-use std::{borrow::Cow, sync::Arc};
+use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::iter::once;
 use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 
 use super::unification_table::{UnificationKey, UnificationTable};
 
@@ -89,6 +90,8 @@ impl TypeEnum {
     }
 }
 
+pub type SharedUnifier = Arc<Mutex<(UnificationTable<TypeEnum>, u32)>>;
+
 pub struct Unifier {
     unification_table: UnificationTable<Rc<TypeEnum>>,
     var_id: u32,
@@ -98,6 +101,15 @@ impl Unifier {
     /// Get an empty unifier
     pub fn new() -> Unifier {
         Unifier { unification_table: UnificationTable::new(), var_id: 0 }
+    }
+
+    pub fn from_shared_unifier(unifier: &SharedUnifier) -> Unifier {
+        let lock = unifier.lock().unwrap();
+        Unifier { unification_table: UnificationTable::from_send(&lock.0), var_id: lock.1 }
+    }
+
+    pub fn get_shared_unifier(&self) -> SharedUnifier {
+        Arc::new(Mutex::new((self.unification_table.get_send(), self.var_id)))
     }
 
     /// Register a type to the unifier.
@@ -373,7 +385,11 @@ impl Unifier {
             (TVar { meta: Record(map), id, range, .. }, TObj { fields, .. }) => {
                 self.occur_check(a, b)?;
                 for (k, v) in map.borrow().iter() {
-                    let ty = fields.borrow().get(k).copied().ok_or_else(|| format!("No such attribute {}", k))?;
+                    let ty = fields
+                        .borrow()
+                        .get(k)
+                        .copied()
+                        .ok_or_else(|| format!("No such attribute {}", k))?;
                     self.unify(ty, *v)?;
                 }
                 let x = self.check_var_compatibility(*id, b, &range.borrow())?.unwrap_or(b);
@@ -385,7 +401,11 @@ impl Unifier {
                 let ty = self.get_ty(*ty);
                 if let TObj { fields, .. } = ty.as_ref() {
                     for (k, v) in map.borrow().iter() {
-                        let ty = fields.borrow().get(k).copied().ok_or_else(|| format!("No such attribute {}", k))?;
+                        let ty = fields
+                            .borrow()
+                            .get(k)
+                            .copied()
+                            .ok_or_else(|| format!("No such attribute {}", k))?;
                         if !matches!(self.get_ty(ty).as_ref(), TFunc { .. }) {
                             return Err(format!("Cannot access field {} for virtual type", k));
                         }
@@ -659,7 +679,9 @@ impl Unifier {
                 if need_subst {
                     let obj_id = *obj_id;
                     let params = self.subst_map(&params, mapping).unwrap_or_else(|| params.clone());
-                    let fields = self.subst_map(&fields.borrow(), mapping).unwrap_or_else(|| fields.borrow().clone());
+                    let fields = self
+                        .subst_map(&fields.borrow(), mapping)
+                        .unwrap_or_else(|| fields.borrow().clone());
                     Some(self.add_ty(TypeEnum::TObj { obj_id, params, fields: fields.into() }))
                 } else {
                     None

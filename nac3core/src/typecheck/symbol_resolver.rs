@@ -1,5 +1,6 @@
-use super::typedef::Type;
 use super::location::Location;
+use super::top_level::DefinitionId;
+use super::typedef::Type;
 use rustpython_parser::ast::Expr;
 
 pub enum SymbolValue<'a> {
@@ -14,6 +15,7 @@ pub enum SymbolValue<'a> {
 pub trait SymbolResolver {
     fn get_symbol_type(&mut self, str: &str) -> Option<Type>;
     fn parse_type_name(&mut self, expr: &Expr<()>) -> Option<Type>;
+    fn get_function_def(&mut self, str: &str) -> DefinitionId;
     fn get_symbol_value(&mut self, str: &str) -> Option<SymbolValue>;
     fn get_symbol_location(&mut self, str: &str) -> Option<Location>;
     // handle function call etc.
