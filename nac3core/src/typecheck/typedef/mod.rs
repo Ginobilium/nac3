@@ -373,9 +373,8 @@ impl Unifier {
             (TVar { meta: Record(map), id, range, .. }, TObj { fields, .. }) => {
                 self.occur_check(a, b)?;
                 for (k, v) in map.borrow().iter() {
-                    let temp = fields.borrow();
-                    let ty = temp.get(k).ok_or_else(|| format!("No such attribute {}", k))?;
-                    self.unify(*ty, *v)?;
+                    let ty = fields.borrow().get(k).copied().ok_or_else(|| format!("No such attribute {}", k))?;
+                    self.unify(ty, *v)?;
                 }
                 let x = self.check_var_compatibility(*id, b, &range.borrow())?.unwrap_or(b);
                 self.unify(x, b)?;
@@ -386,12 +385,11 @@ impl Unifier {
                 let ty = self.get_ty(*ty);
                 if let TObj { fields, .. } = ty.as_ref() {
                     for (k, v) in map.borrow().iter() {
-                        let temp = fields.borrow();
-                        let ty = temp.get(k).ok_or_else(|| format!("No such attribute {}", k))?;
-                        if !matches!(self.get_ty(*ty).as_ref(), TFunc { .. }) {
+                        let ty = fields.borrow().get(k).copied().ok_or_else(|| format!("No such attribute {}", k))?;
+                        if !matches!(self.get_ty(ty).as_ref(), TFunc { .. }) {
                             return Err(format!("Cannot access field {} for virtual type", k));
                         }
-                        self.unify(*v, *ty)?;
+                        self.unify(*v, ty)?;
                     }
                 } else {
                     // require annotation...
