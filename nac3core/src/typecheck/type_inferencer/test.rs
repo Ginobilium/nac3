@@ -82,7 +82,7 @@ impl TestEnvironment {
         // identifier_mapping.insert("None".into(), none);
         let primitives = PrimitiveStore { int32, int64, float, bool, none };
 
-        set_primirives_magic_methods(&primitives, &mut unifier);
+        set_primitives_magic_methods(&primitives, &mut unifier);
 
         let id_to_name = [
             (0, "int32".to_string()),

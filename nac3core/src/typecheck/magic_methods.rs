@@ -327,7 +327,7 @@ pub fn impl_eq(unifier: &mut Unifier, store: &PrimitiveStore, ty: Type) {
     } else { unreachable!() }
 }
 
-pub fn set_primirives_magic_methods(store: &PrimitiveStore, unifier: &mut Unifier) {
+pub fn set_primitives_magic_methods(store: &PrimitiveStore, unifier: &mut Unifier) {
     let PrimitiveStore {
         int32: int32_t, 
         int64: int64_t, 
