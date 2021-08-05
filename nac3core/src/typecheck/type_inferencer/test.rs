@@ -395,6 +395,9 @@ fn test_basic(source: &str, mapping: HashMap<&str, &str>, virtuals: &[(&str, &st
         f = a / b
         g = a // b
         h = a % b
+        i = a ** b
+        ii = 3
+        j = a ** b
     "},
     [("a", "float"),
     ("b", "float"),
@@ -403,7 +406,10 @@ fn test_basic(source: &str, mapping: HashMap<&str, &str>, virtuals: &[(&str, &st
     ("e", "float"),
     ("f", "float"),
     ("g", "float"),
-    ("h", "float")].iter().cloned().collect()
+    ("h", "float"),
+    ("i", "float"),
+    ("ii", "int32"),
+    ("j", "float")].iter().cloned().collect()
     ; "float"
 )]
 #[test_case(

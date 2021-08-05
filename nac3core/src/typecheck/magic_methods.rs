@@ -61,33 +61,47 @@ pub fn comparison_name(op: &Cmpop) -> Option<&'static str> {
     }
 }
 
-pub fn impl_binop(unifier: &mut Unifier, store: &PrimitiveStore, ty: Type, other_ty: Type, ret_ty: Type, ops: &[ast::Operator]) {
+pub fn impl_binop(unifier: &mut Unifier, store: &PrimitiveStore, ty: Type, other_ty: &[Type], ret_ty: Type, ops: &[ast::Operator]) {
     if let TypeEnum::TObj {fields, ..} = unifier.get_ty(ty).borrow() {
         for op in ops {
             fields.borrow_mut().insert(
                 binop_name(op).into(),
-                unifier.add_ty(TypeEnum::TFunc(FunSignature {
-                    ret: ret_ty,
-                    vars: HashMap::new(),
-                    args: vec![FuncArg {
-                        ty: other_ty,
-                        is_optional: false,
-                        name: "other".into()
-                    }]
-                }))
+                {
+                    let other = if other_ty.len() == 1 {
+                        other_ty[0]
+                    } else {
+                        unifier.get_fresh_var_with_range(other_ty).0
+                    };
+                    unifier.add_ty(TypeEnum::TFunc(FunSignature {
+                        ret: ret_ty,
+                        vars: HashMap::new(),
+                        args: vec![FuncArg {
+                            ty: other,
+                            is_optional: false,
+                            name: "other".into()
+                        }]
+                    }))
+                }
             );
 
             fields.borrow_mut().insert(
                 binop_assign_name(op).into(),
-                unifier.add_ty(TypeEnum::TFunc(FunSignature {
-                    ret: store.none,
-                    vars: HashMap::new(),
-                    args: vec![FuncArg {
-                        ty: other_ty,
-                        is_optional: false,
-                        name: "other".into()
-                    }]
-                }))
+                {
+                    let other = if other_ty.len() == 1 {
+                        other_ty[0]
+                    } else {
+                        unifier.get_fresh_var_with_range(other_ty).0
+                    };
+                    unifier.add_ty(TypeEnum::TFunc(FunSignature {
+                        ret: ret_ty,
+                        vars: HashMap::new(),
+                        args: vec![FuncArg {
+                            ty: other,
+                            is_optional: false,
+                            name: "other".into()
+                        }]
+                    }))
+                }
             );
         }
     } else { unreachable!("") }
@@ -128,18 +142,23 @@ pub fn impl_cmpop(unifier: &mut Unifier, store: &PrimitiveStore, ty: Type, other
 }
 
 /// Add, Sub, Mult, Pow
-pub fn impl_basic_arithmetic(unifier: &mut Unifier, store: &PrimitiveStore, ty: Type, other_ty: Type, ret_ty: Type) {
+pub fn impl_basic_arithmetic(unifier: &mut Unifier, store: &PrimitiveStore, ty: Type, other_ty: &[Type], ret_ty: Type) {
     impl_binop(unifier, store, ty, other_ty, ret_ty, &[
         ast::Operator::Add, 
         ast::Operator::Sub, 
         ast::Operator::Mult,
+    ])
+}
+
+pub fn impl_pow(unifier: &mut Unifier, store: &PrimitiveStore, ty: Type, other_ty: &[Type], ret_ty: Type) {
+    impl_binop(unifier, store, ty, other_ty, ret_ty, &[
         ast::Operator::Pow, 
     ])
 }
 
 /// BitOr, BitXor, BitAnd
 pub fn impl_bitwise_arithmetic(unifier: &mut Unifier, store: &PrimitiveStore, ty: Type) {
-    impl_binop(unifier, store, ty, ty, ty, &[
+    impl_binop(unifier, store, ty, &[ty], ty, &[
         ast::Operator::BitAnd,
         ast::Operator::BitOr,
         ast::Operator::BitXor,
@@ -148,28 +167,28 @@ pub fn impl_bitwise_arithmetic(unifier: &mut Unifier, store: &PrimitiveStore, ty
 
 /// LShift, RShift
 pub fn impl_bitwise_shift(unifier: &mut Unifier, store: &PrimitiveStore, ty: Type) {
-    impl_binop(unifier, store, ty, store.int32, ty, &[
+    impl_binop(unifier, store, ty, &[ty], ty, &[
         ast::Operator::LShift,
         ast::Operator::RShift,
     ])
 }
 
 /// Div
-pub fn impl_div(unifier: &mut Unifier, store: &PrimitiveStore, ty: Type, other_ty: Type) {
+pub fn impl_div(unifier: &mut Unifier, store: &PrimitiveStore, ty: Type, other_ty: &[Type]) {
     impl_binop(unifier, store, ty, other_ty, store.float, &[
         ast::Operator::Div,
     ])
 }
 
 /// FloorDiv
-pub fn impl_floordiv(unifier: &mut Unifier, store: &PrimitiveStore, ty: Type, other_ty: Type, ret_ty: Type) {
+pub fn impl_floordiv(unifier: &mut Unifier, store: &PrimitiveStore, ty: Type, other_ty: &[Type], ret_ty: Type) {
     impl_binop(unifier, store, ty, other_ty, ret_ty, &[
         ast::Operator::FloorDiv,
     ])
 }
 
 /// Mod
-pub fn impl_mod(unifier: &mut Unifier, store: &PrimitiveStore, ty: Type, other_ty: Type, ret_ty: Type) {
+pub fn impl_mod(unifier: &mut Unifier, store: &PrimitiveStore, ty: Type, other_ty: &[Type], ret_ty: Type) {
     impl_binop(unifier, store, ty, other_ty, ret_ty, &[
         ast::Operator::Mod,
     ])
@@ -224,12 +243,13 @@ pub fn set_primitives_magic_methods(store: &PrimitiveStore, unifier: &mut Unifie
         ..
     } = *store;
     /* int32 ======== */
-    impl_basic_arithmetic(unifier, store, int32_t, int32_t, int32_t);
+    impl_basic_arithmetic(unifier, store, int32_t, &[int32_t], int32_t);
+    impl_pow(unifier, store, int32_t, &[int32_t], int32_t);
     impl_bitwise_arithmetic(unifier, store, int32_t);
     impl_bitwise_shift(unifier, store, int32_t);
-    impl_div(unifier, store, int32_t, int32_t);
-    impl_floordiv(unifier, store, int32_t, int32_t, int32_t);
-    impl_mod(unifier, store, int32_t, int32_t, int32_t);
+    impl_div(unifier, store, int32_t, &[int32_t]);
+    impl_floordiv(unifier, store, int32_t, &[int32_t], int32_t);
+    impl_mod(unifier, store, int32_t, &[int32_t], int32_t);
     impl_sign(unifier, store, int32_t);
     impl_invert(unifier, store, int32_t);
     impl_not(unifier, store, int32_t);
@@ -237,12 +257,13 @@ pub fn set_primitives_magic_methods(store: &PrimitiveStore, unifier: &mut Unifie
     impl_eq(unifier, store, int32_t);
     
     /* int64 ======== */ 
-    impl_basic_arithmetic(unifier, store, int64_t, int64_t, int64_t);
+    impl_basic_arithmetic(unifier, store, int64_t, &[int64_t], int64_t);
+    impl_pow(unifier, store, int64_t, &[int64_t], int64_t);
     impl_bitwise_arithmetic(unifier, store, int64_t);
     impl_bitwise_shift(unifier, store, int64_t);
-    impl_div(unifier, store, int64_t, int64_t);
-    impl_floordiv(unifier, store, int64_t, int64_t, int64_t);
-    impl_mod(unifier, store, int64_t, int64_t, int64_t);
+    impl_div(unifier, store, int64_t, &[int64_t]);
+    impl_floordiv(unifier, store, int64_t, &[int64_t], int64_t);
+    impl_mod(unifier, store, int64_t, &[int64_t], int64_t);
     impl_sign(unifier, store, int64_t);
     impl_invert(unifier, store, int64_t);
     impl_not(unifier, store, int64_t);
@@ -250,10 +271,11 @@ pub fn set_primitives_magic_methods(store: &PrimitiveStore, unifier: &mut Unifie
     impl_eq(unifier, store, int64_t);
     
     /* float ======== */ 
-    impl_basic_arithmetic(unifier, store, float_t, float_t, float_t);
-    impl_div(unifier, store, float_t, float_t);
-    impl_floordiv(unifier, store, float_t, float_t, float_t);
-    impl_mod(unifier, store, float_t, float_t, float_t);
+    impl_basic_arithmetic(unifier, store, float_t, &[float_t], float_t);
+    impl_pow(unifier, store, float_t, &[int32_t, float_t], float_t);
+    impl_div(unifier, store, float_t, &[float_t]);
+    impl_floordiv(unifier, store, float_t, &[float_t], float_t);
+    impl_mod(unifier, store, float_t, &[float_t], float_t);
     impl_sign(unifier, store, float_t);
     impl_not(unifier, store, float_t);
     impl_comparison(unifier, store, float_t, float_t);
