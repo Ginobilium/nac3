@@ -79,9 +79,7 @@ impl TestEnvironment {
             fields: HashMap::new().into(),
             params: HashMap::new(),
         });
-        // identifier_mapping.insert("None".into(), none);
         let primitives = PrimitiveStore { int32, int64, float, bool, none };
-
         set_primitives_magic_methods(&primitives, &mut unifier);
 
         let id_to_name = [
@@ -90,9 +88,6 @@ impl TestEnvironment {
             (2, "float".to_string()),
             (3, "bool".to_string()),
             (4, "none".to_string()),
-            (5, "Foo".to_string()),
-            (6, "Bar".to_string()),
-            (7, "Bar2".to_string()),
         ]
         .iter()
         .cloned()
