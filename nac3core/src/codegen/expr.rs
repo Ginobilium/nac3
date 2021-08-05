@@ -383,6 +383,29 @@ impl<'ctx> CodeGenContext<'ctx> {
                 .unwrap()
                 .into() // as there should be at least 1 element, it should never be none
             }
+            ExprKind::IfExp { test, body, orelse } => {
+                let test = if let BasicValueEnum::IntValue(test) = self.gen_expr(test) {
+                    test
+                } else {
+                    unreachable!()
+                };
+
+                let current = self.builder.get_insert_block().unwrap().get_parent().unwrap();
+                let then_bb = self.ctx.append_basic_block(current, "then");
+                let else_bb = self.ctx.append_basic_block(current, "else");
+                let cont_bb = self.ctx.append_basic_block(current, "cont");
+                self.builder.build_conditional_branch(test, then_bb, else_bb);
+                self.builder.position_at_end(then_bb);
+                let a = self.gen_expr(body);
+                self.builder.build_unconditional_branch(cont_bb);
+                self.builder.position_at_end(else_bb);
+                let b = self.gen_expr(orelse);
+                self.builder.build_unconditional_branch(cont_bb);
+                self.builder.position_at_end(cont_bb);
+                let phi = self.builder.build_phi(a.get_type(), "ifexpr");
+                phi.add_incoming(&[(&a, then_bb), (&b, else_bb)]);
+                phi.as_basic_value()
+            }
             _ => unimplemented!(),
         }
     }
