@@ -7,7 +7,7 @@ pub struct FileID(u32);
 #[derive(Clone, Copy, PartialEq)]
 pub enum Location {
     CodeRange(FileID, ast::Location),
-    Builtin
+    Builtin,
 }
 
 pub struct FileRegistry {

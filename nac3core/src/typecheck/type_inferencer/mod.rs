@@ -1,7 +1,7 @@
-use std::{cell::RefCell, sync::Arc};
 use std::collections::HashMap;
-use std::convert::{TryInto, From};
+use std::convert::{From, TryInto};
 use std::iter::once;
+use std::{cell::RefCell, sync::Arc};
 
 use super::magic_methods::*;
 use super::symbol_resolver::SymbolResolver;
@@ -24,10 +24,7 @@ pub struct CodeLocation {
 
 impl From<Location> for CodeLocation {
     fn from(loc: Location) -> CodeLocation {
-        CodeLocation {
-            row: loc.row(),
-            col: loc.column()
-        }
+        CodeLocation { row: loc.row(), col: loc.column() }
     }
 }
 
@@ -190,8 +187,12 @@ impl<'a> Inferencer<'a> {
         params: Vec<Type>,
         ret: Type,
     ) -> InferenceResult {
-        let call =
-            Arc::new(Call { posargs: params, kwargs: HashMap::new(), ret, fun: RefCell::new(None) });
+        let call = Arc::new(Call {
+            posargs: params,
+            kwargs: HashMap::new(),
+            ret,
+            fun: RefCell::new(None),
+        });
         let call = self.unifier.add_ty(TypeEnum::TCall(vec![call].into()));
         let fields = once((method, call)).collect();
         let record = self.unifier.add_record(fields);
@@ -333,7 +334,8 @@ impl<'a> Inferencer<'a> {
                     }
                     let arg0 = self.fold_expr(args.remove(0))?;
                     let ty = if let Some(arg) = args.pop() {
-                        self.function_data.resolver
+                        self.function_data
+                            .resolver
                             .parse_type_name(&arg)
                             .ok_or_else(|| "error parsing type".to_string())?
                     } else {

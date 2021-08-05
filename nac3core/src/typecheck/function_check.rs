@@ -22,9 +22,7 @@ impl<'a> Inferencer<'a> {
                 }
                 Ok(())
             }
-            _ => {
-                self.check_expr(pattern, defined_identifiers)
-            }
+            _ => self.check_expr(pattern, defined_identifiers),
         }
     }
 
@@ -46,7 +44,10 @@ impl<'a> Inferencer<'a> {
         match &expr.node {
             ExprKind::Name { id, .. } => {
                 if !defined_identifiers.contains(id) {
-                    return Err(format!("unknown identifier {} (use before def?) at {}", id, expr.location));
+                    return Err(format!(
+                        "unknown identifier {} (use before def?) at {}",
+                        id, expr.location
+                    ));
                 }
             }
             ExprKind::List { elts, .. }
@@ -66,9 +67,7 @@ impl<'a> Inferencer<'a> {
             ExprKind::UnaryOp { operand, .. } => {
                 self.check_expr(operand, defined_identifiers)?;
             }
-            ExprKind::Compare {
-                left, comparators, ..
-            } => {
+            ExprKind::Compare { left, comparators, .. } => {
                 for elt in once(left.as_ref()).chain(comparators.iter()) {
                     self.check_expr(elt, defined_identifiers)?;
                 }
@@ -83,10 +82,7 @@ impl<'a> Inferencer<'a> {
                 self.check_expr(orelse, defined_identifiers)?;
             }
             ExprKind::Slice { lower, upper, step } => {
-                for elt in [lower.as_ref(), upper.as_ref(), step.as_ref()]
-                    .iter()
-                    .flatten()
-                {
+                for elt in [lower.as_ref(), upper.as_ref(), step.as_ref()].iter().flatten() {
                     self.check_expr(elt, defined_identifiers)?;
                 }
             }
@@ -99,13 +95,9 @@ impl<'a> Inferencer<'a> {
                 }
                 self.check_expr(body, &defined_identifiers)?;
             }
-            ExprKind::ListComp {
-                elt, generators, ..
-            } => {
+            ExprKind::ListComp { elt, generators, .. } => {
                 // in our type inference stage, we already make sure that there is only 1 generator
-                let ast::Comprehension {
-                    target, iter, ifs, ..
-                } = &generators[0];
+                let ast::Comprehension { target, iter, ifs, .. } = &generators[0];
                 self.check_expr(iter, defined_identifiers)?;
                 let mut defined_identifiers = defined_identifiers.to_vec();
                 self.check_pattern(target, &mut defined_identifiers)?;
@@ -113,11 +105,7 @@ impl<'a> Inferencer<'a> {
                     self.check_expr(term, &defined_identifiers)?;
                 }
             }
-            ExprKind::Call {
-                func,
-                args,
-                keywords,
-            } => {
+            ExprKind::Call { func, args, keywords } => {
                 for expr in once(func.as_ref())
                     .chain(args.iter())
                     .chain(keywords.iter().map(|v| v.node.value.as_ref()))
@@ -141,13 +129,7 @@ impl<'a> Inferencer<'a> {
         defined_identifiers: &mut Vec<String>,
     ) -> Result<bool, String> {
         match &stmt.node {
-            StmtKind::For {
-                target,
-                iter,
-                body,
-                orelse,
-                ..
-            } => {
+            StmtKind::For { target, iter, body, orelse, .. } => {
                 self.check_expr(iter, defined_identifiers)?;
                 for stmt in orelse.iter() {
                     self.check_stmt(stmt, defined_identifiers)?;

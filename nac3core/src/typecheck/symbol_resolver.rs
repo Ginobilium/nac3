@@ -1,6 +1,6 @@
 use super::location::Location;
-use super::top_level::DefinitionId;
 use super::typedef::Type;
+use crate::top_level::DefinitionId;
 use rustpython_parser::ast::Expr;
 
 pub enum SymbolValue<'a> {
