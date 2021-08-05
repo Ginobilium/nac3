@@ -1,8 +1,8 @@
 use super::*;
+use indoc::indoc;
 use itertools::Itertools;
 use std::collections::HashMap;
 use test_case::test_case;
-use indoc::indoc;
 
 impl Unifier {
     /// Check whether two types are equal.
@@ -335,7 +335,11 @@ fn test_virtual() {
     }));
     let bar = env.unifier.add_ty(TypeEnum::TObj {
         obj_id: 5,
-        fields: [("f".to_string(), fun), ("a".to_string(), int)].iter().cloned().collect::<HashMap<_, _>>().into(),
+        fields: [("f".to_string(), fun), ("a".to_string(), int)]
+            .iter()
+            .cloned()
+            .collect::<HashMap<_, _>>()
+            .into(),
         params: HashMap::new(),
     });
     let v0 = env.unifier.get_fresh_var().0;
@@ -515,7 +519,9 @@ fn test_instantiation() {
         tuple[int, list[int], float]
         tuple[int, list[int], list[int]]
         v5"
-    }.split('\n').collect_vec();
+    }
+    .split('\n')
+    .collect_vec();
     let types = types
         .iter()
         .map(|ty| {

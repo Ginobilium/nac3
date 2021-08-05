@@ -51,6 +51,10 @@ impl<V> UnificationTable<V> {
         self.find(a) == self.find(b)
     }
 
+    pub fn get_representative(&mut self, key: UnificationKey) -> UnificationKey {
+        UnificationKey(self.find(key))
+    }
+
     fn find(&mut self, key: UnificationKey) -> usize {
         let mut root = key.0;
         let mut parent = self.parents[root];

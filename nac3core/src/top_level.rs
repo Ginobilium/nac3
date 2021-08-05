@@ -1,7 +1,9 @@
 use std::{collections::HashMap, sync::Arc};
 
-use super::typedef::{SharedUnifier, Type, Unifier};
-use crossbeam::queue::SegQueue;
+use super::typecheck::symbol_resolver::SymbolResolver;
+use super::typecheck::type_inferencer::PrimitiveStore;
+use super::typecheck::typedef::{SharedUnifier, Type, Unifier};
+use inkwell::{builder::Builder, context::Context, module::Module, values::PointerValue};
 use parking_lot::RwLock;
 use rustpython_parser::ast::Stmt;
 
@@ -33,24 +35,29 @@ pub enum TopLevelDef {
         /// variables.
         /// Value: AST annotated with types together with a unification table index. Could contain
         /// rigid type variables that would be substituted when the function is instantiated.
-        instance_to_stmt: HashMap<String, (Stmt<Type>, usize)>,
+        instance_to_stmt: HashMap<String, (Stmt<Option<Type>>, usize)>,
     },
 }
 
 pub struct CodeGenTask {
     pub subst: HashMap<usize, Type>,
     pub symbol_name: String,
-    pub body: Stmt<Type>,
+    pub body: Stmt<Option<Type>>,
     pub unifier: SharedUnifier,
 }
 
 pub struct TopLevelContext {
-    pub definitions: Vec<RwLock<TopLevelDef>>,
-    pub unifiers: Vec<SharedUnifier>,
-    pub codegen_queue: SegQueue<CodeGenTask>,
+    pub primitives: PrimitiveStore,
+    pub definitions: Arc<RwLock<Vec<RwLock<TopLevelDef>>>>,
+    pub unifiers: Arc<RwLock<Vec<SharedUnifier>>>,
 }
 
-pub struct WorkerContext {
+pub struct CodeGenContext<'ctx> {
+    pub ctx: &'ctx Context,
+    pub builder: Builder<'ctx>,
+    pub module: Module<'ctx>,
+    pub top_level: &'ctx TopLevelContext,
     pub unifier: Unifier,
-    pub top_level_ctx: Arc<RwLock<TopLevelContext>>,
+    pub resolver: Box<dyn SymbolResolver>,
+    pub var_assignment: HashMap<String, PointerValue<'ctx>>,
 }

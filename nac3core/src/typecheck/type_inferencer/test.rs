@@ -1,8 +1,8 @@
 use super::super::location::Location;
 use super::super::symbol_resolver::*;
-use super::super::top_level::DefinitionId;
 use super::super::typedef::*;
 use super::*;
+use crate::top_level::DefinitionId;
 use indoc::indoc;
 use itertools::zip;
 use rustpython_parser::ast;
@@ -490,4 +490,3 @@ fn test_primitive_magic_methods(source: &str, mapping: HashMap<&str, &str>) {
         assert_eq!(format!("{}: {}", k, v), format!("{}: {}", k, name));
     }
 }
-

@@ -103,6 +103,11 @@ impl Unifier {
         Unifier { unification_table: UnificationTable::new(), var_id: 0 }
     }
 
+    /// Determine if the two types are the same
+    pub fn unioned(&mut self, a: Type, b: Type) -> bool {
+        self.unification_table.unioned(a, b)
+    }
+
     pub fn from_shared_unifier(unifier: &SharedUnifier) -> Unifier {
         let lock = unifier.lock().unwrap();
         Unifier { unification_table: UnificationTable::from_send(&lock.0), var_id: lock.1 }
@@ -126,6 +131,10 @@ impl Unifier {
             range: vec![].into(),
             meta: TypeVarMeta::Record(fields.into()),
         })
+    }
+
+    pub fn get_representative(&mut self, ty: Type) -> Type {
+        self.unification_table.get_representative(ty)
     }
 
     pub fn add_sequence(&mut self, sequence: Mapping<i32>) -> Type {
