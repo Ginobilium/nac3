@@ -13,7 +13,7 @@ impl<'ctx> CodeGenContext<'ctx> {
             // we cannot have other types, virtual type should be handled by function calls
             _ => unreachable!(),
         };
-        let def = &self.top_level.definitions.read()[obj_id];
+        let def = &self.top_level.definitions.read()[obj_id.0];
         let index = if let TopLevelDef::Class { fields, .. } = &*def.read() {
             fields.iter().find_position(|x| x.0 == attr).unwrap().0
         } else {
@@ -137,7 +137,7 @@ impl<'ctx> CodeGenContext<'ctx> {
         let primitives = &self.top_level.primitives;
         match &expr.node {
             ExprKind::Constant { value, .. } => {
-                let ty = expr.custom.clone().unwrap();
+                let ty = expr.custom.unwrap();
                 self.gen_const(value, ty)
             }
             ExprKind::Name { id, .. } => {

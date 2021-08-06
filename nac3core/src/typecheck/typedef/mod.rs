@@ -6,6 +6,7 @@ use std::iter::once;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
+use crate::top_level::DefinitionId;
 use super::unification_table::{UnificationKey, UnificationTable};
 
 #[cfg(test)]
@@ -64,7 +65,7 @@ pub enum TypeEnum {
         ty: Type,
     },
     TObj {
-        obj_id: usize,
+        obj_id: DefinitionId,
         fields: RefCell<Mapping<String>>,
         params: VarMap,
     },
@@ -433,7 +434,7 @@ impl Unifier {
                 TObj { obj_id: id2, params: params2, .. },
             ) => {
                 if id1 != id2 {
-                    return Err(format!("Cannot unify objects with ID {} and {}", id1, id2));
+                    return Err(format!("Cannot unify objects with ID {} and {}", id1.0, id2.0));
                 }
                 for (x, y) in zip(params1.values(), params2.values()) {
                     self.unify(*x, *y)?;
@@ -570,7 +571,7 @@ impl Unifier {
                 format!("virtual[{}]", self.stringify(*ty, obj_to_name, var_to_name))
             }
             TypeEnum::TObj { obj_id, params, .. } => {
-                let name = obj_to_name(*obj_id);
+                let name = obj_to_name(obj_id.0);
                 if !params.is_empty() {
                     let mut params =
                         params.values().map(|v| self.stringify(*v, obj_to_name, var_to_name));

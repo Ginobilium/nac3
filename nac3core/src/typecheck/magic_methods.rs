@@ -61,7 +61,7 @@ pub fn comparison_name(op: &Cmpop) -> Option<&'static str> {
     }
 }
 
-pub fn impl_binop(unifier: &mut Unifier, store: &PrimitiveStore, ty: Type, other_ty: &[Type], ret_ty: Type, ops: &[ast::Operator]) {
+pub fn impl_binop(unifier: &mut Unifier, _store: &PrimitiveStore, ty: Type, other_ty: &[Type], ret_ty: Type, ops: &[ast::Operator]) {
     if let TypeEnum::TObj {fields, ..} = unifier.get_ty(ty).borrow() {
         for op in ops {
             fields.borrow_mut().insert(

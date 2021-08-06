@@ -7,12 +7,13 @@ use inkwell::{builder::Builder, context::Context, module::Module, values::Pointe
 use parking_lot::RwLock;
 use rustpython_parser::ast::Stmt;
 
-pub struct DefinitionId(usize);
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
+pub struct DefinitionId(pub usize);
 
 pub enum TopLevelDef {
     Class {
         // object ID used for TypeEnum
-        object_id: usize,
+        object_id: DefinitionId,
         // type variables bounded to the class.
         type_vars: Vec<Type>,
         // class fields and method signature.

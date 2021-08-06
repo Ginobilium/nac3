@@ -55,27 +55,27 @@ impl TestEnvironment {
         let mut unifier = Unifier::new();
 
         let int32 = unifier.add_ty(TypeEnum::TObj {
-            obj_id: 0,
+            obj_id: DefinitionId(0),
             fields: HashMap::new().into(),
             params: HashMap::new(),
         });
         let int64 = unifier.add_ty(TypeEnum::TObj {
-            obj_id: 1,
+            obj_id: DefinitionId(1),
             fields: HashMap::new().into(),
             params: HashMap::new(),
         });
         let float = unifier.add_ty(TypeEnum::TObj {
-            obj_id: 2,
+            obj_id: DefinitionId(2),
             fields: HashMap::new().into(),
             params: HashMap::new(),
         });
         let bool = unifier.add_ty(TypeEnum::TObj {
-            obj_id: 3,
+            obj_id: DefinitionId(3),
             fields: HashMap::new().into(),
             params: HashMap::new(),
         });
         let none = unifier.add_ty(TypeEnum::TObj {
-            obj_id: 4,
+            obj_id: DefinitionId(4),
             fields: HashMap::new().into(),
             params: HashMap::new(),
         });
@@ -120,27 +120,27 @@ impl TestEnvironment {
         let mut unifier = Unifier::new();
         let mut identifier_mapping = HashMap::new();
         let int32 = unifier.add_ty(TypeEnum::TObj {
-            obj_id: 0,
+            obj_id: DefinitionId(0),
             fields: HashMap::new().into(),
             params: HashMap::new(),
         });
         let int64 = unifier.add_ty(TypeEnum::TObj {
-            obj_id: 1,
+            obj_id: DefinitionId(1),
             fields: HashMap::new().into(),
             params: HashMap::new(),
         });
         let float = unifier.add_ty(TypeEnum::TObj {
-            obj_id: 2,
+            obj_id: DefinitionId(2),
             fields: HashMap::new().into(),
             params: HashMap::new(),
         });
         let bool = unifier.add_ty(TypeEnum::TObj {
-            obj_id: 3,
+            obj_id: DefinitionId(3),
             fields: HashMap::new().into(),
             params: HashMap::new(),
         });
         let none = unifier.add_ty(TypeEnum::TObj {
-            obj_id: 4,
+            obj_id: DefinitionId(4),
             fields: HashMap::new().into(),
             params: HashMap::new(),
         });
@@ -151,7 +151,7 @@ impl TestEnvironment {
         let (v0, id) = unifier.get_fresh_var();
 
         let foo_ty = unifier.add_ty(TypeEnum::TObj {
-            obj_id: 5,
+            obj_id: DefinitionId(5),
             fields: [("a".into(), v0)].iter().cloned().collect::<HashMap<_, _>>().into(),
             params: [(id, v0)].iter().cloned().collect(),
         });
@@ -171,7 +171,7 @@ impl TestEnvironment {
             vars: Default::default(),
         }));
         let bar = unifier.add_ty(TypeEnum::TObj {
-            obj_id: 6,
+            obj_id: DefinitionId(6),
             fields: [("a".into(), int32), ("b".into(), fun)]
                 .iter()
                 .cloned()
@@ -189,7 +189,7 @@ impl TestEnvironment {
         );
 
         let bar2 = unifier.add_ty(TypeEnum::TObj {
-            obj_id: 7,
+            obj_id: DefinitionId(7),
             fields: [("a".into(), bool), ("b".into(), fun)]
                 .iter()
                 .cloned()
