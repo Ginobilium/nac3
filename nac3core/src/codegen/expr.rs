@@ -88,6 +88,7 @@ impl<'ctx> CodeGenContext<'ctx> {
                 ];
                 self.ctx.struct_type(&fields, false).ptr_type(AddressSpace::Generic).into()
             }
+            TVirtual { .. } => unimplemented!(),
             _ => unreachable!(),
         })
     }
@@ -103,8 +104,10 @@ impl<'ctx> CodeGenContext<'ctx> {
         let defs = self.top_level.definitions.read();
         let definition = defs.get(fun.1.0).unwrap();
         let val = if let TopLevelDef::Function { instance_to_symbol, .. } = &*definition.read() {
-            // TODO: codegen for function that are not yet generated
-            let symbol = instance_to_symbol.get(&key).unwrap();
+            let symbol = instance_to_symbol.get(&key).unwrap_or_else(|| {
+                // TODO: codegen for function that are not yet generated
+                unimplemented!()
+            });
             let fun_val = self.module.get_function(symbol).unwrap_or_else(|| {
                 let params = fun.0.args.iter().map(|arg| self.get_llvm_type(arg.ty)).collect_vec();
                 let fun_ty = if self.unifier.unioned(ret, self.primitives.none) {
@@ -155,7 +158,7 @@ impl<'ctx> CodeGenContext<'ctx> {
                 let ty = self.ctx.struct_type(&types, false);
                 ty.const_named_struct(&values).into()
             }
-            _ => unimplemented!(),
+            _ => unreachable!()
         }
     }
 
@@ -374,11 +377,9 @@ impl<'ctx> CodeGenContext<'ctx> {
                 // we can directly compare the types, because we've got their representatives
                 // which would be unchanged until further unification, which we would never do
                 // when doing code generation for function instances
-                if ty1 != ty2 {
-                    unimplemented!()
-                } else if [self.primitives.int32, self.primitives.int64].contains(&ty1) {
+                if ty1 == ty2 && [self.primitives.int32, self.primitives.int64].contains(&ty1) {
                     self.gen_int_ops(op, left, right)
-                } else if self.primitives.float == ty1 {
+                } else if ty1 == ty2 && self.primitives.float == ty1 {
                     self.gen_float_ops(op, left, right)
                 } else {
                     unimplemented!()
