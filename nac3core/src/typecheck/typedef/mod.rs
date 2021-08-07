@@ -6,8 +6,9 @@ use std::iter::once;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
-use crate::top_level::DefinitionId;
 use super::unification_table::{UnificationKey, UnificationTable};
+use crate::symbol_resolver::SymbolValue;
+use crate::top_level::DefinitionId;
 
 #[cfg(test)]
 mod test;
@@ -30,9 +31,7 @@ pub struct Call {
 pub struct FuncArg {
     pub name: String,
     pub ty: Type,
-    // TODO: change this to an optional value
-    // for primitive types
-    pub is_optional: bool,
+    pub default_value: Option<SymbolValue>,
 }
 
 #[derive(Clone)]
@@ -457,7 +456,7 @@ impl Unifier {
                 let required: Vec<String> = signature
                     .args
                     .iter()
-                    .filter(|v| !v.is_optional)
+                    .filter(|v| v.default_value.is_none())
                     .map(|v| v.name.clone())
                     .rev()
                     .collect();
@@ -516,7 +515,7 @@ impl Unifier {
                     if x.name != y.name {
                         return Err("Functions differ in parameter names.".to_string());
                     }
-                    if x.is_optional != y.is_optional {
+                    if x.default_value != y.default_value {
                         return Err("Functions differ in optional parameters.".to_string());
                     }
                     self.unify(x.ty, y.ty)?;

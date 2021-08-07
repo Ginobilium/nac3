@@ -77,7 +77,7 @@ pub fn impl_binop(unifier: &mut Unifier, _store: &PrimitiveStore, ty: Type, othe
                         vars: HashMap::new(),
                         args: vec![FuncArg {
                             ty: other,
-                            is_optional: false,
+                            default_value: None,
                             name: "other".into()
                         }]
                     }))
@@ -97,7 +97,7 @@ pub fn impl_binop(unifier: &mut Unifier, _store: &PrimitiveStore, ty: Type, othe
                         vars: HashMap::new(),
                         args: vec![FuncArg {
                             ty: other,
-                            is_optional: false,
+                            default_value: None,
                             name: "other".into()
                         }]
                     }))
@@ -132,7 +132,7 @@ pub fn impl_cmpop(unifier: &mut Unifier, store: &PrimitiveStore, ty: Type, other
                     vars: HashMap::new(),
                     args: vec![FuncArg {
                         ty: other_ty,
-                        is_optional: false,
+                        default_value: None,
                         name: "other".into()
                     }]
                 }))
@@ -144,15 +144,15 @@ pub fn impl_cmpop(unifier: &mut Unifier, store: &PrimitiveStore, ty: Type, other
 /// Add, Sub, Mult, Pow
 pub fn impl_basic_arithmetic(unifier: &mut Unifier, store: &PrimitiveStore, ty: Type, other_ty: &[Type], ret_ty: Type) {
     impl_binop(unifier, store, ty, other_ty, ret_ty, &[
-        ast::Operator::Add, 
-        ast::Operator::Sub, 
+        ast::Operator::Add,
+        ast::Operator::Sub,
         ast::Operator::Mult,
     ])
 }
 
 pub fn impl_pow(unifier: &mut Unifier, store: &PrimitiveStore, ty: Type, other_ty: &[Type], ret_ty: Type) {
     impl_binop(unifier, store, ty, other_ty, ret_ty, &[
-        ast::Operator::Pow, 
+        ast::Operator::Pow,
     ])
 }
 
@@ -236,9 +236,9 @@ pub fn impl_eq(unifier: &mut Unifier, store: &PrimitiveStore, ty: Type) {
 
 pub fn set_primitives_magic_methods(store: &PrimitiveStore, unifier: &mut Unifier) {
     let PrimitiveStore {
-        int32: int32_t, 
-        int64: int64_t, 
-        float: float_t, 
+        int32: int32_t,
+        int64: int64_t,
+        float: float_t,
         bool: bool_t,
         ..
     } = *store;
@@ -255,8 +255,8 @@ pub fn set_primitives_magic_methods(store: &PrimitiveStore, unifier: &mut Unifie
     impl_not(unifier, store, int32_t);
     impl_comparison(unifier, store, int32_t, int32_t);
     impl_eq(unifier, store, int32_t);
-    
-    /* int64 ======== */ 
+
+    /* int64 ======== */
     impl_basic_arithmetic(unifier, store, int64_t, &[int64_t], int64_t);
     impl_pow(unifier, store, int64_t, &[int64_t], int64_t);
     impl_bitwise_arithmetic(unifier, store, int64_t);
@@ -269,8 +269,8 @@ pub fn set_primitives_magic_methods(store: &PrimitiveStore, unifier: &mut Unifie
     impl_not(unifier, store, int64_t);
     impl_comparison(unifier, store, int64_t, int64_t);
     impl_eq(unifier, store, int64_t);
-    
-    /* float ======== */ 
+
+    /* float ======== */
     impl_basic_arithmetic(unifier, store, float_t, &[float_t], float_t);
     impl_pow(unifier, store, float_t, &[int32_t, float_t], float_t);
     impl_div(unifier, store, float_t, &[float_t]);
@@ -280,8 +280,8 @@ pub fn set_primitives_magic_methods(store: &PrimitiveStore, unifier: &mut Unifie
     impl_not(unifier, store, float_t);
     impl_comparison(unifier, store, float_t, float_t);
     impl_eq(unifier, store, float_t);
-    
-    /* bool ======== */ 
+
+    /* bool ======== */
     impl_not(unifier, store, bool_t);
     impl_eq(unifier, store, bool_t);
 }

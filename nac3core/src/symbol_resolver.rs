@@ -3,13 +3,15 @@ use crate::typecheck::typedef::Type;
 use crate::top_level::DefinitionId;
 use rustpython_parser::ast::Expr;
 
-pub enum SymbolValue<'a> {
+#[derive(Clone, PartialEq)]
+pub enum SymbolValue {
     I32(i32),
     I64(i64),
     Double(f64),
     Bool(bool),
-    Tuple(&'a [SymbolValue<'a>]),
-    Bytes(&'a [u8]),
+    Tuple(Vec<SymbolValue>),
+    // we should think about how to implement bytes later...
+    // Bytes(&'a [u8]),
 }
 
 pub trait SymbolResolver {

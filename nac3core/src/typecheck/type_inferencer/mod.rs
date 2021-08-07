@@ -240,7 +240,7 @@ impl<'a> Inferencer<'a> {
         let fun = FunSignature {
             args: fn_args
                 .iter()
-                .map(|(k, ty)| FuncArg { name: k.clone(), ty: *ty, is_optional: false })
+                .map(|(k, ty)| FuncArg { name: k.clone(), ty: *ty, default_value: None })
                 .collect(),
             ret,
             vars: Default::default(),
@@ -513,7 +513,13 @@ impl<'a> Inferencer<'a> {
         for (a, b, c) in izip!(once(left).chain(comparators), comparators, ops) {
             let method =
                 comparison_name(c).ok_or_else(|| "unsupported comparator".to_string())?.to_string();
-            self.build_method_call(a.location, method, a.custom.unwrap(), vec![b.custom.unwrap()], boolean)?;
+            self.build_method_call(
+                a.location,
+                method,
+                a.custom.unwrap(),
+                vec![b.custom.unwrap()],
+                boolean,
+            )?;
         }
         Ok(boolean)
     }

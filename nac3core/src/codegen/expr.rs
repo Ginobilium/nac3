@@ -1,12 +1,9 @@
-use std::{convert::TryInto, iter::once};
+use std::{collections::HashMap, convert::TryInto, iter::once};
 
 use crate::{
-    top_level::DefinitionId,
-    typecheck::typedef::{Type, TypeEnum},
-};
-use crate::{
-    top_level::{CodeGenContext, TopLevelDef},
-    typecheck::typedef::FunSignature,
+    symbol_resolver::SymbolValue,
+    top_level::{CodeGenContext, DefinitionId, TopLevelDef},
+    typecheck::typedef::{FunSignature, Type, TypeEnum},
 };
 use inkwell::{
     types::{BasicType, BasicTypeEnum},
@@ -65,10 +62,7 @@ impl<'ctx> CodeGenContext<'ctx> {
                     let fields = fields.borrow();
                     let fields =
                         fields_list.iter().map(|f| self.get_llvm_type(fields[&f.0])).collect_vec();
-                    self.ctx
-                        .struct_type(&fields, false)
-                        .ptr_type(AddressSpace::Generic)
-                        .into()
+                    self.ctx.struct_type(&fields, false).ptr_type(AddressSpace::Generic).into()
                 } else {
                     unreachable!()
                 };
@@ -93,16 +87,20 @@ impl<'ctx> CodeGenContext<'ctx> {
         })
     }
 
+    fn gen_symbol_val(&mut self, val: &SymbolValue) -> BasicValueEnum<'ctx> {
+        unimplemented!()
+    }
+
     fn gen_call(
         &mut self,
         obj: Option<(Type, BasicValueEnum<'ctx>)>,
         fun: (&FunSignature, DefinitionId),
-        params: &[BasicValueEnum<'ctx>],
+        params: Vec<(Option<String>, BasicValueEnum<'ctx>)>,
         ret: Type,
     ) -> Option<BasicValueEnum<'ctx>> {
         let key = self.get_subst_key(obj.map(|(a, _)| a), fun.0);
         let defs = self.top_level.definitions.read();
-        let definition = defs.get(fun.1.0).unwrap();
+        let definition = defs.get(fun.1 .0).unwrap();
         let val = if let TopLevelDef::Function { instance_to_symbol, .. } = &*definition.read() {
             let symbol = instance_to_symbol.get(&key).unwrap_or_else(|| {
                 // TODO: codegen for function that are not yet generated
@@ -117,8 +115,19 @@ impl<'ctx> CodeGenContext<'ctx> {
                 };
                 self.module.add_function(symbol, fun_ty, None)
             });
-            // TODO: deal with default parameters and reordering based on keys
-            self.builder.build_call(fun_val, params, "call").try_as_basic_value().left()
+            let mut keys = fun.0.args.clone();
+            let mut mapping = HashMap::new();
+            for (key, value) in params.into_iter() {
+                mapping.insert(key.unwrap_or_else(|| keys.remove(0).name), value);
+            }
+            // default value handling
+            for k in keys.into_iter() {
+                mapping.insert(k.name, self.gen_symbol_val(&k.default_value.unwrap()));
+            }
+            // reorder the parameters
+            let params =
+                fun.0.args.iter().map(|arg| mapping.remove(&arg.name).unwrap()).collect_vec();
+            self.builder.build_call(fun_val, &params, "call").try_as_basic_value().left()
         } else {
             unreachable!()
         };
@@ -158,7 +167,7 @@ impl<'ctx> CodeGenContext<'ctx> {
                 let ty = self.ctx.struct_type(&types, false);
                 ty.const_named_struct(&values).into()
             }
-            _ => unreachable!()
+            _ => unreachable!(),
         }
     }
 
@@ -261,10 +270,7 @@ impl<'ctx> CodeGenContext<'ctx> {
                     "tmparr",
                 );
                 let arr_ty = self.ctx.struct_type(
-                    &[
-                        self.ctx.i32_type().into(),
-                        ty.ptr_type(AddressSpace::Generic).into(),
-                    ],
+                    &[self.ctx.i32_type().into(), ty.ptr_type(AddressSpace::Generic).into()],
                     false,
                 );
                 let arr_str_ptr = self.builder.build_alloca(arr_ty, "tmparrstr");
@@ -445,50 +451,52 @@ impl<'ctx> CodeGenContext<'ctx> {
                 )
                 .fold(None, |prev, (lhs, rhs, op)| {
                     let ty = lhs.custom.unwrap();
-                    let current = if [self.primitives.int32, self.primitives.int64, self.primitives.bool]
-                        .contains(&ty)
-                    {
-                        let (lhs, rhs) =
-                            if let (BasicValueEnum::IntValue(lhs), BasicValueEnum::IntValue(rhs)) =
-                                (self.gen_expr(lhs), self.gen_expr(rhs))
+                    let current =
+                        if [self.primitives.int32, self.primitives.int64, self.primitives.bool]
+                            .contains(&ty)
+                        {
+                            let (lhs, rhs) = if let (
+                                BasicValueEnum::IntValue(lhs),
+                                BasicValueEnum::IntValue(rhs),
+                            ) = (self.gen_expr(lhs), self.gen_expr(rhs))
                             {
                                 (lhs, rhs)
                             } else {
                                 unreachable!()
                             };
-                        let op = match op {
-                            ast::Cmpop::Eq | ast::Cmpop::Is => inkwell::IntPredicate::EQ,
-                            ast::Cmpop::NotEq => inkwell::IntPredicate::NE,
-                            ast::Cmpop::Lt => inkwell::IntPredicate::SLT,
-                            ast::Cmpop::LtE => inkwell::IntPredicate::SLE,
-                            ast::Cmpop::Gt => inkwell::IntPredicate::SGT,
-                            ast::Cmpop::GtE => inkwell::IntPredicate::SGE,
-                            _ => unreachable!(),
-                        };
-                        self.builder.build_int_compare(op, lhs, rhs, "cmp")
-                    } else if ty == self.primitives.float {
-                        let (lhs, rhs) = if let (
-                            BasicValueEnum::FloatValue(lhs),
-                            BasicValueEnum::FloatValue(rhs),
-                        ) = (self.gen_expr(lhs), self.gen_expr(rhs))
-                        {
-                            (lhs, rhs)
+                            let op = match op {
+                                ast::Cmpop::Eq | ast::Cmpop::Is => inkwell::IntPredicate::EQ,
+                                ast::Cmpop::NotEq => inkwell::IntPredicate::NE,
+                                ast::Cmpop::Lt => inkwell::IntPredicate::SLT,
+                                ast::Cmpop::LtE => inkwell::IntPredicate::SLE,
+                                ast::Cmpop::Gt => inkwell::IntPredicate::SGT,
+                                ast::Cmpop::GtE => inkwell::IntPredicate::SGE,
+                                _ => unreachable!(),
+                            };
+                            self.builder.build_int_compare(op, lhs, rhs, "cmp")
+                        } else if ty == self.primitives.float {
+                            let (lhs, rhs) = if let (
+                                BasicValueEnum::FloatValue(lhs),
+                                BasicValueEnum::FloatValue(rhs),
+                            ) = (self.gen_expr(lhs), self.gen_expr(rhs))
+                            {
+                                (lhs, rhs)
+                            } else {
+                                unreachable!()
+                            };
+                            let op = match op {
+                                ast::Cmpop::Eq | ast::Cmpop::Is => inkwell::FloatPredicate::OEQ,
+                                ast::Cmpop::NotEq => inkwell::FloatPredicate::ONE,
+                                ast::Cmpop::Lt => inkwell::FloatPredicate::OLT,
+                                ast::Cmpop::LtE => inkwell::FloatPredicate::OLE,
+                                ast::Cmpop::Gt => inkwell::FloatPredicate::OGT,
+                                ast::Cmpop::GtE => inkwell::FloatPredicate::OGE,
+                                _ => unreachable!(),
+                            };
+                            self.builder.build_float_compare(op, lhs, rhs, "cmp")
                         } else {
-                            unreachable!()
+                            unimplemented!()
                         };
-                        let op = match op {
-                            ast::Cmpop::Eq | ast::Cmpop::Is => inkwell::FloatPredicate::OEQ,
-                            ast::Cmpop::NotEq => inkwell::FloatPredicate::ONE,
-                            ast::Cmpop::Lt => inkwell::FloatPredicate::OLT,
-                            ast::Cmpop::LtE => inkwell::FloatPredicate::OLE,
-                            ast::Cmpop::Gt => inkwell::FloatPredicate::OGT,
-                            ast::Cmpop::GtE => inkwell::FloatPredicate::OGE,
-                            _ => unreachable!(),
-                        };
-                        self.builder.build_float_compare(op, lhs, rhs, "cmp")
-                    } else {
-                        unimplemented!()
-                    };
                     prev.map(|v| self.builder.build_and(v, current, "cmp")).or(Some(current))
                 })
                 .unwrap()
