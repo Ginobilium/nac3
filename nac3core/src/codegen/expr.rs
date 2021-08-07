@@ -88,7 +88,16 @@ impl<'ctx> CodeGenContext<'ctx> {
     }
 
     fn gen_symbol_val(&mut self, val: &SymbolValue) -> BasicValueEnum<'ctx> {
-        unimplemented!()
+        match val {
+            SymbolValue::I32(v) => self.ctx.i32_type().const_int(*v as u64, true).into(),
+            SymbolValue::I64(v) => self.ctx.i64_type().const_int(*v as u64, true).into(),
+            SymbolValue::Bool(v) => self.ctx.bool_type().const_int(*v as u64, true).into(),
+            SymbolValue::Double(v) => self.ctx.f64_type().const_float(*v).into(),
+            SymbolValue::Tuple(ls) => {
+                let vals = ls.iter().map(|v| self.gen_symbol_val(v)).collect_vec();
+                self.ctx.const_struct(&vals, false).into()
+            }
+        }
     }
 
     fn gen_call(
