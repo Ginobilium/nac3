@@ -95,7 +95,20 @@ impl<'ctx> CodeGenContext<'ctx> {
             SymbolValue::Double(v) => self.ctx.f64_type().const_float(*v).into(),
             SymbolValue::Tuple(ls) => {
                 let vals = ls.iter().map(|v| self.gen_symbol_val(v)).collect_vec();
-                self.ctx.const_struct(&vals, false).into()
+                let fields = vals.iter().map(|v| v.get_type()).collect_vec();
+                let ty = self.ctx.struct_type(&fields, false);
+                let ptr = self.builder.build_alloca(ty, "tuple");
+                let zero = self.ctx.i32_type().const_zero();
+                unsafe {
+                    for (i, val) in vals.into_iter().enumerate() {
+                        let p = ptr.const_in_bounds_gep(&[
+                            zero,
+                            self.ctx.i32_type().const_int(i as u64, false),
+                        ]);
+                        self.builder.build_store(p, val);
+                    }
+                }
+                ptr.into()
             }
         }
     }
