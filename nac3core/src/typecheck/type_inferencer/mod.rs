@@ -182,6 +182,7 @@ impl<'a> Inferencer<'a> {
 
     fn build_method_call(
         &mut self,
+        location: Location,
         method: String,
         obj: Type,
         params: Vec<Type>,
@@ -193,6 +194,7 @@ impl<'a> Inferencer<'a> {
             ret,
             fun: RefCell::new(None),
         });
+        self.calls.insert(location.into(), call.clone());
         let call = self.unifier.add_ty(TypeEnum::TCall(vec![call].into()));
         let fields = once((method, call)).collect();
         let record = self.unifier.add_record(fields);
@@ -477,6 +479,7 @@ impl<'a> Inferencer<'a> {
         let method = binop_name(op);
         let ret = self.unifier.get_fresh_var().0;
         self.build_method_call(
+            left.location,
             method.to_string(),
             left.custom.unwrap(),
             vec![right.custom.unwrap()],
@@ -491,7 +494,13 @@ impl<'a> Inferencer<'a> {
     ) -> InferenceResult {
         let method = unaryop_name(op);
         let ret = self.unifier.get_fresh_var().0;
-        self.build_method_call(method.to_string(), operand.custom.unwrap(), vec![], ret)
+        self.build_method_call(
+            operand.location,
+            method.to_string(),
+            operand.custom.unwrap(),
+            vec![],
+            ret,
+        )
     }
 
     fn infer_compare(
@@ -504,7 +513,7 @@ impl<'a> Inferencer<'a> {
         for (a, b, c) in izip!(once(left).chain(comparators), comparators, ops) {
             let method =
                 comparison_name(c).ok_or_else(|| "unsupported comparator".to_string())?.to_string();
-            self.build_method_call(method, a.custom.unwrap(), vec![b.custom.unwrap()], boolean)?;
+            self.build_method_call(a.location, method, a.custom.unwrap(), vec![b.custom.unwrap()], boolean)?;
         }
         Ok(boolean)
     }
