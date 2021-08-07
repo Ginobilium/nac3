@@ -1,5 +1,5 @@
-use super::location::Location;
-use super::typedef::Type;
+use crate::location::Location;
+use crate::typecheck::typedef::Type;
 use crate::top_level::DefinitionId;
 use rustpython_parser::ast::Expr;
 

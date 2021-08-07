@@ -1,7 +1,7 @@
-use super::super::location::Location;
-use super::super::symbol_resolver::*;
 use super::super::typedef::*;
 use super::*;
+use crate::location::Location;
+use crate::symbol_resolver::*;
 use crate::top_level::DefinitionId;
 use indoc::indoc;
 use itertools::zip;

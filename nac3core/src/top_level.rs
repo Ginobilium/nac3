@@ -1,8 +1,8 @@
 use std::{collections::HashMap, sync::Arc};
 
-use super::typecheck::symbol_resolver::SymbolResolver;
 use super::typecheck::type_inferencer::PrimitiveStore;
 use super::typecheck::typedef::{SharedUnifier, Type, Unifier};
+use crate::symbol_resolver::SymbolResolver;
 use inkwell::{builder::Builder, context::Context, module::Module, values::PointerValue};
 use parking_lot::RwLock;
 use rustpython_parser::ast::Stmt;

@@ -4,8 +4,8 @@ use std::iter::once;
 use std::{cell::RefCell, sync::Arc};
 
 use super::magic_methods::*;
-use super::symbol_resolver::SymbolResolver;
 use super::typedef::{Call, FunSignature, FuncArg, Type, TypeEnum, Unifier};
+use crate::symbol_resolver::SymbolResolver;
 use itertools::izip;
 use rustpython_parser::ast::{
     self,
