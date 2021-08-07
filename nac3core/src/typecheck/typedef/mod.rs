@@ -30,6 +30,8 @@ pub struct Call {
 pub struct FuncArg {
     pub name: String,
     pub ty: Type,
+    // TODO: change this to an optional value
+    // for primitive types
     pub is_optional: bool,
 }
 

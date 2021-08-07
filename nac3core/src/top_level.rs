@@ -3,7 +3,7 @@ use std::{collections::HashMap, sync::Arc};
 use super::typecheck::type_inferencer::PrimitiveStore;
 use super::typecheck::typedef::{SharedUnifier, Type, Unifier};
 use crate::symbol_resolver::SymbolResolver;
-use inkwell::{builder::Builder, context::Context, module::Module, values::PointerValue};
+use inkwell::{builder::Builder, context::Context, module::Module, types::BasicTypeEnum, values::PointerValue};
 use parking_lot::RwLock;
 use rustpython_parser::ast::Stmt;
 
@@ -16,14 +16,17 @@ pub enum TopLevelDef {
         object_id: DefinitionId,
         // type variables bounded to the class.
         type_vars: Vec<Type>,
-        // class fields and method signature.
+        // class fields
         fields: Vec<(String, Type)>,
         // class methods, pointing to the corresponding function definition.
-        methods: Vec<(String, DefinitionId)>,
+        methods: Vec<(String, Type, DefinitionId)>,
         // ancestor classes, including itself.
         ancestors: Vec<DefinitionId>,
     },
     Function {
+        // prefix for symbol, should be unique globally, and not ending with numbers
+        name: String,
+        // function signature.
         signature: Type,
         /// Function instance to symbol mapping
         /// Key: string representation of type variable values, sorted by variable ID in ascending
@@ -48,7 +51,6 @@ pub struct CodeGenTask {
 }
 
 pub struct TopLevelContext {
-    pub primitives: PrimitiveStore,
     pub definitions: Arc<RwLock<Vec<RwLock<TopLevelDef>>>>,
     pub unifiers: Arc<RwLock<Vec<SharedUnifier>>>,
 }
@@ -61,4 +63,6 @@ pub struct CodeGenContext<'ctx> {
     pub unifier: Unifier,
     pub resolver: Box<dyn SymbolResolver>,
     pub var_assignment: HashMap<String, PointerValue<'ctx>>,
+    pub type_cache: HashMap<Type, BasicTypeEnum<'ctx>>,
+    pub primitives: PrimitiveStore,
 }

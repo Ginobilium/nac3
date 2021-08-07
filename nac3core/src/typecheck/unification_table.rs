@@ -1,6 +1,6 @@
 use std::rc::Rc;
 
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]
 pub struct UnificationKey(usize);
 
 pub struct UnificationTable<V> {
