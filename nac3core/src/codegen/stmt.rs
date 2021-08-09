@@ -1,17 +1,16 @@
-use std::convert::TryInto;
-
 use crate::{top_level::CodeGenContext, typecheck::typedef::Type};
-use inkwell::{
-    types::BasicTypeEnum,
-    values::{BasicValueEnum, PointerValue},
-};
+use inkwell::values::{BasicValueEnum, PointerValue};
 use rustpython_parser::ast::{Expr, ExprKind, Stmt, StmtKind};
 
 impl<'ctx> CodeGenContext<'ctx> {
     fn gen_var(&mut self, ty: Type) -> PointerValue<'ctx> {
-        // should we build the alloca in an initial block?
+        // put the alloca in init block
+        let current = self.builder.get_insert_block().unwrap();
+        self.builder.position_at_end(self.init_bb);
         let ty = self.get_llvm_type(ty);
-        self.builder.build_alloca(ty, "tmp")
+        let ptr = self.builder.build_alloca(ty, "tmp");
+        self.builder.position_at_end(current);
+        ptr
     }
 
     fn parse_pattern(&mut self, pattern: &Expr<Option<Type>>) -> PointerValue<'ctx> {

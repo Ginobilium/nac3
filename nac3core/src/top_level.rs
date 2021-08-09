@@ -68,6 +68,8 @@ pub struct CodeGenContext<'ctx> {
     pub var_assignment: HashMap<String, PointerValue<'ctx>>,
     pub type_cache: HashMap<Type, BasicTypeEnum<'ctx>>,
     pub primitives: PrimitiveStore,
+    // stores the alloca for variables
+    pub init_bb: BasicBlock<'ctx>,
     // where continue and break should go to respectively
     // the first one is the test_bb, and the second one is bb after the loop
     pub loop_bb: Option<(BasicBlock<'ctx>, BasicBlock<'ctx>)>,
