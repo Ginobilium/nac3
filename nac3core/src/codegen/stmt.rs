@@ -82,6 +82,48 @@ impl<'ctx> CodeGenContext<'ctx> {
                     self.gen_assignment(target, value);
                 }
             }
+            StmtKind::Continue => {
+                self.builder.build_unconditional_branch(self.loop_bb.unwrap().0);
+            }
+            StmtKind::Break => {
+                self.builder.build_unconditional_branch(self.loop_bb.unwrap().1);
+            }
+            StmtKind::While { test, body, orelse } => {
+                let current = self.builder.get_insert_block().unwrap().get_parent().unwrap();
+                let test_bb = self.ctx.append_basic_block(current, "test");
+                let body_bb = self.ctx.append_basic_block(current, "body");
+                let cont_bb = self.ctx.append_basic_block(current, "cont");
+                // if there is no orelse, we just go to cont_bb
+                let orelse_bb = if orelse.is_empty() {
+                    cont_bb
+                } else {
+                    self.ctx.append_basic_block(current, "orelse")
+                };
+                // store loop bb information and restore it later
+                let loop_bb = self.loop_bb.replace((test_bb, cont_bb));
+                self.builder.build_unconditional_branch(test_bb);
+                self.builder.position_at_end(test_bb);
+                let test = self.gen_expr(test);
+                if let BasicValueEnum::IntValue(test) = test {
+                    self.builder.build_conditional_branch(test, body_bb, orelse_bb);
+                } else {
+                    unreachable!()
+                };
+                self.builder.position_at_end(body_bb);
+                for stmt in body.iter() {
+                    self.gen_stmt(stmt);
+                }
+                self.builder.build_unconditional_branch(test_bb);
+                if !orelse.is_empty() {
+                    self.builder.position_at_end(orelse_bb);
+                    for stmt in orelse.iter() {
+                        self.gen_stmt(stmt);
+                    }
+                    self.builder.build_unconditional_branch(cont_bb);
+                }
+                self.builder.position_at_end(cont_bb);
+                self.loop_bb = loop_bb;
+            }
             _ => unimplemented!(),
         }
     }

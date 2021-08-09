@@ -3,7 +3,10 @@ use std::{collections::HashMap, sync::Arc};
 use super::typecheck::type_inferencer::PrimitiveStore;
 use super::typecheck::typedef::{SharedUnifier, Type, Unifier};
 use crate::symbol_resolver::SymbolResolver;
-use inkwell::{builder::Builder, context::Context, module::Module, types::BasicTypeEnum, values::PointerValue};
+use inkwell::{
+    basic_block::BasicBlock, builder::Builder, context::Context, module::Module,
+    types::BasicTypeEnum, values::PointerValue,
+};
 use parking_lot::RwLock;
 use rustpython_parser::ast::Stmt;
 
@@ -65,4 +68,7 @@ pub struct CodeGenContext<'ctx> {
     pub var_assignment: HashMap<String, PointerValue<'ctx>>,
     pub type_cache: HashMap<Type, BasicTypeEnum<'ctx>>,
     pub primitives: PrimitiveStore,
+    // where continue and break should go to respectively
+    // the first one is the test_bb, and the second one is bb after the loop
+    pub loop_bb: Option<(BasicBlock<'ctx>, BasicBlock<'ctx>)>,
 }
