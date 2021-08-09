@@ -9,12 +9,8 @@ use rustpython_parser::ast::{Expr, ExprKind, Stmt, StmtKind};
 
 impl<'ctx> CodeGenContext<'ctx> {
     fn gen_var(&mut self, ty: Type) -> PointerValue<'ctx> {
+        // should we build the alloca in an initial block?
         let ty = self.get_llvm_type(ty);
-        let ty = if let BasicTypeEnum::PointerType(ty) = ty {
-            ty.get_element_type().try_into().unwrap()
-        } else {
-            ty
-        };
         self.builder.build_alloca(ty, "tmp")
     }
 
@@ -75,6 +71,12 @@ impl<'ctx> CodeGenContext<'ctx> {
         match &stmt.node {
             StmtKind::Expr { value } => {
                 self.gen_expr(&value);
+            }
+            StmtKind::AnnAssign { target, value, .. } => {
+                if let Some(value) = value {
+                    let value = self.gen_expr(&value);
+                    self.gen_assignment(target, value);
+                }
             }
             StmtKind::Assign { targets, value, .. } => {
                 let value = self.gen_expr(&value);
