@@ -33,7 +33,7 @@ impl<'ctx> CodeGenContext<'ctx> {
             .join(", ")
     }
 
-    fn get_attr_index(&mut self, ty: Type, attr: &str) -> usize {
+    pub fn get_attr_index(&mut self, ty: Type, attr: &str) -> usize {
         let obj_id = match &*self.unifier.get_ty(ty) {
             TypeEnum::TObj { obj_id, .. } => *obj_id,
             // we cannot have other types, virtual type should be handled by function calls
@@ -48,7 +48,7 @@ impl<'ctx> CodeGenContext<'ctx> {
         index
     }
 
-    fn get_llvm_type(&mut self, ty: Type) -> BasicTypeEnum<'ctx> {
+    pub fn get_llvm_type(&mut self, ty: Type) -> BasicTypeEnum<'ctx> {
         use TypeEnum::*;
         // we assume the type cache should already contain primitive types,
         // and they should be passed by value instead of passing as pointer.
@@ -275,7 +275,15 @@ impl<'ctx> CodeGenContext<'ctx> {
             }
             ExprKind::Name { id, .. } => {
                 let ptr = self.var_assignment.get(id).unwrap();
-                self.builder.build_load(*ptr, "load")
+                let primitives = &self.primitives;
+                // we should only dereference primitive types
+                if [primitives.int32, primitives.int64, primitives.float, primitives.bool]
+                    .contains(&self.unifier.get_representative(expr.custom.unwrap()))
+                {
+                    self.builder.build_load(*ptr, "load")
+                } else {
+                    (*ptr).into()
+                }
             }
             ExprKind::List { elts, .. } => {
                 // this shall be optimized later for constant primitive lists...
@@ -472,7 +480,7 @@ impl<'ctx> CodeGenContext<'ctx> {
                     ops.iter(),
                 )
                 .fold(None, |prev, (lhs, rhs, op)| {
-                    let ty = lhs.custom.unwrap();
+                    let ty = self.unifier.get_representative(lhs.custom.unwrap());
                     let current =
                         if [self.primitives.int32, self.primitives.int64, self.primitives.bool]
                             .contains(&ty)
