@@ -15,10 +15,11 @@ pub enum SymbolValue {
 }
 
 pub trait SymbolResolver {
-    fn get_symbol_type(&mut self, str: &str) -> Option<Type>;
-    fn parse_type_name(&mut self, expr: &Expr<()>) -> Option<Type>;
-    fn get_function_def(&mut self, str: &str) -> DefinitionId;
-    fn get_symbol_value(&mut self, str: &str) -> Option<SymbolValue>;
-    fn get_symbol_location(&mut self, str: &str) -> Option<Location>;
+    fn get_symbol_type(&self, str: &str) -> Option<Type>;
+    fn parse_type_name(&self, expr: &Expr<()>) -> Option<Type>;
+    fn get_identifier_def(&self, str: &str) -> DefinitionId;
+    fn get_symbol_value(&self, str: &str) -> Option<SymbolValue>;
+    fn get_symbol_location(&self, str: &str) -> Option<Location>;
+    fn get_module_resolver(&self, module_name: &str) -> Option<&dyn SymbolResolver>; // NOTE: for getting imported modules' symbol resolver?
     // handle function call etc.
 }

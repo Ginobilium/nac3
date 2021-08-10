@@ -15,11 +15,11 @@ struct Resolver {
 }
 
 impl SymbolResolver for Resolver {
-    fn get_symbol_type(&mut self, str: &str) -> Option<Type> {
+    fn get_symbol_type(&self, str: &str) -> Option<Type> {
         self.identifier_mapping.get(str).cloned()
     }
 
-    fn parse_type_name(&mut self, ty: &ast::Expr<()>) -> Option<Type> {
+    fn parse_type_name(&self, ty: &ast::Expr<()>) -> Option<Type> {
         if let ExprKind::Name { id, .. } = &ty.node {
             self.class_names.get(id).cloned()
         } else {
@@ -27,15 +27,19 @@ impl SymbolResolver for Resolver {
         }
     }
 
-    fn get_symbol_value(&mut self, _: &str) -> Option<SymbolValue> {
+    fn get_symbol_value(&self, _: &str) -> Option<SymbolValue> {
         unimplemented!()
     }
 
-    fn get_symbol_location(&mut self, _: &str) -> Option<Location> {
+    fn get_symbol_location(&self, _: &str) -> Option<Location> {
         unimplemented!()
     }
 
-    fn get_function_def(&mut self, _: &str) -> DefinitionId {
+    fn get_identifier_def(&self, _: &str) -> DefinitionId {
+        unimplemented!()
+    }
+
+    fn get_module_resolver(&self, _: &str) -> Option<&dyn SymbolResolver> {
         unimplemented!()
     }
 }
