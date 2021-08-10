@@ -6,4 +6,6 @@ in
     buildInputs = with pkgs; [
       llvm_10 clang_10 cargo rustc libffi libxml2 clippy
     ];
+    
+    RUST_SRC_PATH = "${pkgs.rust.packages.stable.rustPlatform.rustLibSrc}";
   }
