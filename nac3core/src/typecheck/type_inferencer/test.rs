@@ -1,30 +1,23 @@
 use super::super::typedef::*;
 use super::*;
-use crate::location::Location;
 use crate::symbol_resolver::*;
 use crate::top_level::DefinitionId;
+use crate::{location::Location, top_level::TopLevelDef};
 use indoc::indoc;
 use itertools::zip;
-use rustpython_parser::ast;
+use parking_lot::RwLock;
 use rustpython_parser::parser::parse_program;
 use test_case::test_case;
 
 struct Resolver {
-    identifier_mapping: HashMap<String, Type>,
+    id_to_type: HashMap<String, Type>,
+    id_to_def: HashMap<String, DefinitionId>,
     class_names: HashMap<String, Type>,
 }
 
 impl SymbolResolver for Resolver {
-    fn get_symbol_type(&self, str: &str) -> Option<Type> {
-        self.identifier_mapping.get(str).cloned()
-    }
-
-    fn parse_type_name(&self, ty: &ast::Expr<()>) -> Option<Type> {
-        if let ExprKind::Name { id, .. } = &ty.node {
-            self.class_names.get(id).cloned()
-        } else {
-            unimplemented!()
-        }
+    fn get_symbol_type(&self, _: &mut Unifier, _: &PrimitiveStore, str: &str) -> Option<Type> {
+        self.id_to_type.get(str).cloned()
     }
 
     fn get_symbol_value(&self, _: &str) -> Option<SymbolValue> {
@@ -35,12 +28,8 @@ impl SymbolResolver for Resolver {
         unimplemented!()
     }
 
-    fn get_identifier_def(&self, _: &str) -> DefinitionId {
-        unimplemented!()
-    }
-
-    fn get_module_resolver(&self, _: &str) -> Option<&dyn SymbolResolver> {
-        unimplemented!()
+    fn get_identifier_def(&self, id: &str) -> DefinitionId {
+        self.id_to_def.get(id).cloned().unwrap()
     }
 }
 
@@ -52,6 +41,7 @@ struct TestEnvironment {
     pub identifier_mapping: HashMap<String, Type>,
     pub virtual_checks: Vec<(Type, Type)>,
     pub calls: HashMap<CodeLocation, Arc<Call>>,
+    pub top_level: TopLevelContext,
 }
 
 impl TestEnvironment {
@@ -101,11 +91,17 @@ impl TestEnvironment {
         identifier_mapping.insert("None".into(), none);
 
         let resolver = Arc::new(Resolver {
-            identifier_mapping: identifier_mapping.clone(),
+            id_to_type: identifier_mapping.clone(),
+            id_to_def: Default::default(),
             class_names: Default::default(),
         }) as Arc<dyn SymbolResolver>;
 
         TestEnvironment {
+            top_level: TopLevelContext {
+                definitions: Default::default(),
+                unifiers: Default::default(),
+                conetexts: Default::default(),
+            },
             unifier,
             function_data: FunctionData {
                 resolver,
@@ -123,6 +119,7 @@ impl TestEnvironment {
     fn new() -> TestEnvironment {
         let mut unifier = Unifier::new();
         let mut identifier_mapping = HashMap::new();
+        let mut top_level_defs = Vec::new();
         let int32 = unifier.add_ty(TypeEnum::TObj {
             obj_id: DefinitionId(0),
             fields: HashMap::new().into(),
@@ -149,6 +146,16 @@ impl TestEnvironment {
             params: HashMap::new(),
         });
         identifier_mapping.insert("None".into(), none);
+        for i in 0..5 {
+            top_level_defs.push(RwLock::new(TopLevelDef::Class {
+                object_id: DefinitionId(i),
+                type_vars: Default::default(),
+                fields: Default::default(),
+                methods: Default::default(),
+                ancestors: Default::default(),
+                resolver: None,
+            }));
+        }
 
         let primitives = PrimitiveStore { int32, int64, float, bool, none };
 
@@ -159,6 +166,14 @@ impl TestEnvironment {
             fields: [("a".into(), v0)].iter().cloned().collect::<HashMap<_, _>>().into(),
             params: [(id, v0)].iter().cloned().collect(),
         });
+        top_level_defs.push(RwLock::new(TopLevelDef::Class {
+            object_id: DefinitionId(5),
+            type_vars: vec![v0],
+            fields: [("a".into(), v0)].into(),
+            methods: Default::default(),
+            ancestors: Default::default(),
+            resolver: None,
+        }));
 
         identifier_mapping.insert(
             "Foo".into(),
@@ -183,6 +198,14 @@ impl TestEnvironment {
                 .into(),
             params: Default::default(),
         });
+        top_level_defs.push(RwLock::new(TopLevelDef::Class {
+            object_id: DefinitionId(6),
+            type_vars: Default::default(),
+            fields: [("a".into(), int32), ("b".into(), fun)].into(),
+            methods: Default::default(),
+            ancestors: Default::default(),
+            resolver: None,
+        }));
         identifier_mapping.insert(
             "Bar".into(),
             unifier.add_ty(TypeEnum::TFunc(FunSignature {
@@ -201,6 +224,14 @@ impl TestEnvironment {
                 .into(),
             params: Default::default(),
         });
+        top_level_defs.push(RwLock::new(TopLevelDef::Class {
+            object_id: DefinitionId(7),
+            type_vars: Default::default(),
+            fields: [("a".into(), bool), ("b".into(), fun)].into(),
+            methods: Default::default(),
+            ancestors: Default::default(),
+            resolver: None,
+        }));
         identifier_mapping.insert(
             "Bar2".into(),
             unifier.add_ty(TypeEnum::TFunc(FunSignature {
@@ -225,12 +256,28 @@ impl TestEnvironment {
         .cloned()
         .collect();
 
-        let resolver =
-            Arc::new(Resolver { identifier_mapping: identifier_mapping.clone(), class_names })
-                as Arc<dyn SymbolResolver>;
+        let top_level = TopLevelContext {
+            definitions: Arc::new(RwLock::new(top_level_defs)),
+            unifiers: Default::default(),
+            conetexts: Default::default(),
+        };
+
+        let resolver = Arc::new(Resolver {
+            id_to_type: identifier_mapping.clone(),
+            id_to_def: [
+                ("Foo".into(), DefinitionId(5)),
+                ("Bar".into(), DefinitionId(6)),
+                ("Bar2".into(), DefinitionId(7)),
+            ]
+            .iter()
+            .cloned()
+            .collect(),
+            class_names,
+        }) as Arc<dyn SymbolResolver>;
 
         TestEnvironment {
             unifier,
+            top_level,
             function_data: FunctionData {
                 resolver,
                 bound_variables: Vec::new(),
@@ -246,6 +293,7 @@ impl TestEnvironment {
 
     fn get_inferencer(&mut self) -> Inferencer {
         Inferencer {
+            top_level: &self.top_level,
             function_data: &mut self.function_data,
             unifier: &mut self.unifier,
             variable_mapping: Default::default(),

@@ -645,7 +645,7 @@ impl Unifier {
     /// If this returns Some(T), T would be the substituted type.
     /// If this returns None, the result type would be the original type
     /// (no substitution has to be done).
-    fn subst(&mut self, a: Type, mapping: &VarMap) -> Option<Type> {
+    pub fn subst(&mut self, a: Type, mapping: &VarMap) -> Option<Type> {
         use TypeVarMeta::*;
         let ty = self.unification_table.probe_value(a).clone();
         // this function would only be called when we instantiate functions.

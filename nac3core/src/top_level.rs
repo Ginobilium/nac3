@@ -440,37 +440,3 @@ impl TopLevelComposer {
     }
 }
 
-pub fn parse_type_var<T>(
-    input: &ast::Expr<T>,
-    resolver: &dyn SymbolResolver,
-) -> Result<Type, String> {
-    match &input.node {
-        ast::ExprKind::Name { id, .. } => resolver
-            .get_symbol_type(id)
-            .ok_or_else(|| "unknown type variable identifer".to_string()),
-
-        ast::ExprKind::Attribute { value, attr, .. } => {
-            if let ast::ExprKind::Name { id, .. } = &value.node {
-                let next_resolver = resolver
-                    .get_module_resolver(id)
-                    .ok_or_else(|| "unknown imported module".to_string())?;
-                next_resolver
-                    .get_symbol_type(attr)
-                    .ok_or_else(|| "unknown type variable identifer".to_string())
-            } else {
-                unimplemented!()
-                // recursively resolve attr thing, FIXME: new problem: how do we handle this?
-                // # A.py
-                // class A:
-                //     T = TypeVar('T', int, bool)
-                //     pass
-                // # B.py
-                // import A
-                // class B(Generic[A.A.T]):
-                //     pass
-            }
-        }
-
-        _ => Err("not supported".into()),
-    }
-}

@@ -5,7 +5,7 @@ use std::{cell::RefCell, sync::Arc};
 
 use super::magic_methods::*;
 use super::typedef::{Call, FunSignature, FuncArg, Type, TypeEnum, Unifier};
-use crate::symbol_resolver::SymbolResolver;
+use crate::{symbol_resolver::SymbolResolver, top_level::TopLevelContext};
 use itertools::izip;
 use rustpython_parser::ast::{
     self,
@@ -44,6 +44,7 @@ pub struct FunctionData {
 }
 
 pub struct Inferencer<'a> {
+    pub top_level: &'a TopLevelContext,
     pub function_data: &'a mut FunctionData,
     pub unifier: &'a mut Unifier,
     pub primitives: &'a PrimitiveStore,
@@ -81,11 +82,12 @@ impl<'a> fold::Fold<()> for Inferencer<'a> {
                 } else {
                     None
                 };
-                let annotation_type = self
-                    .function_data
-                    .resolver
-                    .parse_type_name(annotation.as_ref())
-                    .ok_or_else(|| "cannot parse type name".to_string())?;
+                let annotation_type = self.function_data.resolver.parse_type_annotation(
+                    self.top_level,
+                    self.unifier,
+                    &self.primitives,
+                    annotation.as_ref(),
+                )?;
                 self.unifier.unify(annotation_type, target.custom.unwrap())?;
                 let annotation = Box::new(NaiveFolder().fold_expr(*annotation)?);
                 Located {
@@ -235,6 +237,7 @@ impl<'a> Inferencer<'a> {
             primitives: self.primitives,
             virtual_checks: self.virtual_checks,
             calls: self.calls,
+            top_level: self.top_level,
             variable_mapping,
         };
         let fun = FunSignature {
@@ -275,6 +278,7 @@ impl<'a> Inferencer<'a> {
             function_data: self.function_data,
             unifier: self.unifier,
             virtual_checks: self.virtual_checks,
+            top_level: self.top_level,
             variable_mapping,
             primitives: self.primitives,
             calls: self.calls,
@@ -336,10 +340,12 @@ impl<'a> Inferencer<'a> {
                     }
                     let arg0 = self.fold_expr(args.remove(0))?;
                     let ty = if let Some(arg) = args.pop() {
-                        self.function_data
-                            .resolver
-                            .parse_type_name(&arg)
-                            .ok_or_else(|| "error parsing type".to_string())?
+                        self.function_data.resolver.parse_type_annotation(
+                            self.top_level,
+                            self.unifier,
+                            self.primitives,
+                            &arg,
+                        )?
                     } else {
                         self.unifier.get_fresh_var().0
                     };
@@ -412,11 +418,15 @@ impl<'a> Inferencer<'a> {
         if let Some(ty) = self.variable_mapping.get(id) {
             Ok(*ty)
         } else {
-            Ok(self.function_data.resolver.get_symbol_type(id).unwrap_or_else(|| {
-                let ty = self.unifier.get_fresh_var().0;
-                self.variable_mapping.insert(id.to_string(), ty);
-                ty
-            }))
+            Ok(self
+                .function_data
+                .resolver
+                .get_symbol_type(self.unifier, self.primitives, id)
+                .unwrap_or_else(|| {
+                    let ty = self.unifier.get_fresh_var().0;
+                    self.variable_mapping.insert(id.to_string(), ty);
+                    ty
+                }))
         }
     }
 
