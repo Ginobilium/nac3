@@ -3,11 +3,8 @@ use std::{collections::HashMap, sync::Arc};
 use super::typecheck::type_inferencer::PrimitiveStore;
 use super::typecheck::typedef::{SharedUnifier, Type, TypeEnum, Unifier};
 use crate::symbol_resolver::SymbolResolver;
-use inkwell::{
-    basic_block::BasicBlock, builder::Builder, context::Context, module::Module,
-    types::BasicTypeEnum, values::PointerValue,
-};
-use parking_lot::RwLock;
+use inkwell::context::Context;
+use parking_lot::{Mutex, RwLock};
 use rustpython_parser::ast::{self, Stmt};
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
@@ -49,33 +46,10 @@ pub enum TopLevelDef {
     },
 }
 
-pub struct CodeGenTask {
-    pub subst: HashMap<usize, Type>,
-    pub symbol_name: String,
-    pub body: Stmt<Option<Type>>,
-    pub unifier: SharedUnifier,
-}
-
 pub struct TopLevelContext {
     pub definitions: Arc<RwLock<Vec<RwLock<TopLevelDef>>>>,
-    pub unifiers: Arc<RwLock<Vec<SharedUnifier>>>,
-}
-
-pub struct CodeGenContext<'ctx> {
-    pub ctx: &'ctx Context,
-    pub builder: Builder<'ctx>,
-    pub module: Module<'ctx>,
-    pub top_level: &'ctx TopLevelContext,
-    pub unifier: Unifier,
-    pub resolver: Box<dyn SymbolResolver>,
-    pub var_assignment: HashMap<String, PointerValue<'ctx>>,
-    pub type_cache: HashMap<Type, BasicTypeEnum<'ctx>>,
-    pub primitives: PrimitiveStore,
-    // stores the alloca for variables
-    pub init_bb: BasicBlock<'ctx>,
-    // where continue and break should go to respectively
-    // the first one is the test_bb, and the second one is bb after the loop
-    pub loop_bb: Option<(BasicBlock<'ctx>, BasicBlock<'ctx>)>,
+    pub unifiers: Arc<RwLock<Vec<(SharedUnifier, PrimitiveStore)>>>,
+    pub conetexts: Arc<RwLock<Vec<Mutex<Context>>>>,
 }
 
 pub struct TopLevelDefInfo<'a> {

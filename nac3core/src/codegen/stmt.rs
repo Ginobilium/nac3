@@ -1,12 +1,14 @@
-use crate::{top_level::CodeGenContext, typecheck::typedef::Type};
-use inkwell::values::{BasicValueEnum, PointerValue};
+use super::CodeGenContext;
+use crate::typecheck::typedef::Type;
+use inkwell::values::{BasicValue, BasicValueEnum, PointerValue};
 use rustpython_parser::ast::{Expr, ExprKind, Stmt, StmtKind};
 
 impl<'ctx> CodeGenContext<'ctx> {
     fn gen_var(&mut self, ty: Type) -> PointerValue<'ctx> {
         // put the alloca in init block
         let current = self.builder.get_insert_block().unwrap();
-        self.builder.position_at_end(self.init_bb);
+        // position before the last branching instruction...
+        self.builder.position_before(&self.init_bb.get_last_instruction().unwrap());
         let ty = self.get_llvm_type(ty);
         let ptr = self.builder.build_alloca(ty, "tmp");
         self.builder.position_at_end(current);
@@ -70,6 +72,11 @@ impl<'ctx> CodeGenContext<'ctx> {
         match &stmt.node {
             StmtKind::Expr { value } => {
                 self.gen_expr(&value);
+            }
+            StmtKind::Return { value } => {
+                let value = value.as_ref().map(|v| self.gen_expr(&v));
+                let value = value.as_ref().map(|v| v as &dyn BasicValue);
+                self.builder.build_return(value);
             }
             StmtKind::AnnAssign { target, value, .. } => {
                 if let Some(value) = value {

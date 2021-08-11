@@ -1,8 +1,9 @@
 use std::{collections::HashMap, convert::TryInto, iter::once};
 
+use super::{get_llvm_type, CodeGenContext};
 use crate::{
     symbol_resolver::SymbolValue,
-    top_level::{CodeGenContext, DefinitionId, TopLevelDef},
+    top_level::{DefinitionId, TopLevelDef},
     typecheck::typedef::{FunSignature, Type, TypeEnum},
 };
 use inkwell::{
@@ -48,45 +49,6 @@ impl<'ctx> CodeGenContext<'ctx> {
         index
     }
 
-    pub fn get_llvm_type(&mut self, ty: Type) -> BasicTypeEnum<'ctx> {
-        use TypeEnum::*;
-        // we assume the type cache should already contain primitive types,
-        // and they should be passed by value instead of passing as pointer.
-        self.type_cache.get(&ty).cloned().unwrap_or_else(|| match &*self.unifier.get_ty(ty) {
-            TObj { obj_id, fields, .. } => {
-                // a struct with fields in the order of declaration
-                let defs = self.top_level.definitions.read();
-                let definition = defs.get(obj_id.0).unwrap();
-                let ty = if let TopLevelDef::Class { fields: fields_list, .. } = &*definition.read()
-                {
-                    let fields = fields.borrow();
-                    let fields =
-                        fields_list.iter().map(|f| self.get_llvm_type(fields[&f.0])).collect_vec();
-                    self.ctx.struct_type(&fields, false).ptr_type(AddressSpace::Generic).into()
-                } else {
-                    unreachable!()
-                };
-                ty
-            }
-            TTuple { ty } => {
-                // a struct with fields in the order present in the tuple
-                let fields = ty.iter().map(|ty| self.get_llvm_type(*ty)).collect_vec();
-                self.ctx.struct_type(&fields, false).ptr_type(AddressSpace::Generic).into()
-            }
-            TList { ty } => {
-                // a struct with an integer and a pointer to an array
-                let element_type = self.get_llvm_type(*ty);
-                let fields = [
-                    self.ctx.i32_type().into(),
-                    element_type.ptr_type(AddressSpace::Generic).into(),
-                ];
-                self.ctx.struct_type(&fields, false).ptr_type(AddressSpace::Generic).into()
-            }
-            TVirtual { .. } => unimplemented!(),
-            _ => unreachable!(),
-        })
-    }
-
     fn gen_symbol_val(&mut self, val: &SymbolValue) -> BasicValueEnum<'ctx> {
         match val {
             SymbolValue::I32(v) => self.ctx.i32_type().const_int(*v as u64, true).into(),
@@ -111,6 +73,10 @@ impl<'ctx> CodeGenContext<'ctx> {
                 ptr.into()
             }
         }
+    }
+
+    pub fn get_llvm_type(&mut self, ty: Type) -> BasicTypeEnum<'ctx> {
+        get_llvm_type(self.ctx, &mut self.unifier, self.top_level, &mut self.type_cache, ty)
     }
 
     fn gen_call(
