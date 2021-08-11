@@ -63,19 +63,27 @@ pub fn name_mangling(mut class_name: String, method_name: &str) -> String {
     class_name
 }
 
+// like adding some info on top of the TopLevelDef for later parsing the class bases, method,
+// and function sigatures
 pub struct TopLevelDefInfo {
-    // like adding some info on top of the TopLevelDef for later parsing the class bases, method,
-    // and function sigatures
-    def: TopLevelDef, // the definition entry
-    ty: Type,         // the entry in the top_level unifier
-    ast: Option<ast::Stmt<()>>, // the ast submitted by applications, primitives and class methods will have None value here
-                                //  resolver: Option<&'a dyn SymbolResolver> // the resolver
+    // the definition entry
+    def: TopLevelDef,
+    // the entry in the top_level unifier
+    ty: Type,
+    // the ast submitted by applications, primitives and 
+    // class methods will have None value here
+    ast: Option<ast::Stmt<()>>,
 }
 
 pub struct TopLevelComposer {
-    pub definition_list: Vec<TopLevelDefInfo>,
+    // list of top level definitions and their info
+    pub definition_list: RwLock<Vec<TopLevelDefInfo>>,
+    // primitive store
     pub primitives: PrimitiveStore,
+    // start as a primitive unifier, will add more top_level defs inside
     pub unifier: Unifier,
+    // class method to definition id
+    pub class_method_to_def_id: HashMap<String, DefinitionId>,
 }
 
 impl TopLevelComposer {
@@ -111,8 +119,11 @@ impl TopLevelComposer {
         (primitives, unifier)
     }
 
-    pub fn new() -> Self {
+    // return a composer and things to make a "primitive" symbol resolver, so that the symbol 
+    // resolver can later figure out primitive type definitions when passed a primitive type name
+    pub fn new() -> (Vec<(String, DefinitionId, Type)>, Self) {
         let primitives = Self::make_primitives();
+        // the def list including the entries of primitive info
         let definition_list: Vec<TopLevelDefInfo> = vec![
             TopLevelDefInfo {
                 def: Self::make_top_level_class_def(0, None),
@@ -139,8 +150,20 @@ impl TopLevelComposer {
                 ast: None,
                 ty: primitives.0.none,
             },
-        ]; // the entries for primitive types
-        TopLevelComposer { definition_list, primitives: primitives.0, unifier: primitives.1 }
+        ];
+        let composer = TopLevelComposer { 
+            definition_list: definition_list.into(),
+            primitives: primitives.0,
+            unifier: primitives.1,
+            class_method_to_def_id: Default::default(),
+        };
+        (vec![
+            ("int32".into(), DefinitionId(0), composer.primitives.int32),
+            ("int64".into(), DefinitionId(1), composer.primitives.int64),
+            ("float".into(), DefinitionId(2), composer.primitives.float),
+            ("bool".into(), DefinitionId(3), composer.primitives.bool),
+            ("none".into(), DefinitionId(4), composer.primitives.none),
+            ], composer)
     }
 
     /// already include the definition_id of itself inside the ancestors vector
@@ -172,18 +195,6 @@ impl TopLevelComposer {
         }
     }
 
-    // like to make and return a "primitive" symbol resolver? so that the symbol resolver
-    // can later figure out primitive type definitions when passed a primitive type name
-    pub fn get_primitives_definition(&self) -> Vec<(String, DefinitionId, Type)> {
-        vec![
-            ("int32".into(), DefinitionId(0), self.primitives.int32),
-            ("int64".into(), DefinitionId(1), self.primitives.int64),
-            ("float".into(), DefinitionId(2), self.primitives.float),
-            ("bool".into(), DefinitionId(3), self.primitives.bool),
-            ("none".into(), DefinitionId(4), self.primitives.none),
-        ]
-    }
-
     pub fn register_top_level(
         &mut self,
         ast: ast::Stmt<()>,
@@ -192,7 +203,8 @@ impl TopLevelComposer {
         match &ast.node {
             ast::StmtKind::ClassDef { name, body, .. } => {
                 let class_name = name.to_string();
-                let class_def_id = self.definition_list.len();
+                let def_list = self.definition_list.write();
+                let class_def_id = def_list.len();
 
                 // add the class to the unifier
                 let ty = self.unifier.add_ty(TypeEnum::TObj {
@@ -241,10 +253,10 @@ impl TopLevelComposer {
                             })
                             // FIXME: should we return this to the symbol resolver?, should be yes
                         }
-                    } else {
-                    } // else do nothing
+                    }
                 }
-                // add to the definition list
+
+                // add the class to the definition list
                 self.definition_list.push(TopLevelDefInfo {
                     def: Self::make_top_level_class_def(class_def_id, resolver),
                     ast: Some(ast),
@@ -439,4 +451,3 @@ impl TopLevelComposer {
         Ok(())
     }
 }
-
