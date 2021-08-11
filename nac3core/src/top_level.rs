@@ -8,7 +8,7 @@ use inkwell::{
     basic_block::BasicBlock, builder::Builder, context::Context, module::Module,
     types::BasicTypeEnum, values::PointerValue,
 };
-use parking_lot::RwLock;
+use parking_lot::{Mutex, RwLock};
 use rustpython_parser::ast::{self, Stmt};
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
@@ -26,6 +26,8 @@ pub enum TopLevelDef {
         methods: Vec<(String, Type, DefinitionId)>,
         // ancestor classes, including itself.
         ancestors: Vec<DefinitionId>,
+        // symbol resolver of the module defined the class, none if it is built-in type
+        resolver: Option<Arc<Mutex<dyn SymbolResolver + Send>>>
     },
     Function {
         // prefix for symbol, should be unique globally, and not ending with numbers
@@ -44,6 +46,8 @@ pub enum TopLevelDef {
         /// Value: AST annotated with types together with a unification table index. Could contain
         /// rigid type variables that would be substituted when the function is instantiated.
         instance_to_stmt: HashMap<String, (Stmt<Option<Type>>, usize)>,
+        // symbol resolver of the module defined the class
+        resolver: Option<Arc<Mutex<dyn SymbolResolver + Send>>>
     },
     Initializer {
         class_id: DefinitionId,
@@ -80,27 +84,28 @@ pub struct CodeGenContext<'ctx> {
 }
 
 
-pub fn name_mangling(mut class_name: String, method_name: &str) -> String { // need to further extend to more name mangling like instantiations of typevar
+pub fn name_mangling(mut class_name: String, method_name: &str) -> String {
+    // need to further extend to more name mangling like instantiations of typevar
     class_name.push_str(method_name);
     class_name
 }
 
-pub struct TopLevelDefInfo<'a> { 
+pub struct TopLevelDefInfo { 
     // like adding some info on top of the TopLevelDef for later parsing the class bases, method,
     // and function sigatures
     def: TopLevelDef,                        // the definition entry
     ty: Type,                                // the entry in the top_level unifier
     ast: Option<ast::Stmt<()>>,              // the ast submitted by applications, primitives and class methods will have None value here
-    resolver: Option<&'a dyn SymbolResolver> // the resolver 
+    //  resolver: Option<&'a dyn SymbolResolver> // the resolver 
 }
 
-pub struct TopLevelComposer<'a> {
-    pub definition_list: Vec<TopLevelDefInfo<'a>>,
+pub struct TopLevelComposer {
+    pub definition_list: Vec<TopLevelDefInfo>,
     pub primitives: PrimitiveStore,
     pub unifier: Unifier,
 }
 
-impl<'a> TopLevelComposer<'a> {
+impl TopLevelComposer {
     pub fn make_primitives() -> (PrimitiveStore, Unifier) {
         let mut unifier = Unifier::new();
         let int32 = unifier.add_ty(TypeEnum::TObj {
@@ -135,35 +140,30 @@ impl<'a> TopLevelComposer<'a> {
 
     pub fn new() -> Self {
         let primitives = Self::make_primitives();
-        let definition_list: Vec<TopLevelDefInfo<'a>> = vec![
+        let definition_list: Vec<TopLevelDefInfo> = vec![
             TopLevelDefInfo {
-                def: Self::make_top_level_class_def(0),
+                def: Self::make_top_level_class_def(0, None),
                 ast: None,
-                resolver: None,
                 ty: primitives.0.int32,
             },
             TopLevelDefInfo {
-                def: Self::make_top_level_class_def(1),
+                def: Self::make_top_level_class_def(1, None),
                 ast: None,
-                resolver: None,
                 ty: primitives.0.int64,
             },
             TopLevelDefInfo {
-                def: Self::make_top_level_class_def(2),
+                def: Self::make_top_level_class_def(2, None),
                 ast: None,
-                resolver: None,
                 ty: primitives.0.float,
             },
             TopLevelDefInfo {
-                def: Self::make_top_level_class_def(3),
+                def: Self::make_top_level_class_def(3, None),
                 ast: None,
-                resolver: None,
                 ty: primitives.0.bool,
             },
             TopLevelDefInfo {
-                def: Self::make_top_level_class_def(4),
+                def: Self::make_top_level_class_def(4, None),
                 ast: None,
-                resolver: None,
                 ty: primitives.0.none,
             },
         ]; // the entries for primitive types
@@ -171,22 +171,24 @@ impl<'a> TopLevelComposer<'a> {
     }
 
     /// already include the definition_id of itself inside the ancestors vector
-    pub fn make_top_level_class_def(index: usize) -> TopLevelDef {
+    pub fn make_top_level_class_def(index: usize, resolver: Option<Arc<Mutex<dyn SymbolResolver + Send>>>) -> TopLevelDef {
         TopLevelDef::Class {
             object_id: DefinitionId(index),
             type_vars: Default::default(),
             fields: Default::default(),
             methods: Default::default(),
             ancestors: vec![DefinitionId(index)],
+            resolver
         }
     }
 
-    pub fn make_top_level_function_def(name: String, ty: Type) -> TopLevelDef {
+    pub fn make_top_level_function_def(name: String, ty: Type, resolver: Option<Arc<Mutex<dyn SymbolResolver + Send>>>) -> TopLevelDef {
         TopLevelDef::Function {
             name,
             signature: ty,
             instance_to_symbol: Default::default(),
             instance_to_stmt: Default::default(),
+            resolver
         }
     }
 
@@ -205,7 +207,7 @@ impl<'a> TopLevelComposer<'a> {
     pub fn register_top_level(
         &mut self,
         ast: ast::Stmt<()>,
-        resolver: &'a dyn SymbolResolver,
+        resolver: Option<Arc<Mutex<dyn SymbolResolver + Send>>>
     ) -> Result<Vec<(String, DefinitionId, Type)>, String> {
         match &ast.node {
             ast::StmtKind::ClassDef { name, body, .. } => {
@@ -239,8 +241,7 @@ impl<'a> TopLevelComposer<'a> {
                         // add to the definition list
                         self.definition_list.push(
                             TopLevelDefInfo {
-                                def: Self::make_top_level_function_def(fun_name.clone(), ty),
-                                resolver: Some(resolver),
+                                def: Self::make_top_level_function_def(fun_name.clone(), ty, None), // FIXME:
                                 ty,
                                 ast: None // since it is inside the class def body statments
                             }
@@ -257,7 +258,6 @@ impl<'a> TopLevelComposer<'a> {
                                     },
                                     ty: self.primitives.none, // arbitary picked one
                                     ast: None, // it is inside the class def body statments
-                                    resolver: Some(resolver)
                                 }
                             )
                             // FIXME: should we return this to the symbol resolver?, should be yes
@@ -267,8 +267,7 @@ impl<'a> TopLevelComposer<'a> {
                 // add to the definition list
                 self.definition_list.push(
                     TopLevelDefInfo {
-                        def: Self::make_top_level_class_def(class_def_id),
-                        resolver: Some(resolver),
+                        def: Self::make_top_level_class_def(class_def_id, resolver),
                         ast: Some(ast),
                         ty,
                     }
@@ -291,9 +290,9 @@ impl<'a> TopLevelComposer<'a> {
                 self.definition_list.push(TopLevelDefInfo {
                         def: Self::make_top_level_function_def(
                             name.into(), 
-                            self.primitives.none
+                            self.primitives.none,
+                            resolver
                         ),
-                        resolver: Some(resolver),
                         ast: Some(ast),
                         ty,
                 });
@@ -308,7 +307,7 @@ impl<'a> TopLevelComposer<'a> {
     /// this should be called after all top level classes are registered, and will actually fill in those fields of the previous dummy one
     pub fn analyze_top_level(&mut self) -> Result<(), String> {
         for mut d in &mut self.definition_list {
-            if let (Some(ast), Some(resolver)) = (&d.ast, d.resolver) {
+            if let Some(ast) = &d.ast {
                 match &ast.node {
                     ast::StmtKind::ClassDef {
                         bases,
@@ -320,15 +319,17 @@ impl<'a> TopLevelComposer<'a> {
                             ancestors,
                             fields,
                             methods,
-                            type_vars
+                            type_vars,
+                            // resolver,
                         ) = if let TopLevelDef::Class {
                             object_id, 
                             ancestors,
                             fields,
                             methods,
-                            type_vars
+                            type_vars,
+                            resolver
                         } = &mut d.def { 
-                            (object_id, ancestors, fields, methods, type_vars)
+                            (object_id, ancestors, fields, methods, type_vars) // FIXME: this unwrap is not safe
                         } else { unreachable!() };
                         
                         // try to get mutable reference of the entry in the unification table, get the `TypeEnum`
@@ -361,7 +362,7 @@ impl<'a> TopLevelComposer<'a> {
                                                 match &e.node {
                                                     ast::ExprKind::Name {id, ..} => {
                                                         // the def_list
-                                                        type_vars.push(resolver.get_symbol_type(id).ok_or_else(|| "unknown type variable".to_string())?);
+                                                        // type_vars.push(resolver.get_symbol_type(id).ok_or_else(|| "unknown type variable".to_string())?); FIXME:
                                                         
                                                         // the TypeEnum of the class
                                                         // FIXME: the `params` destructed above is not mutable, even if this is mutable, what should the key be?
@@ -376,7 +377,7 @@ impl<'a> TopLevelComposer<'a> {
                                         // `class Foo(Generic[T]):`
                                         ast::ExprKind::Name {id, ..} => {
                                             // the def_list
-                                            type_vars.push(resolver.get_symbol_type(id).ok_or_else(|| "unknown type variable".to_string())?);
+                                            // type_vars.push(resolver.get_symbol_type(id).ok_or_else(|| "unknown type variable".to_string())?); FIXME:
                                             
                                             // the TypeEnum of the class
                                             // FIXME: the `params` destructed above is not mutable, even if this is mutable, what should the key be?
@@ -396,20 +397,20 @@ impl<'a> TopLevelComposer<'a> {
                                 // base class, name directly available inside the
                                 // module, can use this module's symbol resolver
                                 ast::ExprKind::Name {id, ..} => {
-                                    let def_id = resolver.get_identifier_def(id);
+                                    // let def_id = resolver.get_identifier_def(id); FIXME: 
                                     // the definition list
-                                    ancestors.push(def_id);
+                                    // ancestors.push(def_id); 
                                 },
 
                                 // base class, things can be like `class A(BaseModule.Base)`, here we have to get the
                                 // symbol resolver of the module `BaseModule`?
                                 ast::ExprKind::Attribute {value, attr, ..} => {
                                     if let ast::ExprKind::Name {id, ..} = &value.node {
-                                        if let Some(base_module_resolver) = resolver.get_module_resolver(id) {
-                                            let def_id = base_module_resolver.get_identifier_def(attr);
-                                            // the definition list
-                                            ancestors.push(def_id);
-                                        } else { return Err("unkown imported module".into()) }
+                                        // if let Some(base_module_resolver) = resolver.get_module_resolver(id) {
+                                        //     let def_id = base_module_resolver.get_identifier_def(attr);
+                                        //     // the definition list
+                                        //     ancestors.push(def_id);
+                                        // } else { return Err("unkown imported module".into()) } FIXME:
                                     } else { return Err("unkown imported module".into()) }
                                 },
                                 
