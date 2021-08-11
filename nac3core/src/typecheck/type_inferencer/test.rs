@@ -100,10 +100,10 @@ impl TestEnvironment {
         let mut identifier_mapping = HashMap::new();
         identifier_mapping.insert("None".into(), none);
 
-        let resolver = Box::new(Resolver {
+        let resolver = Arc::new(Resolver {
             identifier_mapping: identifier_mapping.clone(),
             class_names: Default::default(),
-        }) as Box<dyn SymbolResolver>;
+        }) as Arc<dyn SymbolResolver>;
 
         TestEnvironment {
             unifier,
@@ -226,8 +226,8 @@ impl TestEnvironment {
         .collect();
 
         let resolver =
-            Box::new(Resolver { identifier_mapping: identifier_mapping.clone(), class_names })
-                as Box<dyn SymbolResolver>;
+            Arc::new(Resolver { identifier_mapping: identifier_mapping.clone(), class_names })
+                as Arc<dyn SymbolResolver>;
 
         TestEnvironment {
             unifier,

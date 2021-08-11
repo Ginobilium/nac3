@@ -1,6 +1,6 @@
 use crate::location::Location;
-use crate::typecheck::typedef::Type;
 use crate::top_level::DefinitionId;
+use crate::typecheck::typedef::Type;
 use rustpython_parser::ast::Expr;
 
 #[derive(Clone, PartialEq)]
@@ -21,5 +21,5 @@ pub trait SymbolResolver {
     fn get_symbol_value(&self, str: &str) -> Option<SymbolValue>;
     fn get_symbol_location(&self, str: &str) -> Option<Location>;
     fn get_module_resolver(&self, module_name: &str) -> Option<&dyn SymbolResolver>; // NOTE: for getting imported modules' symbol resolver?
-    // handle function call etc.
+                                                                                     // handle function call etc.
 }
