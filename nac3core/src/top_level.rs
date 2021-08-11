@@ -180,6 +180,7 @@ impl<'a> TopLevelComposer<'a> {
             ancestors: vec![DefinitionId(index)],
         }
     }
+
     pub fn make_top_level_function_def(name: String, ty: Type) -> TopLevelDef {
         TopLevelDef::Function {
             name,
@@ -189,8 +190,8 @@ impl<'a> TopLevelComposer<'a> {
         }
     }
 
-    // like to make and return a "primitive" symbol resolver? so that the symbol resolver can later
-    // figure out primitive type definitions when passed a primitive type name
+    // like to make and return a "primitive" symbol resolver? so that the symbol resolver 
+    // can later figure out primitive type definitions when passed a primitive type name
     pub fn get_primitives_definition(&self) -> Vec<(String, DefinitionId, Type)> {
         vec![
             ("int32".into(), DefinitionId(0), self.primitives.int32),
@@ -220,8 +221,11 @@ impl<'a> TopLevelComposer<'a> {
 
                 let mut ret_vector: Vec<(String, DefinitionId, Type)> = vec![(class_name.clone(), DefinitionId(class_def_id), ty)];
                 // parse class def body and register class methods into the def list
-                // NOTE: module's symbol resolver would not know the name of the class methods, thus cannot return their definition_id? so we have to manage it ourselves? 
-                // or do we return the class method list of (method_name, def_id, type) to application to be used to build symbol resolver? <- current implementation
+                // NOTE: module's symbol resolver would not know the name of the class methods, 
+                // thus cannot return their definition_id? so we have to manage it ourselves? 
+                // or do we return the class method list of (method_name, def_id, type) to 
+                // application to be used to build symbol resolver? <- current implementation
+                // FIXME: better do not return and let symbol resolver to manage the mangled name
                 for b in body {
                     if let ast::StmtKind::FunctionDef {name, ..} = &b.node {
                         let fun_name = name_mangling(class_name.clone(), name);
@@ -243,18 +247,20 @@ impl<'a> TopLevelComposer<'a> {
                         );
                         ret_vector.push((fun_name, DefinitionId(def_id), ty));
                         
-                        if name == "__init__" { // if it is the contructor, special handling is needed. In the above handling, we still add __init__ function to the class method
+                        // if it is the contructor, special handling is needed. In the above
+                        // handling, we still add __init__ function to the class method
+                        if name == "__init__" {
                             self.definition_list.push(
                                 TopLevelDefInfo {
                                     def: TopLevelDef::Initializer {
-                                        class_id: DefinitionId(class_def_id) // FIXME: None if have no parameter, Some if same as __init__?
+                                        class_id: DefinitionId(class_def_id)
                                     },
                                     ty: self.primitives.none, // arbitary picked one
                                     ast: None, // it is inside the class def body statments
                                     resolver: Some(resolver)
                                 }
                             )
-                            // FIXME: should we return this to the symbol resolver?
+                            // FIXME: should we return this to the symbol resolver?, should be yes
                         }
                     } else {  } // else do nothing
                 }
@@ -415,7 +421,8 @@ impl<'a> TopLevelComposer<'a> {
                             }
                         }
 
-                        // ----------- class method and field are analyzed by looking into the class body ast node -----------
+                        // class method and field are analyzed by 
+                        // looking into the class body ast node
                         for stmt in body {
                             if let ast::StmtKind::FunctionDef {
                                     name,
