@@ -36,8 +36,127 @@ pub trait SymbolResolver {
     // handle function call etc.
 }
 
+// convert type annotation into type
+pub fn parse_type_annotation<T>(
+    resolver: &dyn SymbolResolver,
+    top_level: &TopLevelContext,
+    unifier: &mut Unifier,
+    primitives: &PrimitiveStore,
+    expr: &Expr<T>,
+) -> Result<Type, String> {
+    use rustpython_parser::ast::ExprKind::*;
+    match &expr.node {
+        Name { id, .. } => match id.as_str() {
+            "int32" => Ok(primitives.int32),
+            "int64" => Ok(primitives.int64),
+            "float" => Ok(primitives.float),
+            "bool" => Ok(primitives.bool),
+            "None" => Ok(primitives.none),
+            x => {
+                let obj_id = resolver.get_identifier_def(x);
+                if let Some(obj_id) = obj_id {
+                    let defs = top_level.definitions.read();
+                    let def = defs[obj_id.0].read();
+                    if let TopLevelDef::Class { fields, methods, type_vars, .. } = &*def {
+                        if !type_vars.is_empty() {
+                            return Err(format!(
+                                "Unexpected number of type parameters: expected {} but got 0",
+                                type_vars.len()
+                            ));
+                        }
+                        let fields = RefCell::new(
+                            chain(
+                                fields.iter().map(|(k, v)| (k.clone(), *v)),
+                                methods.iter().map(|(k, v, _)| (k.clone(), *v)),
+                            )
+                            .collect(),
+                        );
+                        Ok(unifier.add_ty(TypeEnum::TObj {
+                            obj_id,
+                            fields,
+                            params: Default::default(),
+                        }))
+                    } else {
+                        Err("Cannot use function name as type".into())
+                    }
+                } else {
+                    // it could be a type variable
+                    let ty = resolver
+                        .get_symbol_type(unifier, primitives, x)
+                        .ok_or_else(|| "Cannot use function name as type".to_owned())?;
+                    if let TypeEnum::TVar { .. } = &*unifier.get_ty(ty) {
+                        Ok(ty)
+                    } else {
+                        Err(format!("Unknown type annotation {}", x))
+                    }
+                }
+            }
+        },
+        Subscript { value, slice, .. } => {
+            if let Name { id, .. } = &value.node {
+                if id == "virtual" {
+                    let ty = parse_type_annotation(resolver, top_level, unifier, primitives, slice)?;
+                    Ok(unifier.add_ty(TypeEnum::TVirtual { ty }))
+                } else {
+                    let types = if let Tuple { elts, .. } = &slice.node {
+                        elts.iter()
+                            .map(|v| parse_type_annotation(resolver, top_level, unifier, primitives, v))
+                            .collect::<Result<Vec<_>, _>>()?
+                    } else {
+                        vec![parse_type_annotation(resolver, top_level, unifier, primitives, slice)?]
+                    };
+
+                    let obj_id = resolver
+                        .get_identifier_def(id)
+                        .ok_or_else(|| format!("Unknown type annotation {}", id))?;
+                    let defs = top_level.definitions.read();
+                    let def = defs[obj_id.0].read();
+                    if let TopLevelDef::Class { fields, methods, type_vars, .. } = &*def {
+                        if types.len() != type_vars.len() {
+                            return Err(format!(
+                                "Unexpected number of type parameters: expected {} but got {}",
+                                type_vars.len(),
+                                types.len()
+                            ));
+                        }
+                        let mut subst = HashMap::new();
+                        for (var, ty) in izip!(type_vars.iter(), types.iter()) {
+                            let id = if let TypeEnum::TVar { id, .. } = &*unifier.get_ty(*var) {
+                                *id
+                            } else {
+                                unreachable!()
+                            };
+                            subst.insert(id, *ty);
+                        }
+                        let mut fields = fields
+                            .iter()
+                            .map(|(attr, ty)| {
+                                let ty = unifier.subst(*ty, &subst).unwrap_or(*ty);
+                                (attr.clone(), ty)
+                            })
+                            .collect::<HashMap<_, _>>();
+                        fields.extend(methods.iter().map(|(attr, ty, _)| {
+                            let ty = unifier.subst(*ty, &subst).unwrap_or(*ty);
+                            (attr.clone(), ty)
+                        }));
+                        Ok(unifier.add_ty(TypeEnum::TObj {
+                            obj_id,
+                            fields: fields.into(),
+                            params: subst.into(),
+                        }))
+                    } else {
+                        Err("Cannot use function name as type".into())
+                    }
+                }
+            } else {
+                Err("unsupported type expression".into())
+            }
+        }
+        _ => Err("unsupported type expression".into()),
+    }
+}
+
 impl dyn SymbolResolver {
-    // convert type annotation into type
     pub fn parse_type_annotation<T>(
         &self,
         top_level: &TopLevelContext,
@@ -45,114 +164,18 @@ impl dyn SymbolResolver {
         primitives: &PrimitiveStore,
         expr: &Expr<T>,
     ) -> Result<Type, String> {
-        use rustpython_parser::ast::ExprKind::*;
-        match &expr.node {
-            Name { id, .. } => match id.as_str() {
-                "int32" => Ok(primitives.int32),
-                "int64" => Ok(primitives.int64),
-                "float" => Ok(primitives.float),
-                "bool" => Ok(primitives.bool),
-                "None" => Ok(primitives.none),
-                x => {
-                    let obj_id = self.get_identifier_def(x);
-                    if let Some(obj_id) = obj_id {
-                        let defs = top_level.definitions.read();
-                        let def = defs[obj_id.0].read();
-                        if let TopLevelDef::Class { fields, methods, type_vars, .. } = &*def {
-                            if !type_vars.is_empty() {
-                                return Err(format!(
-                                    "Unexpected number of type parameters: expected {} but got 0",
-                                    type_vars.len()
-                                ));
-                            }
-                            let fields = RefCell::new(
-                                chain(
-                                    fields.iter().map(|(k, v)| (k.clone(), *v)),
-                                    methods.iter().map(|(k, v, _)| (k.clone(), *v)),
-                                )
-                                .collect(),
-                            );
-                            Ok(unifier.add_ty(TypeEnum::TObj {
-                                obj_id,
-                                fields,
-                                params: Default::default(),
-                            }))
-                        } else {
-                            Err("Cannot use function name as type".into())
-                        }
-                    } else {
-                        // it could be a type variable
-                        let ty = self
-                            .get_symbol_type(unifier, primitives, x)
-                            .ok_or_else(|| "Cannot use function name as type".to_owned())?;
-                        if let TypeEnum::TVar { .. } = &*unifier.get_ty(ty) {
-                            Ok(ty)
-                        } else {
-                            Err(format!("Unknown type annotation {}", x))
-                        }
-                    }
-                }
-            },
-            Subscript { value, slice, .. } => {
-                if let Name { id, .. } = &value.node {
-                    if id == "virtual" {
-                        let ty =
-                            self.parse_type_annotation(top_level, unifier, primitives, slice)?;
-                        Ok(unifier.add_ty(TypeEnum::TVirtual { ty }))
-                    } else {
-                        let types = if let Tuple { elts, .. } = &slice.node {
-                            elts.iter()
-                                .map(|v| {
-                                    self.parse_type_annotation(top_level, unifier, primitives, v)
-                                })
-                                .collect::<Result<Vec<_>, _>>()?
-                        } else {
-                            vec![self.parse_type_annotation(top_level, unifier, primitives, slice)?]
-                        };
+        parse_type_annotation(self, top_level, unifier, primitives, expr)
+    }
+}
 
-                        let obj_id = self
-                            .get_identifier_def(id)
-                            .ok_or_else(|| format!("Unknown type annotation {}", id))?;
-                        let defs = top_level.definitions.read();
-                        let def = defs[obj_id.0].read();
-                        if let TopLevelDef::Class { fields, methods, type_vars, .. } = &*def {
-                            if types.len() != type_vars.len() {
-                                return Err(format!(
-                                    "Unexpected number of type parameters: expected {} but got {}",
-                                    type_vars.len(),
-                                    types.len()
-                                ));
-                            }
-                            let mut subst = HashMap::new();
-                            for (var, ty) in izip!(type_vars.iter(), types.iter()) {
-                                let id = if let TypeEnum::TVar { id, .. } = &*unifier.get_ty(*var) {
-                                    *id
-                                } else {
-                                    unreachable!()
-                                };
-                                subst.insert(id, *ty);
-                            }
-                            let mut fields = fields
-                                .iter()
-                                .map(|(attr, ty)| {
-                                    let ty = unifier.subst(*ty, &subst).unwrap_or(*ty);
-                                    (attr.clone(), ty)
-                                })
-                                .collect::<HashMap<_, _>>();
-                            fields.extend(methods.iter().map(|(attr, ty, _)| {
-                                let ty = unifier.subst(*ty, &subst).unwrap_or(*ty);
-                                (attr.clone(), ty)
-                            }));
-                            Ok(unifier.add_ty(TypeEnum::TObj { obj_id, fields: fields.into(), params: subst.into() }))
-                        } else {
-                            Err("Cannot use function name as type".into())
-                        }
-                    }
-                } else {
-                    Err("unsupported type expression".into())
-                }
-            }
-            _ => Err("unsupported type expression".into()),
-        }
+impl dyn SymbolResolver + Send {
+    pub fn parse_type_annotation<T>(
+        &self,
+        top_level: &TopLevelContext,
+        unifier: &mut Unifier,
+        primitives: &PrimitiveStore,
+        expr: &Expr<T>,
+    ) -> Result<Type, String> {
+        parse_type_annotation(self, top_level, unifier, primitives, expr)
     }
 }
