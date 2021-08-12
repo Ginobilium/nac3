@@ -59,27 +59,27 @@ impl TestEnvironment {
         let int32 = unifier.add_ty(TypeEnum::TObj {
             obj_id: DefinitionId(0),
             fields: HashMap::new().into(),
-            params: HashMap::new(),
+            params: HashMap::new().into(),
         });
         let int64 = unifier.add_ty(TypeEnum::TObj {
             obj_id: DefinitionId(1),
             fields: HashMap::new().into(),
-            params: HashMap::new(),
+            params: HashMap::new().into(),
         });
         let float = unifier.add_ty(TypeEnum::TObj {
             obj_id: DefinitionId(2),
             fields: HashMap::new().into(),
-            params: HashMap::new(),
+            params: HashMap::new().into(),
         });
         let bool = unifier.add_ty(TypeEnum::TObj {
             obj_id: DefinitionId(3),
             fields: HashMap::new().into(),
-            params: HashMap::new(),
+            params: HashMap::new().into(),
         });
         let none = unifier.add_ty(TypeEnum::TObj {
             obj_id: DefinitionId(4),
             fields: HashMap::new().into(),
-            params: HashMap::new(),
+            params: HashMap::new().into(),
         });
         let primitives = PrimitiveStore { int32, int64, float, bool, none };
         set_primitives_magic_methods(&primitives, &mut unifier);
