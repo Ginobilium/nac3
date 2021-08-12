@@ -28,8 +28,8 @@ impl SymbolResolver for Resolver {
         unimplemented!()
     }
 
-    fn get_identifier_def(&self, id: &str) -> DefinitionId {
-        self.id_to_def.get(id).cloned().unwrap()
+    fn get_identifier_def(&self, id: &str) -> Option<DefinitionId> {
+        self.id_to_def.get(id).cloned()
     }
 }
 
