@@ -19,7 +19,7 @@ impl<'ctx> CodeGenContext<'ctx> {
         let mut vars = obj
             .map(|ty| {
                 if let TypeEnum::TObj { params, .. } = &*self.unifier.get_ty(ty) {
-                    params.clone()
+                    params.borrow().clone()
                 } else {
                     unreachable!()
                 }

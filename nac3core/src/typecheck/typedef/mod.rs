@@ -68,7 +68,7 @@ pub enum TypeEnum {
     TObj {
         obj_id: DefinitionId,
         fields: RefCell<Mapping<String>>,
-        params: VarMap,
+        params: RefCell<VarMap>,
     },
     TVirtual {
         ty: Type,
@@ -216,6 +216,7 @@ impl Unifier {
                 }
             }
             TypeEnum::TObj { params, .. } => {
+                let params = params.borrow();
                 let (keys, params): (Vec<&u32>, Vec<&Type>) = params.iter().unzip();
                 let params = params
                     .into_iter()
@@ -253,7 +254,7 @@ impl Unifier {
             TList { ty } => self.is_concrete(*ty, allowed_typevars),
             TTuple { ty } => ty.iter().all(|ty| self.is_concrete(*ty, allowed_typevars)),
             TObj { params: vars, .. } => {
-                vars.values().all(|ty| self.is_concrete(*ty, allowed_typevars))
+                vars.borrow().values().all(|ty| self.is_concrete(*ty, allowed_typevars))
             }
             // functions are instantiated for each call sites, so the function type can contain
             // type variables.
@@ -437,7 +438,7 @@ impl Unifier {
                 if id1 != id2 {
                     return Err(format!("Cannot unify objects with ID {} and {}", id1.0, id2.0));
                 }
-                for (x, y) in zip(params1.values(), params2.values()) {
+                for (x, y) in zip(params1.borrow().values(), params2.borrow().values()) {
                     self.unify(*x, *y)?;
                 }
                 self.set_a_to_b(a, b);
@@ -573,6 +574,7 @@ impl Unifier {
             }
             TypeEnum::TObj { obj_id, params, .. } => {
                 let name = obj_to_name(obj_id.0);
+                let params = params.borrow();
                 if !params.is_empty() {
                     let mut params =
                         params.values().map(|v| self.stringify(*v, obj_to_name, var_to_name));
@@ -679,6 +681,7 @@ impl Unifier {
                 // If the mapping does not contain any type variables in the
                 // parameter list, we don't need to substitute the fields.
                 // This is also used to prevent infinite substitution...
+                let params = params.borrow();
                 let need_subst = params.values().any(|v| {
                     let ty = self.unification_table.probe_value(*v);
                     if let TypeEnum::TVar { id, .. } = ty.as_ref() {
@@ -693,7 +696,7 @@ impl Unifier {
                     let fields = self
                         .subst_map(&fields.borrow(), mapping)
                         .unwrap_or_else(|| fields.borrow().clone());
-                    Some(self.add_ty(TypeEnum::TObj { obj_id, params, fields: fields.into() }))
+                    Some(self.add_ty(TypeEnum::TObj { obj_id, params: params.into(), fields: fields.into() }))
                 } else {
                     None
                 }
@@ -776,7 +779,7 @@ impl Unifier {
                 self.occur_check(a, *ty)?;
             }
             TypeEnum::TObj { params: map, .. } => {
-                for t in map.values() {
+                for t in map.borrow().values() {
                     self.occur_check(a, *t)?;
                 }
             }

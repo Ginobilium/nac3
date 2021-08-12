@@ -43,7 +43,7 @@ impl Unifier {
             (
                 TypeEnum::TObj { obj_id: id1, params: params1, .. },
                 TypeEnum::TObj { obj_id: id2, params: params2, .. },
-            ) => id1 == id2 && self.map_eq(params1, params2),
+            ) => id1 == id2 && self.map_eq(&params1.borrow(), &params2.borrow()),
             // TCall and TFunc are not yet implemented
             _ => false,
         }
@@ -80,7 +80,7 @@ impl TestEnvironment {
             unifier.add_ty(TypeEnum::TObj {
                 obj_id: DefinitionId(0),
                 fields: HashMap::new().into(),
-                params: HashMap::new(),
+                params: HashMap::new().into(),
             }),
         );
         type_mapping.insert(
@@ -88,7 +88,7 @@ impl TestEnvironment {
             unifier.add_ty(TypeEnum::TObj {
                 obj_id: DefinitionId(1),
                 fields: HashMap::new().into(),
-                params: HashMap::new(),
+                params: HashMap::new().into(),
             }),
         );
         type_mapping.insert(
@@ -96,7 +96,7 @@ impl TestEnvironment {
             unifier.add_ty(TypeEnum::TObj {
                 obj_id: DefinitionId(2),
                 fields: HashMap::new().into(),
-                params: HashMap::new(),
+                params: HashMap::new().into(),
             }),
         );
         let (v0, id) = unifier.get_fresh_var();
@@ -105,7 +105,7 @@ impl TestEnvironment {
             unifier.add_ty(TypeEnum::TObj {
                 obj_id: DefinitionId(3),
                 fields: [("a".into(), v0)].iter().cloned().collect::<HashMap<_, _>>().into(),
-                params: [(id, v0)].iter().cloned().collect(),
+                params: [(id, v0)].iter().cloned().collect::<HashMap<_, _>>().into(),
             }),
         );
 
@@ -164,6 +164,7 @@ impl TestEnvironment {
                     let mut ty = *self.type_mapping.get(x).unwrap();
                     let te = self.unifier.get_ty(ty);
                     if let TypeEnum::TObj { params, .. } = &*te.as_ref() {
+                        let params = params.borrow();
                         if !params.is_empty() {
                             assert!(&s[0..1] == "[");
                             let mut p = Vec::new();
@@ -340,7 +341,7 @@ fn test_virtual() {
             .cloned()
             .collect::<HashMap<_, _>>()
             .into(),
-        params: HashMap::new(),
+        params: HashMap::new().into(),
     });
     let v0 = env.unifier.get_fresh_var().0;
     let v1 = env.unifier.get_fresh_var().0;

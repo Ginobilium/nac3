@@ -143,8 +143,7 @@ impl dyn SymbolResolver {
                                 let ty = unifier.subst(*ty, &subst).unwrap_or(*ty);
                                 (attr.clone(), ty)
                             }));
-                            let fields = RefCell::new(fields);
-                            Ok(unifier.add_ty(TypeEnum::TObj { obj_id, fields, params: subst }))
+                            Ok(unifier.add_ty(TypeEnum::TObj { obj_id, fields: fields.into(), params: subst.into() }))
                         } else {
                             Err("Cannot use function name as type".into())
                         }

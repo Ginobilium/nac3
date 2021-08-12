@@ -57,14 +57,8 @@ pub struct TopLevelContext {
     pub conetexts: Arc<RwLock<Vec<Mutex<Context>>>>,
 }
 
-pub fn name_mangling(mut class_name: String, method_name: &str) -> String {
-    // need to further extend to more name mangling like instantiations of typevar
-    class_name.push_str(method_name);
-    class_name
-}
-
-// like adding some info on top of the TopLevelDef for later parsing the class bases, method,
-// and function sigatures
+// like adding some info on top of the TopLevelDef for 
+// later parsing the class bases, method, and function sigatures
 pub struct TopLevelDefInfo {
     // the definition entry
     def: TopLevelDef,
@@ -82,37 +76,42 @@ pub struct TopLevelComposer {
     pub primitives: PrimitiveStore,
     // start as a primitive unifier, will add more top_level defs inside
     pub unifier: Unifier,
-    // class method to definition id
+    // mangled class method name to def_id
     pub class_method_to_def_id: HashMap<String, DefinitionId>,
 }
 
 impl TopLevelComposer {
+    fn name_mangling(mut class_name: String, method_name: &str) -> String {
+        class_name.push_str(method_name);
+        class_name
+    }
+
     pub fn make_primitives() -> (PrimitiveStore, Unifier) {
         let mut unifier = Unifier::new();
         let int32 = unifier.add_ty(TypeEnum::TObj {
             obj_id: DefinitionId(0),
             fields: HashMap::new().into(),
-            params: HashMap::new(),
+            params: HashMap::new().into(),
         });
         let int64 = unifier.add_ty(TypeEnum::TObj {
             obj_id: DefinitionId(1),
             fields: HashMap::new().into(),
-            params: HashMap::new(),
+            params: HashMap::new().into(),
         });
         let float = unifier.add_ty(TypeEnum::TObj {
             obj_id: DefinitionId(2),
             fields: HashMap::new().into(),
-            params: HashMap::new(),
+            params: HashMap::new().into(),
         });
         let bool = unifier.add_ty(TypeEnum::TObj {
             obj_id: DefinitionId(3),
             fields: HashMap::new().into(),
-            params: HashMap::new(),
+            params: HashMap::new().into(),
         });
         let none = unifier.add_ty(TypeEnum::TObj {
             obj_id: DefinitionId(4),
             fields: HashMap::new().into(),
-            params: HashMap::new(),
+            params: HashMap::new().into(),
         });
         let primitives = PrimitiveStore { int32, int64, float, bool, none };
         crate::typecheck::magic_methods::set_primitives_magic_methods(&primitives, &mut unifier);
@@ -212,6 +211,14 @@ impl TopLevelComposer {
                     fields: Default::default(),
                     params: Default::default(),
                 });
+
+                // add the class to the definition list
+                def_list.push(TopLevelDefInfo {
+                    def: Self::make_top_level_class_def(class_def_id, resolver.clone()),
+                    // NOTE: Temporarily none here since function body need to be read later
+                    ast: None,
+                    ty,
+                });
                 
                 // parse class def body and register class methods into the def list
                 // module's symbol resolver would not know the name of the class methods,
@@ -219,7 +226,7 @@ impl TopLevelComposer {
                 // by using the field `class_method_to_def_id`
                 for b in body {
                     if let ast::StmtKind::FunctionDef { name, .. } = &b.node {
-                        let fun_name = name_mangling(class_name.clone(), name);
+                        let fun_name = Self::name_mangling(class_name.clone(), name);
                         let def_id = def_list.len();
                         
                         // add to unifier
@@ -240,19 +247,14 @@ impl TopLevelComposer {
                         });
 
                         // class method, do not let the symbol manager manage it, use our own map
-                        // FIXME: maybe not do name magling, use map to map instead
-                        self.class_method_to_def_id.insert(
-                            fun_name, 
-                            DefinitionId(def_id)
-                        );
+                        self.class_method_to_def_id.insert(fun_name, DefinitionId(def_id));
 
                         // if it is the contructor, special handling is needed. In the above
                         // handling, we still add __init__ function to the class method
                         if name == "__init__" {
+                            // FIXME: how can this later be fetched?
                             def_list.push(TopLevelDefInfo {
-                                def: TopLevelDef::Initializer {
-                                    class_id: DefinitionId(class_def_id),
-                                },
+                                def: TopLevelDef::Initializer { class_id: DefinitionId(class_def_id) },
                                 // arbitary picked one for the constructor
                                 ty: self.primitives.none,
                                 // it is inside the class def body statments, so None
@@ -262,13 +264,10 @@ impl TopLevelComposer {
                     }
                 }
 
-                // add the class to the definition list
-                def_list.push(TopLevelDefInfo {
-                    def: Self::make_top_level_class_def(class_def_id, resolver),
-                    ast: Some(ast),
-                    ty,
-                });
-
+                // move the ast to the entry of the class in the def_list
+                def_list.get_mut(class_def_id).unwrap().ast = Some(ast);
+                
+                // return
                 Ok((class_name, DefinitionId(class_def_id), ty))
             },
 
@@ -313,28 +312,28 @@ impl TopLevelComposer {
                         ..
                     } => {
                         // get the mutable reference of the entry in the definition list, get the `TopLevelDef`
-                        let (_,
+                        let (
                             ancestors,
                             fields,
                             methods,
                             type_vars,
                             resolver,
                         ) = if let TopLevelDef::Class {
-                            object_id,
+                            object_id: _,
                             ancestors,
                             fields,
                             methods,
                             type_vars,
                             resolver: Some(resolver)
                         } = &mut d.def {
-                            (object_id, ancestors, fields, methods, type_vars, resolver.lock())
+                            (ancestors, fields, methods, type_vars, resolver.lock())
                         } else { unreachable!() };
 
                         // try to get mutable reference of the entry in the unification table, get the `TypeEnum`
                         let (params,
                             fields
                         ) = if let TypeEnum::TObj {
-                            // FIXME: this params is immutable, even if this is mutable, what 
+                            // FIXME: this params is immutable, and what 
                             // should the key be, get the original typevar's var_id?
                             params,
                             fields,
