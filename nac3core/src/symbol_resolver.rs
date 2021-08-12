@@ -95,15 +95,20 @@ pub fn parse_type_annotation<T>(
         Subscript { value, slice, .. } => {
             if let Name { id, .. } = &value.node {
                 if id == "virtual" {
-                    let ty = parse_type_annotation(resolver, top_level, unifier, primitives, slice)?;
+                    let ty =
+                        parse_type_annotation(resolver, top_level, unifier, primitives, slice)?;
                     Ok(unifier.add_ty(TypeEnum::TVirtual { ty }))
                 } else {
                     let types = if let Tuple { elts, .. } = &slice.node {
                         elts.iter()
-                            .map(|v| parse_type_annotation(resolver, top_level, unifier, primitives, v))
+                            .map(|v| {
+                                parse_type_annotation(resolver, top_level, unifier, primitives, v)
+                            })
                             .collect::<Result<Vec<_>, _>>()?
                     } else {
-                        vec![parse_type_annotation(resolver, top_level, unifier, primitives, slice)?]
+                        vec![parse_type_annotation(
+                            resolver, top_level, unifier, primitives, slice,
+                        )?]
                     };
 
                     let obj_id = resolver

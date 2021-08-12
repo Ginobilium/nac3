@@ -62,44 +62,53 @@ fn get_llvm_type<'ctx>(
     use TypeEnum::*;
     // we assume the type cache should already contain primitive types,
     // and they should be passed by value instead of passing as pointer.
-    type_cache.get(&unifier.get_representative(ty)).cloned().unwrap_or_else(|| match &*unifier.get_ty(ty) {
-        TObj { obj_id, fields, .. } => {
-            // a struct with fields in the order of declaration
-            let defs = top_level.definitions.read();
-            let definition = defs.get(obj_id.0).unwrap();
-            let ty = if let TopLevelDef::Class { fields: fields_list, .. } = &*definition.read() {
-                let fields = fields.borrow();
-                let fields = fields_list
+    type_cache.get(&unifier.get_representative(ty)).cloned().unwrap_or_else(|| {
+        match &*unifier.get_ty(ty) {
+            TObj { obj_id, fields, .. } => {
+                // a struct with fields in the order of declaration
+                let defs = top_level.definitions.read();
+                let definition = defs.get(obj_id.0).unwrap();
+                let ty = if let TopLevelDef::Class { fields: fields_list, .. } = &*definition.read()
+                {
+                    let fields = fields.borrow();
+                    let fields = fields_list
+                        .iter()
+                        .map(|f| get_llvm_type(ctx, unifier, top_level, type_cache, fields[&f.0]))
+                        .collect_vec();
+                    ctx.struct_type(&fields, false).ptr_type(AddressSpace::Generic).into()
+                } else {
+                    unreachable!()
+                };
+                ty
+            }
+            TTuple { ty } => {
+                // a struct with fields in the order present in the tuple
+                let fields = ty
                     .iter()
-                    .map(|f| get_llvm_type(ctx, unifier, top_level, type_cache, fields[&f.0]))
+                    .map(|ty| get_llvm_type(ctx, unifier, top_level, type_cache, *ty))
                     .collect_vec();
                 ctx.struct_type(&fields, false).ptr_type(AddressSpace::Generic).into()
-            } else {
-                unreachable!()
-            };
-            ty
+            }
+            TList { ty } => {
+                // a struct with an integer and a pointer to an array
+                let element_type = get_llvm_type(ctx, unifier, top_level, type_cache, *ty);
+                let fields =
+                    [ctx.i32_type().into(), element_type.ptr_type(AddressSpace::Generic).into()];
+                ctx.struct_type(&fields, false).ptr_type(AddressSpace::Generic).into()
+            }
+            TVirtual { .. } => unimplemented!(),
+            _ => unreachable!(),
         }
-        TTuple { ty } => {
-            // a struct with fields in the order present in the tuple
-            let fields = ty
-                .iter()
-                .map(|ty| get_llvm_type(ctx, unifier, top_level, type_cache, *ty))
-                .collect_vec();
-            ctx.struct_type(&fields, false).ptr_type(AddressSpace::Generic).into()
-        }
-        TList { ty } => {
-            // a struct with an integer and a pointer to an array
-            let element_type = get_llvm_type(ctx, unifier, top_level, type_cache, *ty);
-            let fields =
-                [ctx.i32_type().into(), element_type.ptr_type(AddressSpace::Generic).into()];
-            ctx.struct_type(&fields, false).ptr_type(AddressSpace::Generic).into()
-        }
-        TVirtual { .. } => unimplemented!(),
-        _ => unreachable!(),
     })
 }
 
-pub fn gen_func<'ctx>(context: &'ctx Context, builder: Builder<'ctx>, module: Module<'ctx>, task: CodeGenTask, top_level_ctx: Arc<TopLevelContext>) -> Module<'ctx> {
+pub fn gen_func<'ctx>(
+    context: &'ctx Context,
+    builder: Builder<'ctx>,
+    module: Module<'ctx>,
+    task: CodeGenTask,
+    top_level_ctx: Arc<TopLevelContext>,
+) -> Module<'ctx> {
     // unwrap_or(0) is for unit tests without using rayon
     let (mut unifier, primitives) = {
         let unifiers = top_level_ctx.unifiers.read();

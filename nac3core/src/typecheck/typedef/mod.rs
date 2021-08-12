@@ -696,7 +696,11 @@ impl Unifier {
                     let fields = self
                         .subst_map(&fields.borrow(), mapping)
                         .unwrap_or_else(|| fields.borrow().clone());
-                    Some(self.add_ty(TypeEnum::TObj { obj_id, params: params.into(), fields: fields.into() }))
+                    Some(self.add_ty(TypeEnum::TObj {
+                        obj_id,
+                        params: params.into(),
+                        fields: fields.into(),
+                    }))
                 } else {
                     None
                 }
