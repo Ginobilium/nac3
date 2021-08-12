@@ -3,7 +3,7 @@ use crate::typecheck::typedef::Type;
 use inkwell::values::{BasicValue, BasicValueEnum, PointerValue};
 use rustpython_parser::ast::{Expr, ExprKind, Stmt, StmtKind};
 
-impl<'ctx> CodeGenContext<'ctx> {
+impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
     fn gen_var(&mut self, ty: Type) -> PointerValue<'ctx> {
         // put the alloca in init block
         let current = self.builder.get_insert_block().unwrap();

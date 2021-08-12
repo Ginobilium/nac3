@@ -14,7 +14,7 @@ use inkwell::{
 use itertools::{chain, izip, zip, Itertools};
 use rustpython_parser::ast::{self, Boolop, Constant, Expr, ExprKind, Operator};
 
-impl<'ctx> CodeGenContext<'ctx> {
+impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
     fn get_subst_key(&mut self, obj: Option<Type>, fun: &FunSignature) -> String {
         let mut vars = obj
             .map(|ty| {

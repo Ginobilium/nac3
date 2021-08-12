@@ -16,21 +16,23 @@ use inkwell::{
     AddressSpace,
 };
 use itertools::Itertools;
-use rayon::current_thread_index;
-use rustpython_parser::ast::{Stmt, StmtKind};
+use rustpython_parser::ast::Stmt;
 use std::collections::HashMap;
 use std::sync::Arc;
 
 mod expr;
 mod stmt;
 
-pub struct CodeGenContext<'ctx> {
+#[cfg(test)]
+mod test;
+
+pub struct CodeGenContext<'ctx, 'a> {
     pub ctx: &'ctx Context,
     pub builder: Builder<'ctx>,
     pub module: Module<'ctx>,
-    pub top_level: &'ctx TopLevelContext,
+    pub top_level: &'a TopLevelContext,
     pub unifier: Unifier,
-    pub resolver: Box<dyn SymbolResolver>,
+    pub resolver: Arc<dyn SymbolResolver>,
     pub var_assignment: HashMap<String, PointerValue<'ctx>>,
     pub type_cache: HashMap<Type, BasicTypeEnum<'ctx>>,
     pub primitives: PrimitiveStore,
@@ -45,9 +47,9 @@ pub struct CodeGenTask {
     pub subst: Vec<(Type, Type)>,
     pub symbol_name: String,
     pub signature: FunSignature,
-    pub body: Stmt<Option<Type>>,
+    pub body: Vec<Stmt<Option<Type>>>,
     pub unifier_index: usize,
-    pub resolver: Box<dyn SymbolResolver>,
+    pub resolver: Arc<dyn SymbolResolver>,
 }
 
 fn get_llvm_type<'ctx>(
@@ -60,7 +62,7 @@ fn get_llvm_type<'ctx>(
     use TypeEnum::*;
     // we assume the type cache should already contain primitive types,
     // and they should be passed by value instead of passing as pointer.
-    type_cache.get(&ty).cloned().unwrap_or_else(|| match &*unifier.get_ty(ty) {
+    type_cache.get(&unifier.get_representative(ty)).cloned().unwrap_or_else(|| match &*unifier.get_ty(ty) {
         TObj { obj_id, fields, .. } => {
             // a struct with fields in the order of declaration
             let defs = top_level.definitions.read();
@@ -97,16 +99,13 @@ fn get_llvm_type<'ctx>(
     })
 }
 
-pub fn gen_func(task: CodeGenTask, top_level_ctx: Arc<TopLevelContext>) {
+pub fn gen_func<'ctx>(context: &'ctx Context, builder: Builder<'ctx>, module: Module<'ctx>, task: CodeGenTask, top_level_ctx: Arc<TopLevelContext>) -> Module<'ctx> {
     // unwrap_or(0) is for unit tests without using rayon
-    let thread_id = current_thread_index().unwrap_or(0);
     let (mut unifier, primitives) = {
         let unifiers = top_level_ctx.unifiers.read();
         let (unifier, primitives) = &unifiers[task.unifier_index];
         (Unifier::from_shared_unifier(unifier), *primitives)
     };
-    let contexts = top_level_ctx.conetexts.read();
-    let context = contexts[thread_id].lock();
 
     for (a, b) in task.subst.iter() {
         // this should be unification between variables and concrete types
@@ -124,10 +123,10 @@ pub fn gen_func(task: CodeGenTask, top_level_ctx: Arc<TopLevelContext>) {
     };
 
     let mut type_cache: HashMap<_, _> = [
-        (primitives.int32, context.i32_type().into()),
-        (primitives.int64, context.i64_type().into()),
-        (primitives.float, context.f64_type().into()),
-        (primitives.bool, context.bool_type().into()),
+        (unifier.get_representative(primitives.int32), context.i32_type().into()),
+        (unifier.get_representative(primitives.int64), context.i64_type().into()),
+        (unifier.get_representative(primitives.float), context.f64_type().into()),
+        (unifier.get_representative(primitives.bool), context.bool_type().into()),
     ]
     .iter()
     .cloned()
@@ -155,8 +154,6 @@ pub fn gen_func(task: CodeGenTask, top_level_ctx: Arc<TopLevelContext>) {
         .fn_type(&params, false)
     };
 
-    let builder = context.create_builder();
-    let module = context.create_module(&task.symbol_name);
     let fn_val = module.add_function(&task.symbol_name, fn_type, None);
     let init_bb = context.append_basic_block(fn_val, "init");
     builder.position_at_end(init_bb);
@@ -189,9 +186,9 @@ pub fn gen_func(task: CodeGenTask, top_level_ctx: Arc<TopLevelContext>) {
         unifier,
     };
 
-    if let StmtKind::FunctionDef { body, .. } = &task.body.node {
-        for stmt in body.iter() {
-            code_gen_context.gen_stmt(stmt);
-        }
+    for stmt in task.body.iter() {
+        code_gen_context.gen_stmt(stmt);
     }
+
+    code_gen_context.module
 }
