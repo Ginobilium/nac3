@@ -333,8 +333,6 @@ impl TopLevelComposer {
                         let (params,
                             fields
                         ) = if let TypeEnum::TObj {
-                            // FIXME: this params is immutable, and what 
-                            // should the key be, get the original typevar's var_id?
                             params,
                             fields,
                             ..
@@ -359,7 +357,7 @@ impl TopLevelComposer {
                                         // `class Foo(Generic[T, V, P]):`
                                         ast::ExprKind::Tuple {elts, ..} => {
                                             for e in elts {
-                                                // resolver.parse_type_annotation(self.definition_list.) // FIXME:
+                                                // let ty_def_id = resolver.
                                             }
                                         },
 
@@ -367,9 +365,6 @@ impl TopLevelComposer {
                                         ast::ExprKind::Name {id, ..} => {
                                             // the def_list
                                             // type_vars.push(resolver.get_symbol_type(id).ok_or_else(|| "unknown type variable".to_string())?); FIXME:
-
-                                            // the TypeEnum of the class
-                                            // FIXME: the `params` destructed above is not mutable, even if this is mutable, what should the key be?
                                             unimplemented!()
                                         },
 
