@@ -119,8 +119,8 @@ impl TopLevelComposer {
         (primitives, unifier)
     }
 
-    // return a composer and things to make a "primitive" symbol resolver, so that the symbol 
-    // resolver can later figure out primitive type definitions when passed a primitive type name
+    /// return a composer and things to make a "primitive" symbol resolver, so that the symbol 
+    /// resolver can later figure out primitive type definitions when passed a primitive type name
     pub fn new() -> (Vec<(String, DefinitionId, Type)>, Self) {
         let primitives = Self::make_primitives();
         // the def list including the entries of primitive info
@@ -199,11 +199,11 @@ impl TopLevelComposer {
         &mut self,
         ast: ast::Stmt<()>,
         resolver: Option<Arc<Mutex<dyn SymbolResolver + Send>>>,
-    ) -> Result<Vec<(String, DefinitionId, Type)>, String> {
+    ) -> Result<(String, DefinitionId, Type), String> {
         match &ast.node {
             ast::StmtKind::ClassDef { name, body, .. } => {
                 let class_name = name.to_string();
-                let def_list = self.definition_list.write();
+                let mut def_list = self.definition_list.write();
                 let class_def_id = def_list.len();
 
                 // add the class to the unifier
@@ -212,19 +212,16 @@ impl TopLevelComposer {
                     fields: Default::default(),
                     params: Default::default(),
                 });
-
-                let mut ret_vector: Vec<(String, DefinitionId, Type)> =
-                    vec![(class_name.clone(), DefinitionId(class_def_id), ty)];
+                
                 // parse class def body and register class methods into the def list
-                // NOTE: module's symbol resolver would not know the name of the class methods,
-                // thus cannot return their definition_id? so we have to manage it ourselves?
-                // or do we return the class method list of (method_name, def_id, type) to
-                // application to be used to build symbol resolver? <- current implementation
-                // FIXME: better do not return and let symbol resolver to manage the mangled name
+                // module's symbol resolver would not know the name of the class methods,
+                // thus cannot return their definition_id? so we have to manage it ourselves
+                // by using the field `class_method_to_def_id`
                 for b in body {
                     if let ast::StmtKind::FunctionDef { name, .. } = &b.node {
                         let fun_name = name_mangling(class_name.clone(), name);
-                        let def_id = self.definition_list.len();
+                        let def_id = def_list.len();
+                        
                         // add to unifier
                         let ty = self.unifier.add_ty(TypeEnum::TFunc(
                             crate::typecheck::typedef::FunSignature {
@@ -233,51 +230,61 @@ impl TopLevelComposer {
                                 vars: Default::default(),
                             },
                         ));
+
                         // add to the definition list
-                        self.definition_list.push(TopLevelDefInfo {
-                            def: Self::make_top_level_function_def(fun_name.clone(), ty, None), // FIXME:
+                        def_list.push(TopLevelDefInfo {
+                            def: Self::make_top_level_function_def(fun_name.clone(), ty, resolver.clone()),
                             ty,
-                            ast: None, // since it is inside the class def body statments
+                            // since it is inside the class def body statments, the ast is None
+                            ast: None,
                         });
-                        ret_vector.push((fun_name, DefinitionId(def_id), ty));
+
+                        // class method, do not let the symbol manager manage it, use our own map
+                        // FIXME: maybe not do name magling, use map to map instead
+                        self.class_method_to_def_id.insert(
+                            fun_name, 
+                            DefinitionId(def_id)
+                        );
 
                         // if it is the contructor, special handling is needed. In the above
                         // handling, we still add __init__ function to the class method
                         if name == "__init__" {
-                            self.definition_list.push(TopLevelDefInfo {
+                            def_list.push(TopLevelDefInfo {
                                 def: TopLevelDef::Initializer {
                                     class_id: DefinitionId(class_def_id),
                                 },
-                                ty: self.primitives.none, // arbitary picked one
-                                ast: None, // it is inside the class def body statments
+                                // arbitary picked one for the constructor
+                                ty: self.primitives.none,
+                                // it is inside the class def body statments, so None
+                                ast: None,
                             })
-                            // FIXME: should we return this to the symbol resolver?, should be yes
                         }
                     }
                 }
 
                 // add the class to the definition list
-                self.definition_list.push(TopLevelDefInfo {
+                def_list.push(TopLevelDefInfo {
                     def: Self::make_top_level_class_def(class_def_id, resolver),
                     ast: Some(ast),
                     ty,
                 });
 
-                Ok(ret_vector)
-            }
+                Ok((class_name, DefinitionId(class_def_id), ty))
+            },
 
             ast::StmtKind::FunctionDef { name, .. } => {
                 let fun_name = name.to_string();
-                let def_id = self.definition_list.len();
+                
                 // add to the unifier
-                let ty =
-                    self.unifier.add_ty(TypeEnum::TFunc(crate::typecheck::typedef::FunSignature {
-                        args: Default::default(),
-                        ret: self.primitives.none,
-                        vars: Default::default(),
-                    }));
+                let ty = self.unifier.add_ty(TypeEnum::TFunc(crate::typecheck::typedef::FunSignature {
+                    args: Default::default(),
+                    ret: self.primitives.none,
+                    vars: Default::default(),
+                }));
+                    
                 // add to the definition list
-                self.definition_list.push(TopLevelDefInfo {
+                let mut def_list = self.definition_list.write();
+                def_list.push(TopLevelDefInfo {
                     def: Self::make_top_level_function_def(
                         name.into(),
                         self.primitives.none,
@@ -287,7 +294,7 @@ impl TopLevelComposer {
                     ty,
                 });
 
-                Ok(vec![(fun_name, DefinitionId(def_id), ty)])
+                Ok((fun_name, DefinitionId(def_list.len() - 1), ty))
             }
 
             _ => Err("only registrations of top level classes/functions are supprted".into()),
@@ -296,7 +303,8 @@ impl TopLevelComposer {
 
     /// this should be called after all top level classes are registered, and will actually fill in those fields of the previous dummy one
     pub fn analyze_top_level(&mut self) -> Result<(), String> {
-        for mut d in &mut self.definition_list {
+        for d in self.definition_list.write().iter_mut() {
+            // only analyze those with ast, and class_method(ast in class def)
             if let Some(ast) = &d.ast {
                 match &ast.node {
                     ast::StmtKind::ClassDef {
@@ -310,23 +318,25 @@ impl TopLevelComposer {
                             fields,
                             methods,
                             type_vars,
-                            // resolver,
+                            resolver,
                         ) = if let TopLevelDef::Class {
                             object_id,
                             ancestors,
                             fields,
                             methods,
                             type_vars,
-                            resolver
+                            resolver: Some(resolver)
                         } = &mut d.def {
-                            (object_id, ancestors, fields, methods, type_vars) // FIXME: this unwrap is not safe
+                            (object_id, ancestors, fields, methods, type_vars, resolver.lock())
                         } else { unreachable!() };
 
                         // try to get mutable reference of the entry in the unification table, get the `TypeEnum`
                         let (params,
                             fields
                         ) = if let TypeEnum::TObj {
-                            params, // FIXME: this params is immutable, even if this is mutable, what should the key be, get the original typevar's var_id?
+                            // FIXME: this params is immutable, even if this is mutable, what 
+                            // should the key be, get the original typevar's var_id?
+                            params,
                             fields,
                             ..
                         } = self.unifier.get_ty(d.ty).borrow() {
@@ -337,7 +347,9 @@ impl TopLevelComposer {
                         // into the `bases` ast node
                         for b in bases {
                             match &b.node {
-                                // typevars bounded to the class, things like `class A(Generic[T, V, ImportedModule.T])`
+                                // typevars bounded to the class, only support things like `class A(Generic[T, V])`, 
+                                // things like `class A(Generic[T, V, ImportedModule.T])` is not supported
+                                // i.e. only simple names are allowed in the subscript
                                 // should update the TopLevelDef::Class.typevars and the TypeEnum::TObj.params
                                 ast::ExprKind::Subscript {value, slice, ..} if {
                                     if let ast::ExprKind::Name {id, ..} = &value.node {
@@ -345,22 +357,10 @@ impl TopLevelComposer {
                                     } else { false }
                                 } => {
                                     match &slice.node {
-                                        // `class Foo(Generic[T, V, P, ImportedModule.T]):`
+                                        // `class Foo(Generic[T, V, P]):`
                                         ast::ExprKind::Tuple {elts, ..} => {
                                             for e in elts {
-                                                // TODO: I'd better parse the node to get the Type of the type vars(can have things like: A.B.C.typevar?)
-                                                match &e.node {
-                                                    ast::ExprKind::Name {id, ..} => {
-                                                        // the def_list
-                                                        // type_vars.push(resolver.get_symbol_type(id).ok_or_else(|| "unknown type variable".to_string())?); FIXME:
-
-                                                        // the TypeEnum of the class
-                                                        // FIXME: the `params` destructed above is not mutable, even if this is mutable, what should the key be?
-                                                        unimplemented!()
-                                                    },
-
-                                                    _ => unimplemented!()
-                                                }
+                                                // resolver.parse_type_annotation(self.definition_list.) // FIXME:
                                             }
                                         },
 
@@ -374,17 +374,11 @@ impl TopLevelComposer {
                                             unimplemented!()
                                         },
 
-                                        // `class Foo(Generic[ImportedModule.T])`
-                                        ast::ExprKind::Attribute {value, attr, ..} => {
-                                            // TODO:
-                                            unimplemented!()
-                                        },
-
-                                        _ => return Err("not supported".into()) // NOTE: it is really all the supported cases?
+                                        _ => return Err("not supported, only simple names are allowed in the subscript".into())
                                     };
                                 },
 
-                                // base class, name directly available inside the
+                                /* // base class, name directly available inside the
                                 // module, can use this module's symbol resolver
                                 ast::ExprKind::Name {id, ..} => {
                                     // let def_id = resolver.get_identifier_def(id); FIXME:
@@ -407,7 +401,9 @@ impl TopLevelComposer {
                                 // `class Foo(ImportedModule.A[int, bool])`, A is a class with associated type variables
                                 ast::ExprKind::Subscript {value, slice, ..} => {
                                     unimplemented!()
-                                },
+                                }, */
+                                
+                                // base class is possible in other cases, we parse for thr base class
                                 _ => return Err("not supported".into())
                             }
                         }
@@ -444,7 +440,9 @@ impl TopLevelComposer {
                         unimplemented!()
                     }
 
-                    _ => return Err("only expect function and class definitions to be submitted here to be analyzed".into())
+                    node => {
+                        return Err("only expect function and class definitions to be submitted here to be analyzed".into())
+                    }
                 }
             }
         }
