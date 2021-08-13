@@ -1,5 +1,6 @@
-use super::{gen_func, CodeGenTask};
+use super::{CodeGenTask, WorkerRegistry};
 use crate::{
+    codegen::WithCall,
     location::Location,
     symbol_resolver::{SymbolResolver, SymbolValue},
     top_level::{DefinitionId, TopLevelContext},
@@ -10,7 +11,6 @@ use crate::{
     },
 };
 use indoc::indoc;
-use inkwell::context::Context;
 use parking_lot::RwLock;
 use rustpython_parser::{ast::fold::Fold, parser::parse_program};
 use std::collections::HashMap;
@@ -109,7 +109,7 @@ impl TestEnvironment {
             top_level: TopLevelContext {
                 definitions: Default::default(),
                 unifiers: Default::default(),
-                conetexts: Default::default(),
+                // conetexts: Default::default(),
             },
             function_data: FunctionData {
                 resolver,
@@ -140,10 +140,7 @@ impl TestEnvironment {
 #[test]
 fn test_primitives() {
     let mut env = TestEnvironment::basic_test_env();
-    let context = Context::create();
-    let module = context.create_module("test");
-    let builder = context.create_builder();
-
+    let threads = ["test"];
     let signature = FunSignature {
         args: vec![
             FuncArg { name: "a".to_string(), ty: env.primitives.int32, default_value: None },
@@ -170,9 +167,8 @@ fn test_primitives() {
     let top_level = Arc::new(TopLevelContext {
         definitions: Default::default(),
         unifiers: Arc::new(RwLock::new(vec![(env.unifier.get_shared_unifier(), env.primitives)])),
-        conetexts: Default::default(),
+        // conetexts: Default::default(),
     });
-
     let task = CodeGenTask {
         subst: Default::default(),
         symbol_name: "testing".to_string(),
@@ -182,65 +178,66 @@ fn test_primitives() {
         signature,
     };
 
-    let module = gen_func(&context, builder, module, task, top_level);
-    // the following IR is equivalent to
-    // ```
-    // ; ModuleID = 'test.ll'
-    // source_filename = "test"
-    //
-    // ; Function Attrs: norecurse nounwind readnone
-    // define i32 @testing(i32 %0, i32 %1) local_unnamed_addr #0 {
-    // init:
-    //   %add = add i32 %1, %0
-    //   %cmp = icmp eq i32 %add, 1
-    //   %ifexpr = select i1 %cmp, i32 %0, i32 0
-    //   ret i32 %ifexpr
-    // }
-    //
-    // attributes #0 = { norecurse nounwind readnone }
-    // ```
-    // after O2 optimization
+    let f = Arc::new(WithCall::new(Box::new(|module| {
+        // the following IR is equivalent to
+        // ```
+        // ; ModuleID = 'test.ll'
+        // source_filename = "test"
+        //
+        // ; Function Attrs: norecurse nounwind readnone
+        // define i32 @testing(i32 %0, i32 %1) local_unnamed_addr #0 {
+        // init:
+        //   %add = add i32 %1, %0
+        //   %cmp = icmp eq i32 %add, 1
+        //   %ifexpr = select i1 %cmp, i32 %0, i32 0
+        //   ret i32 %ifexpr
+        // }
+        //
+        // attributes #0 = { norecurse nounwind readnone }
+        // ```
+        // after O2 optimization
 
-    let expected = indoc! {"
-        ; ModuleID = 'test'
-        source_filename = \"test\"
+        let expected = indoc! {"
+           ; ModuleID = 'test'
+           source_filename = \"test\"
 
-        define i32 @testing(i32 %0, i32 %1) {
-        init:
-          %a = alloca i32
-          store i32 %0, i32* %a
-          %b = alloca i32
-          store i32 %1, i32* %b
-          %tmp = alloca i32
-          %tmp4 = alloca i32
-          br label %body
+           define i32 @testing(i32 %0, i32 %1) {
+           init:
+             %a = alloca i32
+             store i32 %0, i32* %a
+             %b = alloca i32
+             store i32 %1, i32* %b
+             %tmp = alloca i32
+             %tmp4 = alloca i32
+             br label %body
 
-        body:                                             ; preds = %init
-          %load = load i32, i32* %a
-          %load1 = load i32, i32* %b
-          %add = add i32 %load, %load1
-          store i32 %add, i32* %tmp
-          %load2 = load i32, i32* %tmp
-          %cmp = icmp eq i32 %load2, 1
-          br i1 %cmp, label %then, label %else
+           body:                                             ; preds = %init
+             %load = load i32, i32* %a
+             %load1 = load i32, i32* %b
+             %add = add i32 %load, %load1
+             store i32 %add, i32* %tmp
+             %load2 = load i32, i32* %tmp
+             %cmp = icmp eq i32 %load2, 1
+             br i1 %cmp, label %then, label %else
 
-        then:                                             ; preds = %body
-          %load3 = load i32, i32* %a
-          br label %cont
+           then:                                             ; preds = %body
+             %load3 = load i32, i32* %a
+             br label %cont
 
-        else:                                             ; preds = %body
-          br label %cont
+           else:                                             ; preds = %body
+             br label %cont
 
-        cont:                                             ; preds = %else, %then
-          %ifexpr = phi i32 [ %load3, %then ], [ 0, %else ]
-          store i32 %ifexpr, i32* %tmp4
-          %load5 = load i32, i32* %tmp4
-          ret i32 %load5
-        }
-    "}
-    .trim();
-    let ir = module.1.print_to_string().to_string();
-    println!("src:\n{}", source);
-    println!("IR:\n{}", ir);
-    assert_eq!(expected, ir.trim());
+           cont:                                             ; preds = %else, %then
+             %ifexpr = phi i32 [ %load3, %then ], [ 0, %else ]
+             store i32 %ifexpr, i32* %tmp4
+             %load5 = load i32, i32* %tmp4
+             ret i32 %load5
+           }
+       "}
+        .trim();
+        assert_eq!(expected, module.print_to_string().to_str().unwrap().trim());
+    })));
+    let registry = WorkerRegistry::create_workers(&threads, top_level, f);
+    registry.add_task(task);
+    registry.wait_tasks_complete();
 }

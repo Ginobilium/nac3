@@ -4,7 +4,6 @@ use std::{collections::HashMap, sync::Arc};
 use super::typecheck::type_inferencer::PrimitiveStore;
 use super::typecheck::typedef::{SharedUnifier, Type, TypeEnum, Unifier};
 use crate::symbol_resolver::SymbolResolver;
-use inkwell::context::Context;
 use parking_lot::{Mutex, RwLock};
 use rustpython_parser::ast::{self, Stmt};
 
@@ -54,17 +53,16 @@ pub enum TopLevelDef {
 pub struct TopLevelContext {
     pub definitions: Arc<RwLock<Vec<RwLock<TopLevelDef>>>>,
     pub unifiers: Arc<RwLock<Vec<(SharedUnifier, PrimitiveStore)>>>,
-    pub conetexts: Arc<RwLock<Vec<Mutex<Context>>>>,
 }
 
-// like adding some info on top of the TopLevelDef for 
+// like adding some info on top of the TopLevelDef for
 // later parsing the class bases, method, and function sigatures
 pub struct TopLevelDefInfo {
     // the definition entry
     def: TopLevelDef,
     // the entry in the top_level unifier
     ty: Type,
-    // the ast submitted by applications, primitives and 
+    // the ast submitted by applications, primitives and
     // class methods will have None value here
     ast: Option<ast::Stmt<()>>,
 }
@@ -118,7 +116,7 @@ impl TopLevelComposer {
         (primitives, unifier)
     }
 
-    /// return a composer and things to make a "primitive" symbol resolver, so that the symbol 
+    /// return a composer and things to make a "primitive" symbol resolver, so that the symbol
     /// resolver can later figure out primitive type definitions when passed a primitive type name
     pub fn new() -> (Vec<(String, DefinitionId, Type)>, Self) {
         let primitives = Self::make_primitives();
@@ -150,7 +148,7 @@ impl TopLevelComposer {
                 ty: primitives.0.none,
             },
         ];
-        let composer = TopLevelComposer { 
+        let composer = TopLevelComposer {
             definition_list: definition_list.into(),
             primitives: primitives.0,
             unifier: primitives.1,
@@ -219,7 +217,7 @@ impl TopLevelComposer {
                     ast: None,
                     ty,
                 });
-                
+
                 // parse class def body and register class methods into the def list
                 // module's symbol resolver would not know the name of the class methods,
                 // thus cannot return their definition_id? so we have to manage it ourselves
@@ -228,7 +226,7 @@ impl TopLevelComposer {
                     if let ast::StmtKind::FunctionDef { name, .. } = &b.node {
                         let fun_name = Self::name_mangling(class_name.clone(), name);
                         let def_id = def_list.len();
-                        
+
                         // add to unifier
                         let ty = self.unifier.add_ty(TypeEnum::TFunc(
                             crate::typecheck::typedef::FunSignature {
@@ -266,21 +264,21 @@ impl TopLevelComposer {
 
                 // move the ast to the entry of the class in the def_list
                 def_list.get_mut(class_def_id).unwrap().ast = Some(ast);
-                
+
                 // return
                 Ok((class_name, DefinitionId(class_def_id), ty))
             },
 
             ast::StmtKind::FunctionDef { name, .. } => {
                 let fun_name = name.to_string();
-                
+
                 // add to the unifier
                 let ty = self.unifier.add_ty(TypeEnum::TFunc(crate::typecheck::typedef::FunSignature {
                     args: Default::default(),
                     ret: self.primitives.none,
                     vars: Default::default(),
                 }));
-                    
+
                 // add to the definition list
                 let mut def_list = self.definition_list.write();
                 def_list.push(TopLevelDefInfo {
@@ -333,7 +331,7 @@ impl TopLevelComposer {
                         let (params,
                             fields
                         ) = if let TypeEnum::TObj {
-                            // FIXME: this params is immutable, and what 
+                            // FIXME: this params is immutable, and what
                             // should the key be, get the original typevar's var_id?
                             params,
                             fields,
@@ -346,7 +344,7 @@ impl TopLevelComposer {
                         // into the `bases` ast node
                         for b in bases {
                             match &b.node {
-                                // typevars bounded to the class, only support things like `class A(Generic[T, V])`, 
+                                // typevars bounded to the class, only support things like `class A(Generic[T, V])`,
                                 // things like `class A(Generic[T, V, ImportedModule.T])` is not supported
                                 // i.e. only simple names are allowed in the subscript
                                 // should update the TopLevelDef::Class.typevars and the TypeEnum::TObj.params
@@ -401,7 +399,7 @@ impl TopLevelComposer {
                                 ast::ExprKind::Subscript {value, slice, ..} => {
                                     unimplemented!()
                                 }, */
-                                
+
                                 // base class is possible in other cases, we parse for thr base class
                                 _ => return Err("not supported".into())
                             }

@@ -6,6 +6,7 @@ use crate::{
         typedef::{FunSignature, Type, TypeEnum, Unifier},
     },
 };
+use crossbeam::channel::{unbounded, Receiver, Sender};
 use inkwell::{
     basic_block::BasicBlock,
     builder::Builder,
@@ -16,9 +17,11 @@ use inkwell::{
     AddressSpace,
 };
 use itertools::Itertools;
+use parking_lot::{Condvar, Mutex};
 use rustpython_parser::ast::Stmt;
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::thread;
 
 mod expr;
 mod stmt;
@@ -41,6 +44,112 @@ pub struct CodeGenContext<'ctx, 'a> {
     // where continue and break should go to respectively
     // the first one is the test_bb, and the second one is bb after the loop
     pub loop_bb: Option<(BasicBlock<'ctx>, BasicBlock<'ctx>)>,
+}
+
+type Fp = Box<dyn Fn(&Module) + Send + Sync>;
+
+pub struct WithCall {
+    fp: Fp,
+}
+
+impl WithCall {
+    pub fn new(fp: Fp) -> WithCall {
+        WithCall { fp }
+    }
+
+    pub fn run<'ctx>(&self, m: &Module<'ctx>)  {
+        (self.fp)(m)
+    }
+}
+
+pub struct WorkerRegistry {
+    sender: Arc<Sender<Option<CodeGenTask>>>,
+    receiver: Arc<Receiver<Option<CodeGenTask>>>,
+    task_count: Mutex<usize>,
+    thread_count: usize,
+    wait_condvar: Condvar,
+}
+
+impl WorkerRegistry {
+    pub fn create_workers(
+        names: &[&str],
+        top_level_ctx: Arc<TopLevelContext>,
+        f: Arc<WithCall>,
+    ) -> Arc<WorkerRegistry> {
+        let (sender, receiver) = unbounded();
+        let task_count = Mutex::new(0);
+        let wait_condvar = Condvar::new();
+
+        let registry = Arc::new(WorkerRegistry {
+            sender: Arc::new(sender),
+            receiver: Arc::new(receiver),
+            thread_count: names.len(),
+            task_count,
+            wait_condvar,
+        });
+
+        for name in names.iter() {
+            let top_level_ctx = top_level_ctx.clone();
+            let registry = registry.clone();
+            let name = name.to_string();
+            let f = f.clone();
+            thread::spawn(move || {
+                registry.worker_thread(name, top_level_ctx, f);
+            });
+        }
+        registry
+    }
+
+    pub fn wait_tasks_complete(&self) {
+        {
+            let mut count = self.task_count.lock();
+            while *count != 0 {
+                self.wait_condvar.wait(&mut count);
+            }
+        }
+        for _ in 0..self.thread_count {
+            self.sender.send(None).unwrap();
+        }
+        {
+            let mut count = self.task_count.lock();
+            while *count != self.thread_count {
+                self.wait_condvar.wait(&mut count);
+            }
+        }
+    }
+
+    pub fn add_task(&self, task: CodeGenTask) {
+        *self.task_count.lock() += 1;
+        self.sender.send(Some(task)).unwrap();
+    }
+
+    fn worker_thread(
+        &self,
+        module_name: String,
+        top_level_ctx: Arc<TopLevelContext>,
+        f: Arc<WithCall>,
+    ) {
+        let context = Context::create();
+        let mut builder = context.create_builder();
+        let mut module = context.create_module(&module_name);
+
+        while let Some(task) = self.receiver.recv().unwrap() {
+            let result = gen_func(&context, builder, module, task, top_level_ctx.clone());
+            builder = result.0;
+            module = result.1;
+
+            println!("{}", *self.task_count.lock());
+            *self.task_count.lock() -= 1;
+            self.wait_condvar.notify_all();
+        }
+
+        // do whatever...
+        let mut lock = self.task_count.lock();
+        module.verify().unwrap();
+        f.run(&module);
+        *lock += 1;
+        self.wait_condvar.notify_all();
+    }
 }
 
 pub struct CodeGenTask {
