@@ -26,7 +26,7 @@ pub enum TopLevelDef {
         // ancestor classes, including itself.
         ancestors: Vec<DefinitionId>,
         // symbol resolver of the module defined the class, none if it is built-in type
-        resolver: Option<Arc<Mutex<dyn SymbolResolver + Send>>>,
+        resolver: Option<Arc<Mutex<dyn SymbolResolver + Send + Sync>>>,
     },
     Function {
         // prefix for symbol, should be unique globally, and not ending with numbers
@@ -46,7 +46,7 @@ pub enum TopLevelDef {
         /// rigid type variables that would be substituted when the function is instantiated.
         instance_to_stmt: HashMap<String, (Stmt<Option<Type>>, usize)>,
         // symbol resolver of the module defined the class
-        resolver: Option<Arc<Mutex<dyn SymbolResolver + Send>>>,
+        resolver: Option<Arc<Mutex<dyn SymbolResolver + Send + Sync>>>,
     },
     Initializer {
         class_id: DefinitionId,
@@ -167,7 +167,7 @@ impl TopLevelComposer {
     /// already include the definition_id of itself inside the ancestors vector
     pub fn make_top_level_class_def(
         index: usize,
-        resolver: Option<Arc<Mutex<dyn SymbolResolver + Send>>>,
+        resolver: Option<Arc<Mutex<dyn SymbolResolver + Send + Sync>>>,
     ) -> TopLevelDef {
         TopLevelDef::Class {
             object_id: DefinitionId(index),
@@ -182,7 +182,7 @@ impl TopLevelComposer {
     pub fn make_top_level_function_def(
         name: String,
         ty: Type,
-        resolver: Option<Arc<Mutex<dyn SymbolResolver + Send>>>,
+        resolver: Option<Arc<Mutex<dyn SymbolResolver + Send + Sync>>>,
     ) -> TopLevelDef {
         TopLevelDef::Function {
             name,
@@ -196,7 +196,7 @@ impl TopLevelComposer {
     pub fn register_top_level(
         &mut self,
         ast: ast::Stmt<()>,
-        resolver: Option<Arc<Mutex<dyn SymbolResolver + Send>>>,
+        resolver: Option<Arc<Mutex<dyn SymbolResolver + Send + Sync>>>,
     ) -> Result<(String, DefinitionId, Type), String> {
         // get write access to the lists
         let (
