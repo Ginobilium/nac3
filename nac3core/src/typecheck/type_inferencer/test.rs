@@ -100,7 +100,6 @@ impl TestEnvironment {
             top_level: TopLevelContext {
                 definitions: Default::default(),
                 unifiers: Default::default(),
-                // conetexts: Default::default(),
             },
             unifier,
             function_data: FunctionData {
@@ -259,7 +258,6 @@ impl TestEnvironment {
         let top_level = TopLevelContext {
             definitions: Arc::new(RwLock::new(top_level_defs)),
             unifiers: Default::default(),
-            // conetexts: Default::default(),
         };
 
         let resolver = Arc::new(Resolver {
