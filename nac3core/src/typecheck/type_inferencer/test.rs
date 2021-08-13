@@ -40,7 +40,7 @@ struct TestEnvironment {
     pub id_to_name: HashMap<usize, String>,
     pub identifier_mapping: HashMap<String, Type>,
     pub virtual_checks: Vec<(Type, Type)>,
-    pub calls: HashMap<CodeLocation, Arc<Call>>,
+    pub calls: HashMap<CodeLocation, CallId>,
     pub top_level: TopLevelContext,
 }
 
@@ -94,7 +94,7 @@ impl TestEnvironment {
             id_to_type: identifier_mapping.clone(),
             id_to_def: Default::default(),
             class_names: Default::default(),
-        }) as Arc<dyn SymbolResolver>;
+        }) as Arc<dyn SymbolResolver + Send + Sync>;
 
         TestEnvironment {
             top_level: TopLevelContext {
@@ -273,7 +273,7 @@ impl TestEnvironment {
             .cloned()
             .collect(),
             class_names,
-        }) as Arc<dyn SymbolResolver>;
+        }) as Arc<dyn SymbolResolver + Send + Sync>;
 
         TestEnvironment {
             unifier,

@@ -3,8 +3,8 @@ use std::convert::{From, TryInto};
 use std::iter::once;
 use std::{cell::RefCell, sync::Arc};
 
-use super::magic_methods::*;
 use super::typedef::{Call, FunSignature, FuncArg, Type, TypeEnum, Unifier};
+use super::{magic_methods::*, typedef::CallId};
 use crate::{symbol_resolver::SymbolResolver, top_level::TopLevelContext};
 use itertools::izip;
 use rustpython_parser::ast::{
@@ -38,7 +38,7 @@ pub struct PrimitiveStore {
 }
 
 pub struct FunctionData {
-    pub resolver: Arc<dyn SymbolResolver>,
+    pub resolver: Arc<dyn SymbolResolver + Send + Sync>,
     pub return_type: Option<Type>,
     pub bound_variables: Vec<Type>,
 }
@@ -50,7 +50,7 @@ pub struct Inferencer<'a> {
     pub primitives: &'a PrimitiveStore,
     pub virtual_checks: &'a mut Vec<(Type, Type)>,
     pub variable_mapping: HashMap<String, Type>,
-    pub calls: &'a mut HashMap<CodeLocation, Arc<Call>>,
+    pub calls: &'a mut HashMap<CodeLocation, CallId>,
 }
 
 struct NaiveFolder();
@@ -190,13 +190,13 @@ impl<'a> Inferencer<'a> {
         params: Vec<Type>,
         ret: Type,
     ) -> InferenceResult {
-        let call = Arc::new(Call {
+        let call = self.unifier.add_call(Call {
             posargs: params,
             kwargs: HashMap::new(),
             ret,
             fun: RefCell::new(None),
         });
-        self.calls.insert(location.into(), call.clone());
+        self.calls.insert(location.into(), call);
         let call = self.unifier.add_ty(TypeEnum::TCall(vec![call].into()));
         let fields = once((method, call)).collect();
         let record = self.unifier.add_record(fields);
@@ -398,7 +398,7 @@ impl<'a> Inferencer<'a> {
             .map(|v| fold::fold_keyword(self, v))
             .collect::<Result<Vec<_>, _>>()?;
         let ret = self.unifier.get_fresh_var().0;
-        let call = Arc::new(Call {
+        let call = self.unifier.add_call(Call {
             posargs: args.iter().map(|v| v.custom.unwrap()).collect(),
             kwargs: keywords
                 .iter()
@@ -407,7 +407,7 @@ impl<'a> Inferencer<'a> {
             fun: RefCell::new(None),
             ret,
         });
-        self.calls.insert(location.into(), call.clone());
+        self.calls.insert(location.into(), call);
         let call = self.unifier.add_ty(TypeEnum::TCall(vec![call].into()));
         self.unifier.unify(func.custom.unwrap(), call)?;
 

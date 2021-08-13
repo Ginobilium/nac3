@@ -161,19 +161,7 @@ pub fn parse_type_annotation<T>(
     }
 }
 
-impl dyn SymbolResolver {
-    pub fn parse_type_annotation<T>(
-        &self,
-        top_level: &TopLevelContext,
-        unifier: &mut Unifier,
-        primitives: &PrimitiveStore,
-        expr: &Expr<T>,
-    ) -> Result<Type, String> {
-        parse_type_annotation(self, top_level, unifier, primitives, expr)
-    }
-}
-
-impl dyn SymbolResolver + Send {
+impl dyn SymbolResolver + Send + Sync {
     pub fn parse_type_annotation<T>(
         &self,
         top_level: &TopLevelContext,

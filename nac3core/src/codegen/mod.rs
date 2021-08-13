@@ -49,7 +49,7 @@ pub struct CodeGenTask {
     pub signature: FunSignature,
     pub body: Vec<Stmt<Option<Type>>>,
     pub unifier_index: usize,
-    pub resolver: Arc<dyn SymbolResolver>,
+    pub resolver: Arc<dyn SymbolResolver + Send + Sync>,
 }
 
 fn get_llvm_type<'ctx>(
@@ -108,7 +108,7 @@ pub fn gen_func<'ctx>(
     module: Module<'ctx>,
     task: CodeGenTask,
     top_level_ctx: Arc<TopLevelContext>,
-) -> Module<'ctx> {
+) -> (Builder<'ctx>, Module<'ctx>) {
     // unwrap_or(0) is for unit tests without using rayon
     let (mut unifier, primitives) = {
         let unifiers = top_level_ctx.unifiers.read();
@@ -199,5 +199,7 @@ pub fn gen_func<'ctx>(
         code_gen_context.gen_stmt(stmt);
     }
 
-    code_gen_context.module
+    let CodeGenContext { builder, module, .. } = code_gen_context;
+
+    (builder, module)
 }

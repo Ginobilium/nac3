@@ -6,7 +6,7 @@ use crate::{
     typecheck::{
         magic_methods::set_primitives_magic_methods,
         type_inferencer::{CodeLocation, FunctionData, Inferencer, PrimitiveStore},
-        typedef::{Call, FunSignature, FuncArg, Type, TypeEnum, Unifier},
+        typedef::{CallId, FunSignature, FuncArg, Type, TypeEnum, Unifier},
     },
 };
 use indoc::indoc;
@@ -48,7 +48,7 @@ struct TestEnvironment {
     pub id_to_name: HashMap<usize, String>,
     pub identifier_mapping: HashMap<String, Type>,
     pub virtual_checks: Vec<(Type, Type)>,
-    pub calls: HashMap<CodeLocation, Arc<Call>>,
+    pub calls: HashMap<CodeLocation, CallId>,
     pub top_level: TopLevelContext,
 }
 
@@ -102,7 +102,7 @@ impl TestEnvironment {
             id_to_type: identifier_mapping.clone(),
             id_to_def: Default::default(),
             class_names: Default::default(),
-        }) as Arc<dyn SymbolResolver>;
+        }) as Arc<dyn SymbolResolver + Send + Sync>;
 
         TestEnvironment {
             unifier,
@@ -239,7 +239,7 @@ fn test_primitives() {
         }
     "}
     .trim();
-    let ir = module.print_to_string().to_string();
+    let ir = module.1.print_to_string().to_string();
     println!("src:\n{}", source);
     println!("IR:\n{}", ir);
     assert_eq!(expected, ir.trim());

@@ -16,6 +16,9 @@ mod test;
 /// Handle for a type, implementated as a key in the unification table.
 pub type Type = UnificationKey;
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub struct CallId(usize);
+
 pub type Mapping<K, V = Type> = HashMap<K, V>;
 type VarMap = Mapping<u32>;
 
@@ -73,7 +76,7 @@ pub enum TypeEnum {
     TVirtual {
         ty: Type,
     },
-    TCall(RefCell<Vec<Arc<Call>>>),
+    TCall(RefCell<Vec<CallId>>),
     TFunc(FunSignature),
 }
 
@@ -92,17 +95,18 @@ impl TypeEnum {
     }
 }
 
-pub type SharedUnifier = Arc<Mutex<(UnificationTable<TypeEnum>, u32)>>;
+pub type SharedUnifier = Arc<Mutex<(UnificationTable<TypeEnum>, u32, Vec<Call>)>>;
 
 pub struct Unifier {
     unification_table: UnificationTable<Rc<TypeEnum>>,
+    calls: Vec<Rc<Call>>,
     var_id: u32,
 }
 
 impl Unifier {
     /// Get an empty unifier
     pub fn new() -> Unifier {
-        Unifier { unification_table: UnificationTable::new(), var_id: 0 }
+        Unifier { unification_table: UnificationTable::new(), var_id: 0, calls: Vec::new() }
     }
 
     /// Determine if the two types are the same
@@ -112,11 +116,19 @@ impl Unifier {
 
     pub fn from_shared_unifier(unifier: &SharedUnifier) -> Unifier {
         let lock = unifier.lock().unwrap();
-        Unifier { unification_table: UnificationTable::from_send(&lock.0), var_id: lock.1 }
+        Unifier {
+            unification_table: UnificationTable::from_send(&lock.0),
+            var_id: lock.1,
+            calls: lock.2.iter().map(|v| Rc::new(v.clone())).collect_vec(),
+        }
     }
 
     pub fn get_shared_unifier(&self) -> SharedUnifier {
-        Arc::new(Mutex::new((self.unification_table.get_send(), self.var_id)))
+        Arc::new(Mutex::new((
+            self.unification_table.get_send(),
+            self.var_id,
+            self.calls.iter().map(|v| v.as_ref().clone()).collect_vec(),
+        )))
     }
 
     /// Register a type to the unifier.
@@ -133,6 +145,12 @@ impl Unifier {
             range: vec![].into(),
             meta: TypeVarMeta::Record(fields.into()),
         })
+    }
+
+    pub fn add_call(&mut self, call: Call) -> CallId {
+        let id = CallId(self.calls.len());
+        self.calls.push(Rc::new(call));
+        id
     }
 
     pub fn get_representative(&mut self, ty: Type) -> Type {
@@ -463,11 +481,11 @@ impl Unifier {
                     .collect();
                 // we unify every calls to the function signature.
                 for c in calls.borrow().iter() {
-                    let Call { posargs, kwargs, ret, fun } = c.as_ref();
+                    let Call { posargs, kwargs, ret, fun } = &*self.calls[c.0].clone();
                     let instantiated = self.instantiate_fun(b, signature);
-                    let signature;
                     let r = self.get_ty(instantiated);
                     let r = r.as_ref();
+                    let signature;
                     if let TypeEnum::TFunc(s) = &*r {
                         signature = s;
                     } else {
@@ -765,10 +783,14 @@ impl Unifier {
                 }
             }
             TypeEnum::TCall(calls) => {
+                let call_store = self.calls.clone();
                 for t in calls
                     .borrow()
                     .iter()
-                    .map(|call| chain!(call.posargs.iter(), call.kwargs.values(), once(&call.ret)))
+                    .map(|call| {
+                        let call = call_store[call.0].as_ref();
+                        chain!(call.posargs.iter(), call.kwargs.values(), once(&call.ret))
+                    })
                     .flatten()
                 {
                     self.occur_check(a, *t)?;
