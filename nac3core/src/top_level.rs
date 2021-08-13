@@ -198,17 +198,24 @@ impl TopLevelComposer {
         ast: ast::Stmt<()>,
         resolver: Option<Arc<Mutex<dyn SymbolResolver + Send>>>,
     ) -> Result<(String, DefinitionId, Type), String> {
+        // get write access to the lists
+        let (
+            mut def_list,
+            mut ty_list,
+            mut ast_list
+        ) = (
+            self.definition_list.write(),
+            self.ty_list.write(),
+            self.ast_list.write()
+        );
+        
+        // will be deleted after tested
+        assert_eq!(ty_list.len(), def_list.len());
+        assert_eq!(def_list.len(), ast_list.len());
+
         match &ast.node {
             ast::StmtKind::ClassDef { name, body, .. } => {
                 let class_name = name.to_string();
-
-                let (mut def_list, mut ty_list, mut ast_list) =
-                    (self.definition_list.write(), self.ty_list.write(), self.ast_list.write());
-
-                // will be deleted after tested
-                assert_eq!(ty_list.len(), def_list.len());
-                assert_eq!(def_list.len(), ast_list.len());
-
                 let class_def_id = def_list.len();
 
                 // add the class to the unifier
@@ -226,7 +233,7 @@ impl TopLevelComposer {
                 // here push None temporarly, later will push the ast
                 ast_list.push(None);
 
-                // parse class def body and register class methods into the def list
+                // parse class def body and register class methods into the def list.
                 // module's symbol resolver would not know the name of the class methods,
                 // thus cannot return their definition_id? so we have to manage it ourselves
                 // by using the field `class_method_to_def_id`
@@ -236,13 +243,11 @@ impl TopLevelComposer {
                         let def_id = def_list.len();
 
                         // add to unifier
-                        let ty = self.unifier.write().add_ty(TypeEnum::TFunc(
-                            crate::typecheck::typedef::FunSignature {
-                                args: Default::default(),
-                                ret: self.primitives.none,
-                                vars: Default::default(),
-                            },
-                        ));
+                        let ty = self.unifier.write().add_ty(TypeEnum::TFunc(FunSignature {
+                            args: Default::default(),
+                            ret: self.primitives.none,
+                            vars: Default::default(),
+                        }));
 
                         // add to the definition list
                         def_list.push(
@@ -286,16 +291,12 @@ impl TopLevelComposer {
                 let fun_name = name.to_string();
 
                 // add to the unifier
-                let ty = self.unifier.write().add_ty(TypeEnum::TFunc(
-                    crate::typecheck::typedef::FunSignature {
-                        args: Default::default(),
-                        ret: self.primitives.none,
-                        vars: Default::default(),
-                    },
-                ));
+                let ty = self.unifier.write().add_ty(TypeEnum::TFunc(FunSignature {
+                    args: Default::default(),
+                    ret: self.primitives.none,
+                    vars: Default::default(),
+                }));
 
-                let (mut def_list, mut ty_list, mut ast_list) =
-                    (self.definition_list.write(), self.ty_list.write(), self.ast_list.write());
                 // add to the definition list
                 def_list.push(
                     Self::make_top_level_function_def(name.into(), self.primitives.none, resolver)
@@ -310,6 +311,23 @@ impl TopLevelComposer {
 
             _ => Err("only registrations of top level classes/functions are supprted".into()),
         }
+    }
+
+    pub fn analyze_top_level_class_type_var(&mut self) -> Result<(), String> {
+        let mut def_list = self.definition_list.write();
+        let ty_list = self.ty_list.read();
+        let ast_list = self.ast_list.read();
+        let mut unifier = self.unifier.write();
+
+        for (def, ty, ast) in def_list
+            .iter_mut()
+            .zip(ty_list.iter())
+            .zip(ast_list.iter())
+            .map(|((x, y), z)| (x, y, z))
+            .collect::<Vec<(&mut RwLock<TopLevelDef>, &Type, &Option<ast::Stmt<()>>)>>() {
+            unimplemented!()
+        };
+        unimplemented!()
     }
 
     /// this should be called after all top level classes are registered, and
@@ -401,21 +419,22 @@ impl TopLevelComposer {
                                     ast::ExprKind::Tuple {elts, ..} => {
                                         let tys = elts
                                             .iter()
-                                            .map(|x| {resolver.parse_type_annotation(
+                                            // here parse_type_annotation should be fine, 
+                                            // since we only expect type vars, which is not relevant
+                                            // to the top-level parsing
+                                            .map(|x| resolver.parse_type_annotation(
                                                 &self.to_top_level_context(),
                                                 unifier.borrow_mut(),
                                                 &self.primitives,
-                                                x)})
+                                                x))
                                             .collect::<Result<Vec<_>, _>>()?;
                                         
                                         let ty_var_ids = tys
                                             .iter()
-                                            .map(|t| unifier.get_ty(*t))
-                                            .collect::<Vec<_>>()
-                                            .iter()
-                                            .map(|x| {
-                                                let x = x.as_ref();
-                                                if let TypeEnum::TVar {id, ..} = x {
+                                            .map(|t| {
+                                                let tmp = unifier.get_ty(*t);
+                                                // make sure it is type var
+                                                if let TypeEnum::TVar {id, ..} = tmp.as_ref() {
                                                     Ok(*id)
                                                 } else {
                                                     Err("Expect type variabls here".to_string())
@@ -460,6 +479,14 @@ impl TopLevelComposer {
 
                             // analyze base classes, which is possible in 
                             // other cases, we parse for the base class
+                            // FIXME: calling parse_type_annotation here might cause some problem
+                            // when the base class is parametrized `BaseClass[int, bool]`, since the 
+                            // analysis of type var of some class is not done yet.
+                            // we can first only look at the name, and later check the
+                            // parameter when others are done
+                            // Or 
+                            // first get all the class' type var analyzed, and then
+                            // analyze the base class
                             _ => {
                                 let ty = resolver.parse_type_annotation(
                                     &self.to_top_level_context(),
@@ -491,7 +518,7 @@ impl TopLevelComposer {
                     let defined_method: HashSet<String> = Default::default();
                     for stmt in body {
                         if let ast::StmtKind::FunctionDef {
-                            name,
+                            name: func_name,
                             args,
                             body,
                             returns,
@@ -539,16 +566,19 @@ impl TopLevelComposer {
                                         .as_ref(),
                                 )?;
                             // build the TypeEnum
-                            let func_ty = TypeEnum::TFunc(FunSignature {
+                            let func_type_sig = FunSignature {
                                 args: func_args,
                                 vars: func_vars,
                                 ret: func_ret
-                            });
-                            // TODO: write to the TypeEnum and Def_list
+                            };
+                            
+                            // write to the TypeEnum and Def_list (by replacing the ty with the new Type created above)
+                            let func_name_mangled = Self::name_mangling(class_name.clone(), func_name);
+                            let def_id = self.class_method_to_def_id.read()[&func_name_mangled];
+                            unimplemented!();
                             
 
-
-                            if name == "__init__" {
+                            if func_name == "__init__" {
                                 // special for constructor, need to look into the fields
                                 // TODO: look into the function body and see
                             }
