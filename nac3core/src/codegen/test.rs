@@ -237,7 +237,7 @@ fn test_primitives() {
         .trim();
         assert_eq!(expected, module.print_to_string().to_str().unwrap().trim());
     })));
-    let registry = WorkerRegistry::create_workers(&threads, top_level, f);
+    let (registry, handles) = WorkerRegistry::create_workers(&threads, top_level, f);
     registry.add_task(task);
-    registry.wait_tasks_complete();
+    registry.wait_tasks_complete(handles);
 }
