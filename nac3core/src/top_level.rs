@@ -5,6 +5,7 @@ use super::typecheck::type_inferencer::PrimitiveStore;
 use super::typecheck::typedef::{SharedUnifier, Type, TypeEnum, Unifier};
 use crate::symbol_resolver::SymbolResolver;
 use crate::typecheck::typedef::{FunSignature, FuncArg};
+use itertools::chain;
 use parking_lot::{Mutex, RwLock};
 use rustpython_parser::ast::{self, Stmt};
 
@@ -163,6 +164,7 @@ impl TopLevelComposer {
     }
 
     /// already include the definition_id of itself inside the ancestors vector
+    /// when first regitering, the type_vars, fields, methods, ancestors are invalid
     pub fn make_top_level_class_def(
         index: usize,
         resolver: Option<Arc<Mutex<dyn SymbolResolver + Send + Sync>>>,
@@ -177,6 +179,7 @@ impl TopLevelComposer {
         }
     }
 
+    /// when first registering, the type is a invalid value
     pub fn make_top_level_function_def(
         name: String,
         ty: Type,
@@ -463,7 +466,7 @@ impl TopLevelComposer {
         Ok(())
     }
 
-    /// step 3, class_fields
+    /// step 3, class fields and methods
     fn analyze_top_level_class_fields_methods(&mut self) -> Result<(), String> {
         let mut def_list = self.definition_list.write();
         let ast_list = self.ast_list.read();
@@ -472,68 +475,154 @@ impl TopLevelComposer {
         let mut to_be_analyzed_class = self.to_be_analyzed_class.write();
 
         while !to_be_analyzed_class.is_empty() {
-            let ind = to_be_analyzed_class.remove(0).0;
-            let (class_def, class_ast) = (
-                &mut def_list[ind], &ast_list[ind]
-            );
-
-            let (
-                class_name,
-                class_fields,
-                class_methods,
-                class_resolver,
-                class_body
-            ) = {
-                if let TopLevelDef::Class {
-                    resolver,
-                    fields,
-                    methods,
-                    ..
-                } = class_def.get_mut() {
-                    if let Some(ast::Located {node: ast::StmtKind::ClassDef {
-                        name,
-                        body,
+            let class_ind = to_be_analyzed_class.remove(0).0;
+            let (class_name, class_body) = {
+                let class_ast = &ast_list[class_ind];
+                if let Some(
+                    ast::Located { node: 
+                        ast::StmtKind::ClassDef {
+                            name, 
+                            body,
+                            ..
+                        },
                         ..
-                    }, .. }) = class_ast {
-                        (name, fields, methods, resolver, body)
-                    } else { unreachable!("must be both class") }
-                } else {
-                    to_be_analyzed_class.push(DefinitionId(ind));
-                    continue
-                }
+                    }
+                ) = class_ast {
+                    (name, body)
+                } else { unreachable!("should be class def ast") }
             };
+
+            let class_methods_parsing_result: Vec<(String, Type, DefinitionId)> = Default::default();
+            let class_fields_parsing_result: Vec<(String, Type)> = Default::default();
             for b in class_body {
                 if let ast::StmtKind::FunctionDef {
-                    args: func_args,
-                    body: func_body,
-                    name: func_name,
-                    returns: func_returns,
+                    args: method_args_ast,
+                    body: method_body_ast,
+                    name: method_name,
+                    returns: method_returns_ast,
                     ..
                 } = &b.node {
-                    // unwrap should not fail
-                    let method_def_id = 
-                        class_method_to_def_id
+                    let (class_def, method_def) = {
+                        // unwrap should not fail
+                        let method_ind = class_method_to_def_id
                         .get(&Self::name_mangling(
                             class_name.into(),
-                            func_name)
-                        ).unwrap();
-                    let method_def = def_list[method_def_id.0].write();
-                    let method_ty = method_def.get_function_type()?;
-                    let method_signature = unifier.get_ty(method_ty);
+                            method_name)
+                        ).unwrap().0;
+                
+                        // split the def_list to two parts to get the
+                        // mutable reference to both the method and the class
+                        assert_ne!(method_ind, class_ind);
+                        let min_ind = (if method_ind > class_ind { class_ind } else { method_ind }) + 1;
+                        let (head_slice,
+                            tail_slice
+                        ) = def_list.split_at_mut(min_ind);
+                        let (new_method_ind, new_class_ind) = (
+                            if method_ind >= min_ind { method_ind - min_ind } else { method_ind },
+                            if class_ind >= min_ind { class_ind - min_ind } else { class_ind }
+                        );
+                        if new_class_ind == class_ind {
+                            (&mut head_slice[new_class_ind], &mut tail_slice[new_method_ind])
+                        } else {
+                            (&mut tail_slice[new_class_ind], &mut head_slice[new_method_ind])
+                        }
+                    };
+                    let (
+                        class_fields,
+                        class_methods,
+                        class_resolver
+                    ) = {
+                        if let TopLevelDef::Class {
+                            resolver,
+                            fields,
+                            methods,
+                            ..
+                        } = class_def.get_mut() {
+                            (fields, methods, resolver)
+                        } else { unreachable!("must be class def here") }
+                    };
 
-                    if let TypeEnum::TFunc(sig) = method_signature.as_ref() {
-                        let mut sig = &mut *sig.borrow_mut();
-                    } else { unreachable!() }
+                    let arg_tys = method_args_ast
+                        .args
+                        .iter()
+                        .map(|x| -> Result<Type, String> {
+                            let annotation = x
+                                .node
+                                .annotation
+                                .as_ref()
+                                .ok_or_else(|| "type annotation for function parameter is needed".to_string())?
+                                .as_ref();
 
+                            let ty = class_resolver
+                                .as_ref()
+                                .unwrap()
+                                .lock()
+                                .parse_type_annotation(
+                                    &self.to_top_level_context(),
+                                    unifier.borrow_mut(),
+                                    &self.primitives,
+                                    annotation
+                                )?;
+                            Ok(ty)
+                        })
+                        .collect::<Result<Vec<_>, _>>()?;
+                    let ret_ty = method_returns_ast
+                        .as_ref()
+                        .and_then(|x| {
+                            Some(
+                                class_resolver
+                                .as_ref()
+                                .unwrap()
+                                .lock()
+                                .parse_type_annotation(
+                                    &self.to_top_level_context(),
+                                    unifier.borrow_mut(),
+                                    &self.primitives,
+                                    x.as_ref()
+                                )
+                            )
+                        }).unwrap()?;
+                    
+                    let all_tys_ok = {
+                        let ret_ty_iter = vec![ret_ty];
+                        let ret_ty_iter = ret_ty_iter.iter();
+                        let mut all_tys = chain!(arg_tys.iter(), ret_ty_iter);
+                        all_tys.all(|x| {
+                                let type_enum = unifier.get_ty(*x);
+                                match type_enum.as_ref() {
+                                    TypeEnum::TObj {obj_id, ..} => {
+                                        !to_be_analyzed_class.contains(obj_id)
+                                    },
+                                    TypeEnum::TVirtual { ty } => {
+                                        if let TypeEnum::TObj {obj_id, ..} = unifier.get_ty(*ty).as_ref() {
+                                            !to_be_analyzed_class.contains(obj_id)
+                                        } else { unreachable!() }
+                                    },
+                                    _ => unreachable!()
+                                }
+                            }
+                        )
+                    };
 
+                    if all_tys_ok {
+                        // TODO: put related value to the `class_methods_parsing_result`
+                        unimplemented!()
+                    } else {
+                        to_be_analyzed_class.push(DefinitionId(class_ind));
+                        // TODO: go to the next WHILE loop
+                        unimplemented!()
+                    }
                 } else {
                     // what should we do with `class A: a = 3`?
                     continue
                 }
             }
+
+            // TODO: now it should be confirmed that every 
+            // methods and fields of the class can be correctly typed, put the results
+            // into the actual def_list and the unifier
         }
         Ok(())
-
     }
     
     fn analyze_top_level_inheritance(&mut self) -> Result<(), String> {
