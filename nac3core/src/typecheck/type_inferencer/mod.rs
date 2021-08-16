@@ -258,7 +258,7 @@ impl<'a> Inferencer<'a> {
         Ok(Located {
             location,
             node: ExprKind::Lambda { args: args.into(), body: body.into() },
-            custom: Some(self.unifier.add_ty(TypeEnum::TFunc(fun))),
+            custom: Some(self.unifier.add_ty(TypeEnum::TFunc(fun.into()))),
         })
     }
 

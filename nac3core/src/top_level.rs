@@ -1,6 +1,5 @@
-use std::borrow::{Borrow, BorrowMut};
-use std::collections::HashSet;
-use std::{collections::HashMap, sync::Arc};
+use std::borrow::BorrowMut;
+use std::{collections::HashMap, collections::HashSet, sync::Arc};
 
 use super::typecheck::type_inferencer::PrimitiveStore;
 use super::typecheck::typedef::{SharedUnifier, Type, TypeEnum, Unifier};
@@ -50,6 +49,16 @@ pub enum TopLevelDef {
     Initializer {
         class_id: DefinitionId,
     },
+}
+
+impl TopLevelDef {
+    fn get_function_type(&self) -> Result<Type, String> {
+        if let Self::Function { signature, .. } = self {
+            Ok(*signature)
+        } else {
+            Err("only expect function def here".into())
+        }
+    }
 }
 
 pub struct TopLevelContext {
@@ -219,18 +228,15 @@ impl TopLevelComposer {
                         let fun_name = Self::name_mangling(class_name.clone(), name);
                         let def_id = def_list.len();
 
-                        // add to unifier
-                        let ty = self.unifier.write().add_ty(TypeEnum::TFunc(FunSignature {
-                            args: Default::default(),
-                            ret: self.primitives.none,
-                            vars: Default::default(),
-                        }));
-
                         // add to the definition list
                         def_list.push(
                             Self::make_top_level_function_def(
                                 fun_name.clone(),
-                                ty,
+                                self.unifier.write().add_ty(TypeEnum::TFunc(FunSignature {
+                                    args: Default::default(),
+                                    ret: self.primitives.none.into(),
+                                    vars: Default::default(),
+                                }.into())),
                                 resolver.clone(),
                             )
                             .into(),
@@ -309,7 +315,7 @@ impl TopLevelComposer {
                 } else { continue } 
             }; 
             
-            let mut generic_occured = false;
+            let mut is_generic = false;
             for b in class_bases {
                 match &b.node {
                     // analyze typevars bounded to the class,
@@ -321,8 +327,8 @@ impl TopLevelComposer {
                         // can only be `Generic[...]` and this can only appear once
                         if let ast::ExprKind::Name { id, .. } = &value.node {
                             if id == "Generic" {
-                                if !generic_occured {
-                                    generic_occured = true;
+                                if !is_generic {
+                                    is_generic = true;
                                     true
                                 } else {
                                     return Err("Only single Generic[...] can be in bases".into())
@@ -467,10 +473,10 @@ impl TopLevelComposer {
 
         while !to_be_analyzed_class.is_empty() {
             let ind = to_be_analyzed_class.remove(0).0;
-
             let (class_def, class_ast) = (
                 &mut def_list[ind], &ast_list[ind]
             );
+
             let (
                 class_name,
                 class_fields,
@@ -491,7 +497,10 @@ impl TopLevelComposer {
                     }, .. }) = class_ast {
                         (name, fields, methods, resolver, body)
                     } else { unreachable!("must be both class") }
-                } else { continue } 
+                } else {
+                    to_be_analyzed_class.push(DefinitionId(ind));
+                    continue
+                }
             };
             for b in class_body {
                 if let ast::StmtKind::FunctionDef {
@@ -508,13 +517,19 @@ impl TopLevelComposer {
                             class_name.into(),
                             func_name)
                         ).unwrap();
-                    
-                    let a = &def_list[method_def_id.0];
+                    let method_def = def_list[method_def_id.0].write();
+                    let method_ty = method_def.get_function_type()?;
+                    let method_signature = unifier.get_ty(method_ty);
+
+                    if let TypeEnum::TFunc(sig) = method_signature.as_ref() {
+                        let mut sig = &mut *sig.borrow_mut();
+                    } else { unreachable!() }
+
+
                 } else {
                     // what should we do with `class A: a = 3`?
                     continue
                 }
-
             }
         }
         Ok(())

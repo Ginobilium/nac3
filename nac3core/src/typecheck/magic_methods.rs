@@ -84,7 +84,7 @@ pub fn impl_binop(
                     ret: ret_ty,
                     vars: HashMap::new(),
                     args: vec![FuncArg { ty: other, default_value: None, name: "other".into() }],
-                }))
+                }.into()))
             });
 
             fields.borrow_mut().insert(binop_assign_name(op).into(), {
@@ -97,7 +97,7 @@ pub fn impl_binop(
                     ret: ret_ty,
                     vars: HashMap::new(),
                     args: vec![FuncArg { ty: other, default_value: None, name: "other".into() }],
-                }))
+                }.into()))
             });
         }
     } else {
@@ -120,7 +120,7 @@ pub fn impl_unaryop(
                     ret: ret_ty,
                     vars: HashMap::new(),
                     args: vec![],
-                })),
+                }.into())),
             );
         }
     } else {
@@ -143,7 +143,7 @@ pub fn impl_cmpop(
                     ret: store.bool,
                     vars: HashMap::new(),
                     args: vec![FuncArg { ty: other_ty, default_value: None, name: "other".into() }],
-                })),
+                }.into())),
             );
         }
     } else {

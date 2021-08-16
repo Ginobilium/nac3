@@ -1,5 +1,5 @@
 use itertools::{chain, zip, Itertools};
-use std::borrow::Cow;
+use std::borrow::{Borrow, Cow};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::iter::once;
@@ -77,7 +77,7 @@ pub enum TypeEnum {
         ty: Type,
     },
     TCall(RefCell<Vec<CallId>>),
-    TFunc(FunSignature),
+    TFunc(RefCell<FunSignature>),
 }
 
 impl TypeEnum {
@@ -472,7 +472,7 @@ impl Unifier {
             }
             (TCall(calls), TFunc(signature)) => {
                 self.occur_check(a, b)?;
-                let required: Vec<String> = signature
+                let required: Vec<String> = signature.borrow()
                     .args
                     .iter()
                     .filter(|v| v.default_value.is_none())
@@ -482,7 +482,7 @@ impl Unifier {
                 // we unify every calls to the function signature.
                 for c in calls.borrow().iter() {
                     let Call { posargs, kwargs, ret, fun } = &*self.calls[c.0].clone();
-                    let instantiated = self.instantiate_fun(b, signature);
+                    let instantiated = self.instantiate_fun(b, &*signature.borrow());
                     let r = self.get_ty(instantiated);
                     let r = r.as_ref();
                     let signature;
@@ -495,9 +495,9 @@ impl Unifier {
                     // arguments) are provided, and do not provide the same argument twice.
                     let mut required = required.clone();
                     let mut all_names: Vec<_> =
-                        signature.args.iter().map(|v| (v.name.clone(), v.ty)).rev().collect();
+                        signature.borrow().args.iter().map(|v| (v.name.clone(), v.ty)).rev().collect();
                     for (i, t) in posargs.iter().enumerate() {
-                        if signature.args.len() <= i {
+                        if signature.borrow().args.len() <= i {
                             return Err("Too many arguments.".to_string());
                         }
                         if !required.is_empty() {
@@ -518,12 +518,13 @@ impl Unifier {
                     if !required.is_empty() {
                         return Err("Expected more arguments".to_string());
                     }
-                    self.unify(*ret, signature.ret)?;
+                    self.unify(*ret, signature.borrow().ret)?;
                     *fun.borrow_mut() = Some(instantiated);
                 }
                 self.set_a_to_b(a, b);
             }
             (TFunc(sign1), TFunc(sign2)) => {
+                let (sign1, sign2) = (&*sign1.borrow(), &*sign2.borrow());
                 if !sign1.vars.is_empty() || !sign2.vars.is_empty() {
                     return Err("Polymorphic function pointer is prohibited.".to_string());
                 }
@@ -604,13 +605,14 @@ impl Unifier {
             TypeEnum::TCall { .. } => "call".to_owned(),
             TypeEnum::TFunc(signature) => {
                 let params = signature
+                    .borrow()
                     .args
                     .iter()
                     .map(|arg| {
                         format!("{}={}", arg.name, self.stringify(arg.ty, obj_to_name, var_to_name))
                     })
                     .join(", ");
-                let ret = self.stringify(signature.ret, obj_to_name, var_to_name);
+                let ret = self.stringify(signature.borrow().ret, obj_to_name, var_to_name);
                 format!("fn[[{}], {}]", params, ret)
             }
         }
@@ -723,7 +725,8 @@ impl Unifier {
                     None
                 }
             }
-            TypeEnum::TFunc(FunSignature { args, ret, vars: params }) => {
+            TypeEnum::TFunc(sig) => {
+                let FunSignature { args, ret, vars: params } = &*sig.borrow();
                 let new_params = self.subst_map(params, mapping);
                 let new_ret = self.subst(*ret, mapping);
                 let mut new_args = Cow::from(args);
@@ -738,7 +741,7 @@ impl Unifier {
                     let params = new_params.unwrap_or_else(|| params.clone());
                     let ret = new_ret.unwrap_or_else(|| *ret);
                     let args = new_args.into_owned();
-                    Some(self.add_ty(TypeEnum::TFunc(FunSignature { args, ret, vars: params })))
+                    Some(self.add_ty(TypeEnum::TFunc(FunSignature { args, ret, vars: params }.into())))
                 } else {
                     None
                 }
@@ -809,7 +812,8 @@ impl Unifier {
                     self.occur_check(a, *t)?;
                 }
             }
-            TypeEnum::TFunc(FunSignature { args, ret, vars: params }) => {
+            TypeEnum::TFunc(sig) => {
+                let FunSignature { args, ret, vars: params } = &*sig.borrow();
                 for t in chain!(args.iter().map(|v| &v.ty), params.values(), once(ret)) {
                     self.occur_check(a, *t)?;
                 }

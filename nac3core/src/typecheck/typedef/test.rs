@@ -333,7 +333,7 @@ fn test_virtual() {
         args: vec![],
         ret: int,
         vars: HashMap::new(),
-    }));
+    }.into()));
     let bar = env.unifier.add_ty(TypeEnum::TObj {
         obj_id: DefinitionId(5),
         fields: [("f".to_string(), fun), ("a".to_string(), int)]
