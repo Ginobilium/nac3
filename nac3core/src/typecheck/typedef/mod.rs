@@ -472,7 +472,8 @@ impl Unifier {
             }
             (TCall(calls), TFunc(signature)) => {
                 self.occur_check(a, b)?;
-                let required: Vec<String> = signature.borrow()
+                let required: Vec<String> = signature
+                    .borrow()
                     .args
                     .iter()
                     .filter(|v| v.default_value.is_none())
@@ -494,8 +495,13 @@ impl Unifier {
                     // we check to make sure that all required arguments (those without default
                     // arguments) are provided, and do not provide the same argument twice.
                     let mut required = required.clone();
-                    let mut all_names: Vec<_> =
-                        signature.borrow().args.iter().map(|v| (v.name.clone(), v.ty)).rev().collect();
+                    let mut all_names: Vec<_> = signature
+                        .borrow()
+                        .args
+                        .iter()
+                        .map(|v| (v.name.clone(), v.ty))
+                        .rev()
+                        .collect();
                     for (i, t) in posargs.iter().enumerate() {
                         if signature.borrow().args.len() <= i {
                             return Err("Too many arguments.".to_string());
@@ -741,7 +747,11 @@ impl Unifier {
                     let params = new_params.unwrap_or_else(|| params.clone());
                     let ret = new_ret.unwrap_or_else(|| *ret);
                     let args = new_args.into_owned();
-                    Some(self.add_ty(TypeEnum::TFunc(FunSignature { args, ret, vars: params }.into())))
+                    Some(
+                        self.add_ty(TypeEnum::TFunc(
+                            FunSignature { args, ret, vars: params }.into(),
+                        )),
+                    )
                 } else {
                     None
                 }

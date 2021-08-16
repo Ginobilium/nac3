@@ -329,11 +329,9 @@ fn test_invalid_unification(
 fn test_virtual() {
     let mut env = TestEnvironment::new();
     let int = env.parse("int", &HashMap::new());
-    let fun = env.unifier.add_ty(TypeEnum::TFunc(FunSignature {
-        args: vec![],
-        ret: int,
-        vars: HashMap::new(),
-    }.into()));
+    let fun = env.unifier.add_ty(TypeEnum::TFunc(
+        FunSignature { args: vec![], ret: int, vars: HashMap::new() }.into(),
+    ));
     let bar = env.unifier.add_ty(TypeEnum::TObj {
         obj_id: DefinitionId(5),
         fields: [("f".to_string(), fun), ("a".to_string(), int)]

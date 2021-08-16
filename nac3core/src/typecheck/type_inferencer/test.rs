@@ -176,18 +176,19 @@ impl TestEnvironment {
 
         identifier_mapping.insert(
             "Foo".into(),
-            unifier.add_ty(TypeEnum::TFunc(FunSignature {
-                args: vec![],
-                ret: foo_ty,
-                vars: [(id, v0)].iter().cloned().collect(),
-            }.into())),
+            unifier.add_ty(TypeEnum::TFunc(
+                FunSignature {
+                    args: vec![],
+                    ret: foo_ty,
+                    vars: [(id, v0)].iter().cloned().collect(),
+                }
+                .into(),
+            )),
         );
 
-        let fun = unifier.add_ty(TypeEnum::TFunc(FunSignature {
-            args: vec![],
-            ret: int32,
-            vars: Default::default(),
-        }.into()));
+        let fun = unifier.add_ty(TypeEnum::TFunc(
+            FunSignature { args: vec![], ret: int32, vars: Default::default() }.into(),
+        ));
         let bar = unifier.add_ty(TypeEnum::TObj {
             obj_id: DefinitionId(6),
             fields: [("a".into(), int32), ("b".into(), fun)]
@@ -207,11 +208,9 @@ impl TestEnvironment {
         }));
         identifier_mapping.insert(
             "Bar".into(),
-            unifier.add_ty(TypeEnum::TFunc(FunSignature {
-                args: vec![],
-                ret: bar,
-                vars: Default::default(),
-            }.into())),
+            unifier.add_ty(TypeEnum::TFunc(
+                FunSignature { args: vec![], ret: bar, vars: Default::default() }.into(),
+            )),
         );
 
         let bar2 = unifier.add_ty(TypeEnum::TObj {
@@ -233,11 +232,9 @@ impl TestEnvironment {
         }));
         identifier_mapping.insert(
             "Bar2".into(),
-            unifier.add_ty(TypeEnum::TFunc(FunSignature {
-                args: vec![],
-                ret: bar2,
-                vars: Default::default(),
-            }.into())),
+            unifier.add_ty(TypeEnum::TFunc(
+                FunSignature { args: vec![], ret: bar2, vars: Default::default() }.into(),
+            )),
         );
         let class_names = [("Bar".into(), bar), ("Bar2".into(), bar2)].iter().cloned().collect();
 
