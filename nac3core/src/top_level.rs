@@ -68,20 +68,10 @@ pub struct TopLevelContext {
     pub unifiers: Arc<RwLock<Vec<(SharedUnifier, PrimitiveStore)>>>,
 }
 
-impl TopLevelContext {
-    pub fn get_def_list<'a>(&'a self) -> Vec<&'a TopLevelDef> {
-        let list = self.definitions.read();
-        let list = list.deref();
-        let list = list.iter().map(|x| {
-            x.read().deref()
-        }).collect::<Vec<_>>();
-        list
-    }
-}
 
 pub struct TopLevelComposer {
     // list of top level definitions, same as top level context
-    pub definition_list: Arc<Vec<RwLock<TopLevelDef>>>,
+    pub definition_list: Arc<RwLock<Vec<RwLock<TopLevelDef>>>>,
     // list of top level ast, the index is same as the field `definition_list`
     pub ast_list: Vec<Option<ast::Stmt<()>>>,
     // start as a primitive unifier, will add more top_level defs inside
@@ -97,7 +87,7 @@ pub struct TopLevelComposer {
 impl TopLevelComposer {
     pub fn to_top_level_context(&self) -> TopLevelContext {
         TopLevelContext {
-            definitions: RwLock::new(self.definition_list.).into(),
+            definitions: self.definition_list.clone(),
             // FIXME: all the big unifier or?
             unifiers: Default::default(),
         }
@@ -156,7 +146,7 @@ impl TopLevelComposer {
         let ast_list: Vec<Option<ast::Stmt<()>>> = vec![None, None, None, None, None];
 
         let composer = TopLevelComposer {
-            definition_list: top_level_def_list,
+            definition_list: RwLock::new(top_level_def_list).into(),
             ast_list,
             primitives: primitives.0,
             unifier: primitives.1.into(),
@@ -212,7 +202,7 @@ impl TopLevelComposer {
         ast: ast::Stmt<()>,
         resolver: Option<Arc<Mutex<dyn SymbolResolver + Send + Sync>>>,
     ) -> Result<(String, DefinitionId), String> {
-        let (mut def_list, mut ast_list) = (&mut self.definition_list, &mut self.ast_list);
+        let (mut def_list, ast_list) = (self.definition_list.write(), &mut self.ast_list);
 
         assert_eq!(def_list.len(), ast_list.len());
 
@@ -270,7 +260,7 @@ impl TopLevelComposer {
                 ast_list.push(None);
 
                 // class, put its def_id into the to be analyzed set
-                let mut to_be_analyzed = self.to_be_analyzed_class;
+                let to_be_analyzed = &mut self.to_be_analyzed_class;
                 to_be_analyzed.push(DefinitionId(class_def_id));
 
                 Ok((class_name, DefinitionId(class_def_id)))
@@ -296,9 +286,11 @@ impl TopLevelComposer {
 
     /// step 1, analyze the type vars associated with top level class
     fn analyze_top_level_class_type_var(&mut self) -> Result<(), String> {
-        let mut def_list = &mut self.definition_list;
+        let mut def_list = self.definition_list.write();
         let ast_list = &self.ast_list;
-        let mut unifier = &mut self.unifier;
+        let converted_top_level = &self.to_top_level_context();
+        let primitives = &self.primitives;
+        let unifier = &mut self.unifier;
 
         for (class_def, class_ast) in def_list
             .iter_mut()
@@ -347,9 +339,9 @@ impl TopLevelComposer {
                                 .iter()
                                 .map(|e| {
                                     class_resolver.as_ref().unwrap().lock().parse_type_annotation(
-                                        &self.to_top_level_context(),
+                                        converted_top_level,
                                         unifier.borrow_mut(),
-                                        &self.primitives,
+                                        primitives,
                                         e,
                                     )
                                 })
@@ -377,9 +369,9 @@ impl TopLevelComposer {
                         } else {
                             let ty =
                                 class_resolver.as_ref().unwrap().lock().parse_type_annotation(
-                                    &self.to_top_level_context(),
+                                    converted_top_level,
                                     unifier.borrow_mut(),
-                                    &self.primitives,
+                                    primitives,
                                     &slice,
                                 )?;
                             // check if it is type var
@@ -408,9 +400,11 @@ impl TopLevelComposer {
     /// if the type var associated with class `B` has not been handled properly,
     /// the parse of type annotation of `B[int, bool]` will fail
     fn analyze_top_level_class_bases(&mut self) -> Result<(), String> {
-        let mut def_list = &mut self.definition_list;
+        let mut def_list = self.definition_list.write();
         let ast_list = &self.ast_list;
-        let mut unifier = &mut self.unifier;
+        let converted_top_level = &self.to_top_level_context();
+        let primitives = &self.primitives;
+        let unifier = &mut self.unifier;
 
         for (class_def, class_ast) in def_list
             .iter_mut()
@@ -442,9 +436,9 @@ impl TopLevelComposer {
                 }
                 // get the def id of the base class
                 let base_ty = class_resolver.as_ref().unwrap().lock().parse_type_annotation(
-                    &self.to_top_level_context(),
+                    converted_top_level,
                     unifier.borrow_mut(),
-                    &self.primitives,
+                    primitives,
                     b,
                 )?;
                 let base_id =
@@ -463,11 +457,13 @@ impl TopLevelComposer {
 
     /// step 3, class fields and methods
     fn analyze_top_level_class_fields_methods(&mut self) -> Result<(), String> {
-        let mut def_list = &mut self.definition_list;
+        let mut def_list = self.definition_list.write();
         let ast_list = &self.ast_list;
-        let mut unifier = &mut self.unifier;
+        let converted_top_level = &self.to_top_level_context();
         let class_method_to_def_id = &self.class_method_to_def_id;
-        let mut to_be_analyzed_class = &mut self.to_be_analyzed_class;
+        let primitives = &self.primitives;
+        let to_be_analyzed_class = &mut self.to_be_analyzed_class;
+        let unifier = &mut self.unifier;
 
         while !to_be_analyzed_class.is_empty() {
             let class_ind = to_be_analyzed_class.remove(0).0;
@@ -544,9 +540,9 @@ impl TopLevelComposer {
                                 
                                 let ty =
                                     class_resolver.as_ref().unwrap().lock().parse_type_annotation(
-                                        &self.to_top_level_context(),
+                                        converted_top_level,
                                         unifier.borrow_mut(),
-                                        &self.primitives,
+                                        primitives,
                                         annotation,
                                     )?;
                                 Ok(ty)
@@ -562,9 +558,9 @@ impl TopLevelComposer {
                         .as_ref()
                         .map(|x| 
                             class_resolver.as_ref().unwrap().lock().parse_type_annotation(
-                                &self.to_top_level_context(),
+                                converted_top_level,
                                 unifier.borrow_mut(),
-                                &self.primitives,
+                                primitives,
                                 x.as_ref(),
                             )
                         )
