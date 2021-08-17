@@ -70,7 +70,7 @@ pub struct TopLevelContext {
 pub struct TopLevelComposer {
     // list of top level definitions, same as top level context
     pub definition_list: Arc<RwLock<Vec<RwLock<TopLevelDef>>>>,
-    // list of top level ast, the index is same as the field `definition_list` and `ty_list`
+    // list of top level ast, the index is same as the field `definition_list`
     pub ast_list: RwLock<Vec<Option<ast::Stmt<()>>>>,
     // start as a primitive unifier, will add more top_level defs inside
     pub unifier: RwLock<Unifier>,
@@ -232,7 +232,7 @@ impl TopLevelComposer {
                                 self.unifier.write().add_ty(TypeEnum::TFunc(
                                     FunSignature {
                                         args: Default::default(),
-                                        ret: self.primitives.none.into(),
+                                        ret: self.primitives.none,
                                         vars: Default::default(),
                                     }
                                     .into(),
@@ -319,25 +319,15 @@ impl TopLevelComposer {
                     // should update the TopLevelDef::Class.typevars and the TypeEnum::TObj.params
                     ast::ExprKind::Subscript { value, slice, .. }
                         if {
-                            // can only be `Generic[...]` and this can only appear once
-                            if let ast::ExprKind::Name { id, .. } = &value.node {
-                                if id == "Generic" {
-                                    if !is_generic {
-                                        is_generic = true;
-                                        true
-                                    } else {
-                                        return Err(
-                                            "Only single Generic[...] can be in bases".into()
-                                        );
-                                    }
-                                } else {
-                                    false
-                                }
-                            } else {
-                                false
-                            }
+                            matches!(&value.node, ast::ExprKind::Name { id, .. } if id == "Generic")
                         } =>
                     {
+                        if !is_generic {
+                            is_generic = true;
+                        } else {
+                            return Err("Only single Generic[...] can be in bases".into());
+                        }
+
                         // if `class A(Generic[T, V, G])`
                         if let ast::ExprKind::Tuple { elts, .. } = &slice.node {
                             // parse the type vars
@@ -530,36 +520,93 @@ impl TopLevelComposer {
                         .args
                         .iter()
                         .map(|x| -> Result<Type, String> {
-                            let annotation = x
-                                .node
-                                .annotation
-                                .as_ref()
-                                .ok_or_else(|| {
-                                    "type annotation for function parameter is needed".to_string()
-                                })?
-                                .as_ref();
-
-                            let ty =
-                                class_resolver.as_ref().unwrap().lock().parse_type_annotation(
-                                    &self.to_top_level_context(),
-                                    unifier.borrow_mut(),
-                                    &self.primitives,
-                                    annotation,
-                                )?;
-                            Ok(ty)
+                            if x.node.arg != "self" {
+                                let annotation = x
+                                    .node
+                                    .annotation
+                                    .as_ref()
+                                    .ok_or_else(|| {
+                                        "type annotation for function parameter is needed".to_string()
+                                    })?
+                                    .as_ref();
+                                
+                                let ty =
+                                    class_resolver.as_ref().unwrap().lock().parse_type_annotation(
+                                        &self.to_top_level_context(),
+                                        unifier.borrow_mut(),
+                                        &self.primitives,
+                                        annotation,
+                                    )?;
+                                Ok(ty)
+                            } else {
+                                // TODO: handle self, how
+                                unimplemented!()
+                            }
                         })
                         .collect::<Result<Vec<_>, _>>()?;
-                    let ret_ty = method_returns_ast
+                    
+                    let ret_ty = if method_name != "__init__" {
+                        method_returns_ast
                         .as_ref()
-                        .and_then(|x| {
-                            Some(class_resolver.as_ref().unwrap().lock().parse_type_annotation(
+                        .map(|x| 
+                            class_resolver.as_ref().unwrap().lock().parse_type_annotation(
                                 &self.to_top_level_context(),
                                 unifier.borrow_mut(),
                                 &self.primitives,
                                 x.as_ref(),
-                            ))
-                        })
-                        .unwrap()?;
+                            )
+                        )
+                        .ok_or_else(|| "return type annotation needed".to_string())??
+                    } else {
+                        // TODO: self type, how
+                        unimplemented!()
+                    };
+                    
+                    // handle fields
+                    if method_name == "__init__" {
+                        for body in method_body_ast {
+                            match &body.node {
+                                ast::StmtKind::AnnAssign {
+                                    target,
+                                    annotation,
+                                    ..
+                                } if {
+                                    if let ast::ExprKind::Attribute {
+                                        value,
+                                        attr,
+                                        ..
+                                    } = &target.node {
+                                        if let ast::ExprKind::Name {id, ..} = &value.node {
+                                            id == "self"
+                                        } else { false }
+                                    } else { false }
+                                } => {
+                                    // TODO: record this field with its type
+                                },
+
+                                // TODO: exclude those without type annotation
+                                ast::StmtKind::Assign {
+                                    targets,
+                                    ..
+                                } if {
+                                    if let ast::ExprKind::Attribute {
+                                        value,
+                                        attr,
+                                        ..
+                                    } = &targets[0].node {
+                                        if let ast::ExprKind::Name {id, ..} = &value.node {
+                                            id == "self"
+                                        } else { false }
+                                    } else { false }
+                                } => {
+                                    unimplemented!()
+                                },
+
+                                // do nothing
+                                _ => {  }
+                            }
+                        }
+                    }
 
                     let all_tys_ok = {
                         let ret_ty_iter = vec![ret_ty];
@@ -580,6 +627,7 @@ impl TopLevelComposer {
                                         unreachable!()
                                     }
                                 }
+                                TypeEnum::TVar { .. } => true,
                                 _ => unreachable!(),
                             }
                         })
@@ -607,6 +655,10 @@ impl TopLevelComposer {
     }
 
     fn analyze_top_level_inheritance(&mut self) -> Result<(), String> {
+        unimplemented!()
+    }
+
+    fn analyze_top_level_function(&mut self) -> Result<(), String> {
         unimplemented!()
     }
 
