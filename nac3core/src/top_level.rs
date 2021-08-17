@@ -1,4 +1,5 @@
 use std::borrow::BorrowMut;
+use std::ops::Deref;
 use std::{collections::HashMap, collections::HashSet, sync::Arc};
 
 use super::typecheck::type_inferencer::PrimitiveStore;
@@ -67,25 +68,36 @@ pub struct TopLevelContext {
     pub unifiers: Arc<RwLock<Vec<(SharedUnifier, PrimitiveStore)>>>,
 }
 
+impl TopLevelContext {
+    pub fn get_def_list<'a>(&'a self) -> Vec<&'a TopLevelDef> {
+        let list = self.definitions.read();
+        let list = list.deref();
+        let list = list.iter().map(|x| {
+            x.read().deref()
+        }).collect::<Vec<_>>();
+        list
+    }
+}
+
 pub struct TopLevelComposer {
     // list of top level definitions, same as top level context
-    pub definition_list: Arc<RwLock<Vec<RwLock<TopLevelDef>>>>,
+    pub definition_list: Arc<Vec<RwLock<TopLevelDef>>>,
     // list of top level ast, the index is same as the field `definition_list`
-    pub ast_list: RwLock<Vec<Option<ast::Stmt<()>>>>,
+    pub ast_list: Vec<Option<ast::Stmt<()>>>,
     // start as a primitive unifier, will add more top_level defs inside
-    pub unifier: RwLock<Unifier>,
+    pub unifier: Unifier,
     // primitive store
     pub primitives: PrimitiveStore,
     // mangled class method name to def_id
-    pub class_method_to_def_id: RwLock<HashMap<String, DefinitionId>>,
+    pub class_method_to_def_id: HashMap<String, DefinitionId>,
     // record the def id of the classes whoses fields and methods are to be analyzed
-    pub to_be_analyzed_class: RwLock<Vec<DefinitionId>>,
+    pub to_be_analyzed_class: Vec<DefinitionId>,
 }
 
 impl TopLevelComposer {
     pub fn to_top_level_context(&self) -> TopLevelContext {
         TopLevelContext {
-            definitions: self.definition_list.clone(),
+            definitions: RwLock::new(self.definition_list.).into(),
             // FIXME: all the big unifier or?
             unifiers: Default::default(),
         }
@@ -144,8 +156,8 @@ impl TopLevelComposer {
         let ast_list: Vec<Option<ast::Stmt<()>>> = vec![None, None, None, None, None];
 
         let composer = TopLevelComposer {
-            definition_list: RwLock::new(top_level_def_list).into(),
-            ast_list: RwLock::new(ast_list),
+            definition_list: top_level_def_list,
+            ast_list,
             primitives: primitives.0,
             unifier: primitives.1.into(),
             class_method_to_def_id: Default::default(),
@@ -200,7 +212,7 @@ impl TopLevelComposer {
         ast: ast::Stmt<()>,
         resolver: Option<Arc<Mutex<dyn SymbolResolver + Send + Sync>>>,
     ) -> Result<(String, DefinitionId), String> {
-        let (mut def_list, mut ast_list) = (self.definition_list.write(), self.ast_list.write());
+        let (mut def_list, mut ast_list) = (&mut self.definition_list, &mut self.ast_list);
 
         assert_eq!(def_list.len(), ast_list.len());
 
@@ -229,7 +241,7 @@ impl TopLevelComposer {
                         def_list.push(
                             Self::make_top_level_function_def(
                                 fun_name.clone(),
-                                self.unifier.write().add_ty(TypeEnum::TFunc(
+                                self.unifier.add_ty(TypeEnum::TFunc(
                                     FunSignature {
                                         args: Default::default(),
                                         ret: self.primitives.none,
@@ -245,7 +257,7 @@ impl TopLevelComposer {
                         ast_list.push(None);
 
                         // class method, do not let the symbol manager manage it, use our own map
-                        self.class_method_to_def_id.write().insert(fun_name, DefinitionId(def_id));
+                        self.class_method_to_def_id.insert(fun_name, DefinitionId(def_id));
                     }
                 }
 
@@ -258,7 +270,7 @@ impl TopLevelComposer {
                 ast_list.push(None);
 
                 // class, put its def_id into the to be analyzed set
-                let mut to_be_analyzed = self.to_be_analyzed_class.write();
+                let mut to_be_analyzed = self.to_be_analyzed_class;
                 to_be_analyzed.push(DefinitionId(class_def_id));
 
                 Ok((class_name, DefinitionId(class_def_id)))
@@ -284,9 +296,9 @@ impl TopLevelComposer {
 
     /// step 1, analyze the type vars associated with top level class
     fn analyze_top_level_class_type_var(&mut self) -> Result<(), String> {
-        let mut def_list = self.definition_list.write();
-        let ast_list = self.ast_list.read();
-        let mut unifier = self.unifier.write();
+        let mut def_list = &mut self.definition_list;
+        let ast_list = &self.ast_list;
+        let mut unifier = &mut self.unifier;
 
         for (class_def, class_ast) in def_list
             .iter_mut()
@@ -396,9 +408,9 @@ impl TopLevelComposer {
     /// if the type var associated with class `B` has not been handled properly,
     /// the parse of type annotation of `B[int, bool]` will fail
     fn analyze_top_level_class_bases(&mut self) -> Result<(), String> {
-        let mut def_list = self.definition_list.write();
-        let ast_list = self.ast_list.read();
-        let mut unifier = self.unifier.write();
+        let mut def_list = &mut self.definition_list;
+        let ast_list = &self.ast_list;
+        let mut unifier = &mut self.unifier;
 
         for (class_def, class_ast) in def_list
             .iter_mut()
@@ -451,11 +463,11 @@ impl TopLevelComposer {
 
     /// step 3, class fields and methods
     fn analyze_top_level_class_fields_methods(&mut self) -> Result<(), String> {
-        let mut def_list = self.definition_list.write();
-        let ast_list = self.ast_list.read();
-        let mut unifier = self.unifier.write();
-        let class_method_to_def_id = self.class_method_to_def_id.read();
-        let mut to_be_analyzed_class = self.to_be_analyzed_class.write();
+        let mut def_list = &mut self.definition_list;
+        let ast_list = &self.ast_list;
+        let mut unifier = &mut self.unifier;
+        let class_method_to_def_id = &self.class_method_to_def_id;
+        let mut to_be_analyzed_class = &mut self.to_be_analyzed_class;
 
         while !to_be_analyzed_class.is_empty() {
             let class_ind = to_be_analyzed_class.remove(0).0;
