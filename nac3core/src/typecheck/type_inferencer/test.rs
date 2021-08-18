@@ -118,7 +118,7 @@ impl TestEnvironment {
     fn new() -> TestEnvironment {
         let mut unifier = Unifier::new();
         let mut identifier_mapping = HashMap::new();
-        let mut top_level_defs = Vec::new();
+        let mut top_level_defs: Vec<Arc<RwLock<TopLevelDef>>> = Vec::new();
         let int32 = unifier.add_ty(TypeEnum::TObj {
             obj_id: DefinitionId(0),
             fields: HashMap::new().into(),
@@ -153,7 +153,7 @@ impl TestEnvironment {
                 methods: Default::default(),
                 ancestors: Default::default(),
                 resolver: None,
-            }));
+            }).into());
         }
 
         let primitives = PrimitiveStore { int32, int64, float, bool, none };
@@ -172,7 +172,7 @@ impl TestEnvironment {
             methods: Default::default(),
             ancestors: Default::default(),
             resolver: None,
-        }));
+        }).into());
 
         identifier_mapping.insert(
             "Foo".into(),
@@ -205,7 +205,7 @@ impl TestEnvironment {
             methods: Default::default(),
             ancestors: Default::default(),
             resolver: None,
-        }));
+        }).into());
         identifier_mapping.insert(
             "Bar".into(),
             unifier.add_ty(TypeEnum::TFunc(
@@ -229,7 +229,7 @@ impl TestEnvironment {
             methods: Default::default(),
             ancestors: Default::default(),
             resolver: None,
-        }));
+        }).into());
         identifier_mapping.insert(
             "Bar2".into(),
             unifier.add_ty(TypeEnum::TFunc(
