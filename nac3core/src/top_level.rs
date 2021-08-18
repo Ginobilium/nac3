@@ -475,23 +475,24 @@ impl TopLevelComposer {
         // NOTE: roughly prevent infinite loop
         let mut max_iter = to_be_analyzed_class.len() * 4;
         'class: loop {
-            if to_be_analyzed_class.is_empty() && { max_iter -= 1; max_iter > 0 } {
+            if to_be_analyzed_class.is_empty() && {
+                max_iter -= 1;
+                max_iter > 0
+            } {
                 break;
             }
 
             let class_ind = to_be_analyzed_class.remove(0).0;
-            let (class_name,
-                class_body_ast,
-                class_bases_ast,
-                class_resolver,
-                class_ancestors
-            ) = {
+            let (class_name, class_body_ast, class_bases_ast, class_resolver, class_ancestors) = {
                 let (class_def, class_ast) = &mut def_ast_list[class_ind];
                 if let Some(ast::Located {
-                    node: ast::StmtKind::ClassDef { name, body, bases, .. }, ..
+                    node: ast::StmtKind::ClassDef { name, body, bases, .. },
+                    ..
                 }) = class_ast.as_ref()
                 {
-                    if let TopLevelDef::Class { resolver, ancestors, .. } = class_def.write().deref() {
+                    if let TopLevelDef::Class { resolver, ancestors, .. } =
+                        class_def.write().deref()
+                    {
                         (name, body, bases, resolver.as_ref().unwrap().clone(), ancestors.clone())
                     } else {
                         unreachable!()
@@ -502,7 +503,8 @@ impl TopLevelComposer {
             };
 
             let all_base_class_analyzed = {
-                let not_yet_analyzed = to_be_analyzed_class.clone().into_iter().collect::<HashSet<_>>();
+                let not_yet_analyzed =
+                    to_be_analyzed_class.clone().into_iter().collect::<HashSet<_>>();
                 let base = class_ancestors.clone().into_iter().collect::<HashSet<_>>();
                 let intersection = not_yet_analyzed.intersection(&base).collect_vec();
                 intersection.is_empty()
@@ -517,11 +519,16 @@ impl TopLevelComposer {
             let class_bases_ty = class_bases_ast
                 .iter()
                 .filter_map(|x| {
-                    class_resolver.as_ref().lock().parse_type_annotation(
-                        converted_top_level,
-                        unifier.borrow_mut(),
-                        primitives,
-                        x).ok()
+                    class_resolver
+                        .as_ref()
+                        .lock()
+                        .parse_type_annotation(
+                            converted_top_level,
+                            unifier.borrow_mut(),
+                            primitives,
+                            x,
+                        )
+                        .ok()
                 })
                 .collect_vec();
 
