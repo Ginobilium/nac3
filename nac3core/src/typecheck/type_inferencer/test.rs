@@ -146,14 +146,17 @@ impl TestEnvironment {
         });
         identifier_mapping.insert("None".into(), none);
         for i in 0..5 {
-            top_level_defs.push(RwLock::new(TopLevelDef::Class {
-                object_id: DefinitionId(i),
-                type_vars: Default::default(),
-                fields: Default::default(),
-                methods: Default::default(),
-                ancestors: Default::default(),
-                resolver: None,
-            }).into());
+            top_level_defs.push(
+                RwLock::new(TopLevelDef::Class {
+                    object_id: DefinitionId(i),
+                    type_vars: Default::default(),
+                    fields: Default::default(),
+                    methods: Default::default(),
+                    ancestors: Default::default(),
+                    resolver: None,
+                })
+                .into(),
+            );
         }
 
         let primitives = PrimitiveStore { int32, int64, float, bool, none };
@@ -165,14 +168,17 @@ impl TestEnvironment {
             fields: [("a".into(), v0)].iter().cloned().collect::<HashMap<_, _>>().into(),
             params: [(id, v0)].iter().cloned().collect::<HashMap<_, _>>().into(),
         });
-        top_level_defs.push(RwLock::new(TopLevelDef::Class {
-            object_id: DefinitionId(5),
-            type_vars: vec![v0],
-            fields: [("a".into(), v0)].into(),
-            methods: Default::default(),
-            ancestors: Default::default(),
-            resolver: None,
-        }).into());
+        top_level_defs.push(
+            RwLock::new(TopLevelDef::Class {
+                object_id: DefinitionId(5),
+                type_vars: vec![v0],
+                fields: [("a".into(), v0)].into(),
+                methods: Default::default(),
+                ancestors: Default::default(),
+                resolver: None,
+            })
+            .into(),
+        );
 
         identifier_mapping.insert(
             "Foo".into(),
@@ -198,14 +204,17 @@ impl TestEnvironment {
                 .into(),
             params: Default::default(),
         });
-        top_level_defs.push(RwLock::new(TopLevelDef::Class {
-            object_id: DefinitionId(6),
-            type_vars: Default::default(),
-            fields: [("a".into(), int32), ("b".into(), fun)].into(),
-            methods: Default::default(),
-            ancestors: Default::default(),
-            resolver: None,
-        }).into());
+        top_level_defs.push(
+            RwLock::new(TopLevelDef::Class {
+                object_id: DefinitionId(6),
+                type_vars: Default::default(),
+                fields: [("a".into(), int32), ("b".into(), fun)].into(),
+                methods: Default::default(),
+                ancestors: Default::default(),
+                resolver: None,
+            })
+            .into(),
+        );
         identifier_mapping.insert(
             "Bar".into(),
             unifier.add_ty(TypeEnum::TFunc(
@@ -222,14 +231,17 @@ impl TestEnvironment {
                 .into(),
             params: Default::default(),
         });
-        top_level_defs.push(RwLock::new(TopLevelDef::Class {
-            object_id: DefinitionId(7),
-            type_vars: Default::default(),
-            fields: [("a".into(), bool), ("b".into(), fun)].into(),
-            methods: Default::default(),
-            ancestors: Default::default(),
-            resolver: None,
-        }).into());
+        top_level_defs.push(
+            RwLock::new(TopLevelDef::Class {
+                object_id: DefinitionId(7),
+                type_vars: Default::default(),
+                fields: [("a".into(), bool), ("b".into(), fun)].into(),
+                methods: Default::default(),
+                ancestors: Default::default(),
+                resolver: None,
+            })
+            .into(),
+        );
         identifier_mapping.insert(
             "Bar2".into(),
             unifier.add_ty(TypeEnum::TFunc(
