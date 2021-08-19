@@ -372,7 +372,7 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
             }
             ExprKind::BinOp { op, left, right } => {
                 let ty1 = self.unifier.get_representative(left.custom.unwrap());
-                let ty2 = self.unifier.get_representative(left.custom.unwrap());
+                let ty2 = self.unifier.get_representative(right.custom.unwrap());
                 let left = self.gen_expr(left);
                 let right = self.gen_expr(right);
 
