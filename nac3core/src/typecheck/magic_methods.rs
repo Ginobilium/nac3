@@ -66,26 +66,32 @@ pub fn comparison_name(op: &Cmpop) -> Option<&'static str> {
 
 pub fn impl_binop(
     unifier: &mut Unifier,
-    _store: &PrimitiveStore,
+    store: &PrimitiveStore,
     ty: Type,
     other_ty: &[Type],
     ret_ty: Type,
     ops: &[ast::Operator],
 ) {
     if let TypeEnum::TObj { fields, .. } = unifier.get_ty(ty).borrow() {
+        let (other_ty, other_var_id) = if other_ty.len() == 1 {
+            (other_ty[0], None)
+        } else {
+            let (ty, var_id) = unifier.get_fresh_var_with_range(other_ty);
+            (ty, Some(var_id))
+        };
+        let function_vars = if let Some(var_id) = other_var_id {
+            vec![(var_id, other_ty)].into_iter().collect::<HashMap<_, _>>()
+        } else {
+            HashMap::new()
+        };
         for op in ops {
             fields.borrow_mut().insert(binop_name(op).into(), {
-                let other = if other_ty.len() == 1 {
-                    other_ty[0]
-                } else {
-                    unifier.get_fresh_var_with_range(other_ty).0
-                };
                 unifier.add_ty(TypeEnum::TFunc(
                     FunSignature {
                         ret: ret_ty,
-                        vars: HashMap::new(),
+                        vars: function_vars.clone(),
                         args: vec![FuncArg {
-                            ty: other,
+                            ty: other_ty,
                             default_value: None,
                             name: "other".into(),
                         }],
@@ -95,17 +101,12 @@ pub fn impl_binop(
             });
 
             fields.borrow_mut().insert(binop_assign_name(op).into(), {
-                let other = if other_ty.len() == 1 {
-                    other_ty[0]
-                } else {
-                    unifier.get_fresh_var_with_range(other_ty).0
-                };
                 unifier.add_ty(TypeEnum::TFunc(
                     FunSignature {
-                        ret: ret_ty,
-                        vars: HashMap::new(),
+                        ret: store.none,
+                        vars: function_vars.clone(),
                         args: vec![FuncArg {
-                            ty: other,
+                            ty: other_ty,
                             default_value: None,
                             name: "other".into(),
                         }],
