@@ -8,11 +8,27 @@ use crate::{
 };
 use inkwell::{
     types::{BasicType, BasicTypeEnum},
-    values::BasicValueEnum,
+    values::{BasicValueEnum, IntValue, PointerValue},
     AddressSpace,
 };
 use itertools::{chain, izip, zip, Itertools};
 use rustpython_parser::ast::{self, Boolop, Constant, Expr, ExprKind, Operator};
+
+fn assert_int_val<'ctx>(val: BasicValueEnum<'ctx>) -> IntValue<'ctx> {
+    if let BasicValueEnum::IntValue(v) = val {
+        v
+    } else {
+        unreachable!()
+    }
+}
+
+fn assert_pointer_val<'ctx>(val: BasicValueEnum<'ctx>) -> PointerValue<'ctx> {
+    if let BasicValueEnum::PointerValue(v) = val {
+        v
+    } else {
+        unreachable!()
+    }
+}
 
 impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
     fn get_subst_key(&mut self, obj: Option<Type>, fun: &FunSignature) -> String {
@@ -63,10 +79,11 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
                 let zero = self.ctx.i32_type().const_zero();
                 unsafe {
                     for (i, val) in vals.into_iter().enumerate() {
-                        let p = ptr.const_in_bounds_gep(&[
-                            zero,
-                            self.ctx.i32_type().const_int(i as u64, false),
-                        ]);
+                        let p = self.builder.build_in_bounds_gep(
+                            ptr,
+                            &[zero, self.ctx.i32_type().const_int(i as u64, false)],
+                            "elemptr",
+                        );
                         self.builder.build_store(p, val);
                     }
                 }
@@ -88,7 +105,7 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
     ) -> Option<BasicValueEnum<'ctx>> {
         let key = self.get_subst_key(obj.map(|(a, _)| a), fun.0);
         let defs = self.top_level.definitions.read();
-        let definition = defs.get(fun.1.0).unwrap();
+        let definition = defs.get(fun.1 .0).unwrap();
         let val = if let TopLevelDef::Function { instance_to_symbol, .. } = &*definition.read() {
             let symbol = instance_to_symbol.get(&key).unwrap_or_else(|| {
                 // TODO: codegen for function that are not yet generated
@@ -242,14 +259,7 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
             ExprKind::Name { id, .. } => {
                 let ptr = self.var_assignment.get(id).unwrap();
                 let primitives = &self.primitives;
-                // we should only dereference primitive types
-                if [primitives.int32, primitives.int64, primitives.float, primitives.bool]
-                    .contains(&self.unifier.get_representative(expr.custom.unwrap()))
-                {
-                    self.builder.build_load(*ptr, "load")
-                } else {
-                    (*ptr).into()
-                }
+                self.builder.build_load(*ptr, "load")
             }
             ExprKind::List { elts, .. } => {
                 // this shall be optimized later for constant primitive lists...
@@ -271,23 +281,26 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
                 );
                 let arr_str_ptr = self.builder.build_alloca(arr_ty, "tmparrstr");
                 unsafe {
+                    let len_ptr =
+                        self.builder.build_in_bounds_gep(arr_str_ptr, &[zero, zero], "len_ptr");
                     self.builder.build_store(
-                        arr_str_ptr.const_in_bounds_gep(&[zero, zero]),
+                        len_ptr,
                         self.ctx.i32_type().const_int(elements.len() as u64, false),
                     );
-                    self.builder.build_store(
-                        arr_str_ptr
-                            .const_in_bounds_gep(&[zero, self.ctx.i32_type().const_int(1, false)]),
-                        arr_ptr,
+                    let ptr_to_arr = self.builder.build_in_bounds_gep(
+                        arr_str_ptr,
+                        &[zero, self.ctx.i32_type().const_int(1, false)],
+                        "ptr_to_arr",
                     );
-                    let arr_offset = self.ctx.i32_type().const_int(1, false);
+                    self.builder.build_store(ptr_to_arr, arr_ptr);
+                    let i32_type = self.ctx.i32_type();
                     for (i, v) in elements.iter().enumerate() {
-                        let ptr = self.builder.build_in_bounds_gep(
+                        let elem_ptr = self.builder.build_in_bounds_gep(
                             arr_ptr,
-                            &[zero, arr_offset, self.ctx.i32_type().const_int(i as u64, false)],
-                            "arr_element",
+                            &[i32_type.const_int(i as u64, false)],
+                            "elem_ptr",
                         );
-                        self.builder.build_store(ptr, *v);
+                        self.builder.build_store(elem_ptr, *v);
                     }
                 }
                 arr_str_ptr.into()
@@ -299,10 +312,11 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
                 let tuple_ptr = self.builder.build_alloca(tuple_ty, "tuple");
                 for (i, v) in element_val.into_iter().enumerate() {
                     unsafe {
-                        let ptr = tuple_ptr.const_in_bounds_gep(&[
-                            zero,
-                            self.ctx.i32_type().const_int(i as u64, false),
-                        ]);
+                        let ptr = self.builder.build_in_bounds_gep(
+                            tuple_ptr,
+                            &[zero, self.ctx.i32_type().const_int(i as u64, false)],
+                            "ptr",
+                        );
                         self.builder.build_store(ptr, v);
                     }
                 }
@@ -312,27 +326,19 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
                 // note that we would handle class methods directly in calls
                 let index = self.get_attr_index(value.custom.unwrap(), attr);
                 let val = self.gen_expr(value).unwrap();
-                let ptr = if let BasicValueEnum::PointerValue(v) = val {
-                    v
-                } else {
-                    unreachable!();
-                };
+                let ptr = assert_pointer_val(val);
                 unsafe {
-                    let ptr = ptr.const_in_bounds_gep(&[
-                        zero,
-                        self.ctx.i32_type().const_int(index as u64, false),
-                    ]);
+                    let ptr = self.builder.build_in_bounds_gep(
+                        ptr,
+                        &[zero, self.ctx.i32_type().const_int(index as u64, false)],
+                        "attr",
+                    );
                     self.builder.build_load(ptr, "field")
                 }
             }
             ExprKind::BoolOp { op, values } => {
                 // requires conditional branches for short-circuiting...
-                let left =
-                    if let BasicValueEnum::IntValue(left) = self.gen_expr(&values[0]).unwrap() {
-                        left
-                    } else {
-                        unreachable!()
-                    };
+                let left = assert_int_val(self.gen_expr(&values[0]).unwrap());
                 let current = self.builder.get_insert_block().unwrap().get_parent().unwrap();
                 let a_bb = self.ctx.append_basic_block(current, "a");
                 let b_bb = self.ctx.append_basic_block(current, "b");
@@ -344,25 +350,13 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
                         let a = self.ctx.bool_type().const_int(1, false);
                         self.builder.build_unconditional_branch(cont_bb);
                         self.builder.position_at_end(b_bb);
-                        let b = if let BasicValueEnum::IntValue(b) =
-                            self.gen_expr(&values[1]).unwrap()
-                        {
-                            b
-                        } else {
-                            unreachable!()
-                        };
+                        let b = assert_int_val(self.gen_expr(&values[1]).unwrap());
                         self.builder.build_unconditional_branch(cont_bb);
                         (a, b)
                     }
                     Boolop::And => {
                         self.builder.position_at_end(a_bb);
-                        let a = if let BasicValueEnum::IntValue(a) =
-                            self.gen_expr(&values[1]).unwrap()
-                        {
-                            a
-                        } else {
-                            unreachable!()
-                        };
+                        let a = assert_int_val(self.gen_expr(&values[1]).unwrap());
                         self.builder.build_unconditional_branch(cont_bb);
                         self.builder.position_at_end(b_bb);
                         let b = self.ctx.bool_type().const_int(0, false);
@@ -396,8 +390,7 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
                 let ty = self.unifier.get_representative(operand.custom.unwrap());
                 let val = self.gen_expr(operand).unwrap();
                 if ty == self.primitives.bool {
-                    let val =
-                        if let BasicValueEnum::IntValue(val) = val { val } else { unreachable!() };
+                    let val = assert_int_val(val);
                     match op {
                         ast::Unaryop::Invert | ast::Unaryop::Not => {
                             self.builder.build_not(val, "not").into()
@@ -405,8 +398,7 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
                         _ => val.into(),
                     }
                 } else if [self.primitives.int32, self.primitives.int64].contains(&ty) {
-                    let val =
-                        if let BasicValueEnum::IntValue(val) = val { val } else { unreachable!() };
+                    let val = assert_int_val(val);
                     match op {
                         ast::Unaryop::USub => self.builder.build_int_neg(val, "neg").into(),
                         ast::Unaryop::Invert => self.builder.build_not(val, "not").into(),
@@ -506,12 +498,7 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
                 .into() // as there should be at least 1 element, it should never be none
             }
             ExprKind::IfExp { test, body, orelse } => {
-                let test = if let BasicValueEnum::IntValue(test) = self.gen_expr(test).unwrap() {
-                    test
-                } else {
-                    unreachable!()
-                };
-
+                let test = assert_int_val(self.gen_expr(test).unwrap());
                 let current = self.builder.get_insert_block().unwrap().get_parent().unwrap();
                 let then_bb = self.ctx.append_basic_block(current, "then");
                 let else_bb = self.ctx.append_basic_block(current, "else");
@@ -549,6 +536,42 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
                     return self.gen_call(None, (&signature, fun), params, ret);
                 } else {
                     unimplemented!()
+                }
+            }
+            ExprKind::Subscript { value, slice, .. } => {
+                if let TypeEnum::TList { ty } = &*self.unifier.get_ty(value.custom.unwrap()) {
+                    if let ExprKind::Slice { .. } = slice.node {
+                        unimplemented!()
+                    } else {
+                        // TODO: bound check
+                        let i32_type = self.ctx.i32_type();
+                        let v = assert_pointer_val(self.gen_expr(value).unwrap());
+                        let index = assert_int_val(self.gen_expr(slice).unwrap());
+                        unsafe {
+                            let ptr_to_arr = self.builder.build_in_bounds_gep(
+                                v,
+                                &[i32_type.const_zero(), i32_type.const_int(1, false)],
+                                "ptr_to_arr",
+                            );
+                            let arr_ptr =
+                                assert_pointer_val(self.builder.build_load(ptr_to_arr, "loadptr"));
+                            let ptr = self.builder.build_gep(arr_ptr, &[index], "loadarrgep");
+                            println!("building element pointer");
+                            self.builder.build_load(ptr, "loadarr")
+                        }
+                    }
+                } else {
+                    let i32_type = self.ctx.i32_type();
+                    let v = assert_pointer_val(self.gen_expr(value).unwrap());
+                    let index = assert_int_val(self.gen_expr(slice).unwrap());
+                    unsafe {
+                        let ptr_to_elem = self.builder.build_in_bounds_gep(
+                            v,
+                            &[i32_type.const_zero(), index],
+                            "ptr_to_elem",
+                        );
+                        self.builder.build_load(ptr_to_elem, "loadelem")
+                    }
                 }
             }
             _ => unimplemented!(),

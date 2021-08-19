@@ -35,10 +35,14 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
                     unreachable!();
                 };
                 unsafe {
-                    ptr.const_in_bounds_gep(&[
-                        self.ctx.i32_type().const_zero(),
-                        self.ctx.i32_type().const_int(index as u64, false),
-                    ])
+                    self.builder.build_in_bounds_gep(
+                        ptr,
+                        &[
+                            self.ctx.i32_type().const_zero(),
+                            self.ctx.i32_type().const_int(index as u64, false),
+                        ],
+                        "attr",
+                    )
                 }
             }
             ExprKind::Subscript { .. } => unimplemented!(),
@@ -47,14 +51,16 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
     }
 
     fn gen_assignment(&mut self, target: &Expr<Option<Type>>, value: BasicValueEnum<'ctx>) {
+        let i32_type = self.ctx.i32_type();
         if let ExprKind::Tuple { elts, .. } = &target.node {
             if let BasicValueEnum::PointerValue(ptr) = value {
                 for (i, elt) in elts.iter().enumerate() {
                     unsafe {
-                        let t = ptr.const_in_bounds_gep(&[
-                            self.ctx.i32_type().const_zero(),
-                            self.ctx.i32_type().const_int(i as u64, false),
-                        ]);
+                        let t = self.builder.build_in_bounds_gep(
+                            ptr,
+                            &[i32_type.const_zero(), i32_type.const_int(i as u64, false)],
+                            "elem",
+                        );
                         let v = self.builder.build_load(t, "tmpload");
                         self.gen_assignment(elt, v);
                     }
