@@ -4,9 +4,9 @@ use std::{collections::HashMap, collections::HashSet, sync::Arc};
 
 use super::typecheck::type_inferencer::PrimitiveStore;
 use super::typecheck::typedef::{SharedUnifier, Type, TypeEnum, Unifier};
-use crate::typecheck::typedef::{FunSignature, FuncArg};
+use crate::typecheck::{typedef::{FunSignature, FuncArg}};
 use crate::{symbol_resolver::SymbolResolver, typecheck::typedef::Mapping};
-use itertools::Itertools;
+use itertools::{Itertools, izip};
 use parking_lot::{Mutex, RwLock};
 use rustpython_parser::ast::{self, Stmt};
 
@@ -55,48 +55,42 @@ pub enum TopLevelDef {
     },
 }
 
-impl TopLevelDef {
-    fn get_function_type(&self) -> Result<Type, String> {
-        if let Self::Function { signature, .. } = self {
-            Ok(*signature)
-        } else {
-            Err("only expect function def here".into())
-        }
-    }
+pub struct TopLevelContext {
+    pub definitions: Arc<Vec<Arc<RwLock<TopLevelDef>>>>,
+    pub unifiers: Arc<RwLock<Vec<(SharedUnifier, PrimitiveStore)>>>,
 }
 
-pub struct TopLevelContext {
-    pub definitions: Arc<RwLock<Vec<Arc<RwLock<TopLevelDef>>>>>,
-    pub unifiers: Arc<RwLock<Vec<(SharedUnifier, PrimitiveStore)>>>,
+impl TopLevelContext {
+    pub fn read_top_level_def_list(&self) -> &[Arc<RwLock<TopLevelDef>>] {
+        self.definitions.as_slice()
+    }
 }
 
 pub struct TopLevelComposer {
     // list of top level definitions, same as top level context
-    pub definition_ast_list: Arc<RwLock<Vec<(Arc<RwLock<TopLevelDef>>, Option<ast::Stmt<()>>)>>>,
+    pub definition_ast_list: Vec<(Arc<RwLock<TopLevelDef>>, Option<ast::Stmt<()>>)>,
     // start as a primitive unifier, will add more top_level defs inside
     pub unifier: Unifier,
     // primitive store
     pub primitives: PrimitiveStore,
     // mangled class method name to def_id
-    pub class_method_to_def_id: HashMap<String, DefinitionId>,
+    // pub class_method_to_def_id: HashMap<String, DefinitionId>,
     // record the def id of the classes whoses fields and methods are to be analyzed
-    pub to_be_analyzed_class: Vec<DefinitionId>,
+    // pub to_be_analyzed_class: Vec<DefinitionId>,
 }
 
 impl TopLevelComposer {
-    pub fn to_top_level_context(&self) -> TopLevelContext {
-        let def_list =
-            self.definition_ast_list.read().iter().map(|(x, _)| x.clone()).collect::<Vec<_>>();
+    pub fn to_top_level_context(self) -> TopLevelContext {
         TopLevelContext {
-            definitions: RwLock::new(def_list).into(),
+            definitions: self
+                .definition_ast_list
+                .into_iter()
+                .map(|(x, ..)| x)
+                .collect::<Vec<_>>()
+                .into(),
             // FIXME: all the big unifier or?
             unifiers: Default::default(),
         }
-    }
-
-    fn name_mangling(mut class_name: String, method_name: &str) -> String {
-        class_name.push_str(method_name);
-        class_name
     }
 
     pub fn make_primitives() -> (PrimitiveStore, Unifier) {
@@ -147,14 +141,11 @@ impl TopLevelComposer {
         let ast_list: Vec<Option<ast::Stmt<()>>> = vec![None, None, None, None, None];
 
         let composer = TopLevelComposer {
-            definition_ast_list: RwLock::new(
-                top_level_def_list.into_iter().zip(ast_list).collect_vec(),
-            )
-            .into(),
+            definition_ast_list: izip!(top_level_def_list, ast_list).collect_vec(),
             primitives: primitives.0,
             unifier: primitives.1,
-            class_method_to_def_id: Default::default(),
-            to_be_analyzed_class: Default::default(),
+            // class_method_to_def_id: Default::default(),
+            // to_be_analyzed_class: Default::default(),
         };
         (
             vec![
@@ -201,19 +192,35 @@ impl TopLevelComposer {
         }
     }
 
+    // fn get_class_method_def_id(class_name: &str, method_name: &str, resolver: &dyn SymbolResolver) -> Result<DefinitionId, String> {
+    //     let class_def = resolver.get_identifier_def(class_name).ok_or_else(|| "no such class".to_string())?;
+
+    // }
+
+    fn name_mangling(class_name: String, method_name: &str) -> String {
+        class_name.push_str(method_name);
+        class_name
+    }
+
+    fn extract_def_list(&self) -> Vec<Arc<RwLock<TopLevelDef>>> {
+        self
+            .definition_ast_list
+            .iter()
+            .map(|(def, ..)| def.clone())
+            .collect_vec()
+    }
+
     /// step 0, register, just remeber the names of top level classes/function
     pub fn register_top_level(
         &mut self,
         ast: ast::Stmt<()>,
         resolver: Option<Arc<Mutex<dyn SymbolResolver + Send + Sync>>>,
     ) -> Result<(String, DefinitionId), String> {
-        let mut def_list = self.definition_ast_list.write();
         match &ast.node {
             ast::StmtKind::ClassDef { name, body, .. } => {
                 let class_name = name.to_string();
-                let class_def_id = def_list.len();
+                let class_def_id = self.definition_ast_list.len();
 
-                // add the class to the definition lists
                 // since later when registering class method, ast will still be used,
                 // here push None temporarly, later will move the ast inside
                 let mut class_def_ast = (
@@ -232,49 +239,60 @@ impl TopLevelComposer {
                     String,
                     Arc<RwLock<TopLevelDef>>,
                     DefinitionId,
+                    Type
                 )> = Vec::new();
                 let mut class_method_index_offset = 0;
                 for b in body {
                     if let ast::StmtKind::FunctionDef { name: method_name, .. } = &b.node {
-                        let method_name = Self::name_mangling(class_name.clone(), method_name);
-                        let method_def_id = def_list.len() + {
+                        let method_def_id = self.definition_ast_list.len() + {
                             class_method_index_offset += 1;
                             class_method_index_offset
                         };
 
                         // dummy method define here
-                        // the ast of class method is in the class, push None in to the list here
+                        let dummy_method_type = self.unifier.get_fresh_var();
                         class_method_name_def_ids.push((
                             method_name.clone(),
                             RwLock::new(Self::make_top_level_function_def(
-                                method_name.clone(),
-                                self.primitives.none,
+                                Self::name_mangling(class_name, method_name),
+                                // later unify with parsed type
+                                dummy_method_type.0,
                                 resolver.clone(),
                             ))
                             .into(),
                             DefinitionId(method_def_id),
+                            dummy_method_type.0
                         ));
+
+                    } else {
+                        // do nothing
+                        continue
                     }
                 }
+                
                 // move the ast to the entry of the class in the ast_list
                 class_def_ast.1 = Some(ast);
-
+                // get the methods into the class_def
+                for (name, _, id, ty) in class_method_name_def_ids {
+                    if let TopLevelDef::Class { methods, .. } = class_def_ast.0.get_mut() {
+                        methods.push((name, ty, id))
+                    } else { unreachable!() }
+                }
                 // now class_def_ast and class_method_def_ast_ids are ok, put them into actual def list in correct order
-                def_list.push(class_def_ast);
-                for (name, def, id) in class_method_name_def_ids {
-                    def_list.push((def, None));
-                    self.class_method_to_def_id.insert(name, id);
+                self.definition_ast_list.push(class_def_ast);
+                for (_, def, ..) in class_method_name_def_ids {
+                    self.definition_ast_list.push((def, None));
                 }
 
                 // put the constructor into the def_list
-                def_list.push((
+                self.definition_ast_list.push((
                     RwLock::new(TopLevelDef::Initializer { class_id: DefinitionId(class_def_id) })
                         .into(),
                     None,
                 ));
 
                 // class, put its def_id into the to be analyzed set
-                self.to_be_analyzed_class.push(DefinitionId(class_def_id));
+                // self.to_be_analyzed_class.push(DefinitionId(class_def_id));
 
                 Ok((class_name, DefinitionId(class_def_id)))
             }
@@ -283,10 +301,11 @@ impl TopLevelComposer {
                 let fun_name = name.to_string();
 
                 // add to the definition list
-                def_list.push((
+                self.definition_ast_list.push((
                     RwLock::new(Self::make_top_level_function_def(
                         name.into(),
-                        self.primitives.none,
+                        // unify with correct type later
+                        self.unifier.get_fresh_var().0,
                         resolver,
                     ))
                     .into(),
@@ -294,7 +313,7 @@ impl TopLevelComposer {
                 ));
 
                 // return
-                Ok((fun_name, DefinitionId(def_list.len() - 1)))
+                Ok((fun_name, DefinitionId(self.definition_ast_list.len() - 1)))
             }
 
             _ => Err("only registrations of top level classes/functions are supprted".into()),
@@ -303,12 +322,7 @@ impl TopLevelComposer {
 
     /// step 1, analyze the type vars associated with top level class
     fn analyze_top_level_class_type_var(&mut self) -> Result<(), String> {
-        let mut def_list = self.definition_ast_list.write();
-        let converted_top_level = &self.to_top_level_context();
-        let primitives = &self.primitives;
-        let unifier = &mut self.unifier;
-
-        for (class_def, class_ast) in def_list.iter_mut() {
+        for (class_def, class_ast) in self.definition_ast_list {
             // only deal with class def here
             let mut class_def = class_def.write();
             let (class_bases_ast, class_def_type_vars, class_resolver) = {
@@ -326,7 +340,7 @@ impl TopLevelComposer {
                 }
             };
             let class_resolver = class_resolver.as_ref().unwrap().lock();
-
+            let class_resolver = class_resolver.deref();
             let mut is_generic = false;
             for b in class_bases_ast {
                 match &b.node {
@@ -335,65 +349,56 @@ impl TopLevelComposer {
                     // things like `class A(Generic[T, V, ImportedModule.T])` is not supported
                     // i.e. only simple names are allowed in the subscript
                     // should update the TopLevelDef::Class.typevars and the TypeEnum::TObj.params
-                    ast::ExprKind::Subscript { value, slice, .. } if matches!(&value.node, ast::ExprKind::Name { id, .. } if id == "Generic") =>
-                    {
+                    ast::ExprKind::Subscript { value, slice, .. }
+                        if {
+                            matches!(&value.node, ast::ExprKind::Name { id, .. } if id == "Generic") 
+                        } => {
                         if !is_generic {
                             is_generic = true;
                         } else {
                             return Err("Only single Generic[...] can be in bases".into());
                         }
 
+                        let type_var_list: Vec<&ast::Expr<()>> = vec![];
                         // if `class A(Generic[T, V, G])`
                         if let ast::ExprKind::Tuple { elts, .. } = &slice.node {
-                            // parse the type vars
-                            let type_vars = elts
-                                .iter()
-                                .map(|e| {
-                                    class_resolver.parse_type_annotation(
-                                        converted_top_level,
-                                        unifier.borrow_mut(),
-                                        primitives,
-                                        e,
-                                    )
-                                })
-                                .collect::<Result<Vec<_>, _>>()?;
-
-                            // check if all are unique type vars
-                            let mut occured_type_var_id: HashSet<u32> = HashSet::new();
-                            let all_unique_type_var = type_vars.iter().all(|x| {
-                                let ty = unifier.get_ty(*x);
-                                if let TypeEnum::TVar { id, .. } = ty.as_ref() {
-                                    occured_type_var_id.insert(*id)
-                                } else {
-                                    false
-                                }
-                            });
-
-                            if !all_unique_type_var {
-                                return Err("expect unique type variables".into());
-                            }
-
-                            // add to TopLevelDef
-                            class_def_type_vars.extend(type_vars);
-
+                            type_var_list.extend(elts.iter());
                         // `class A(Generic[T])`
                         } else {
-                            let ty = class_resolver.parse_type_annotation(
-                                converted_top_level,
-                                unifier.borrow_mut(),
-                                primitives,
-                                &slice,
-                            )?;
-                            // check if it is type var
-                            let is_type_var =
-                                matches!(unifier.get_ty(ty).as_ref(), &TypeEnum::TVar { .. });
-                            if !is_type_var {
-                                return Err("expect type variable here".into());
-                            }
-
-                            // add to TopLevelDef
-                            class_def_type_vars.push(ty);
+                            type_var_list.push(slice.deref());
                         }
+
+                        // parse the type vars
+                        let type_vars = type_var_list
+                        .into_iter()
+                        .map(|e| {
+                            let temp_def_list = self.extract_def_list();
+                            class_resolver.parse_type_annotation(
+                                &temp_def_list,
+                                self.unifier.borrow_mut(),
+                                &self.primitives,
+                                e
+                            )
+                        })
+                        .collect::<Result<Vec<_>, _>>()?;
+
+                        // check if all are unique type vars
+                        let mut occured_type_var_id: HashSet<u32> = HashSet::new();
+                        let all_unique_type_var = type_vars.iter().all(|x| {
+                            let ty = self.unifier.get_ty(*x);
+                            if let TypeEnum::TVar { id, .. } = ty.as_ref() {
+                                occured_type_var_id.insert(*id)
+                            } else {
+                                false
+                            }
+                        });
+                    
+                        if !all_unique_type_var {
+                            return Err("expect unique type variables".into());
+                        }
+                    
+                        // add to TopLevelDef
+                        class_def_type_vars.extend(type_vars);
                     }
 
                     // if others, do nothing in this function
@@ -410,12 +415,7 @@ impl TopLevelComposer {
     /// if the type var associated with class `B` has not been handled properly,
     /// the parse of type annotation of `B[int, bool]` will fail
     fn analyze_top_level_class_bases(&mut self) -> Result<(), String> {
-        let mut def_list = self.definition_ast_list.write();
-        let converted_top_level = &self.to_top_level_context();
-        let primitives = &self.primitives;
-        let unifier = &mut self.unifier;
-
-        for (class_def, class_ast) in def_list.iter_mut() {
+        for (class_def, class_ast) in self.definition_ast_list.iter_mut() {
             let mut class_def = class_def.write();
             let (class_bases, class_ancestors, class_resolver) = {
                 if let TopLevelDef::Class { ancestors, resolver, .. } = class_def.deref_mut() {
@@ -432,52 +432,51 @@ impl TopLevelComposer {
                 }
             };
             let class_resolver = class_resolver.as_ref().unwrap().lock();
+            let class_resolver = class_resolver.deref();
+
+            let mut has_base = false;
             for b in class_bases {
                 // type vars have already been handled, so skip on `Generic[...]`
-                if let ast::ExprKind::Subscript { value, .. } = &b.node {
-                    if let ast::ExprKind::Name { id, .. } = &value.node {
-                        if id == "Generic" {
-                            continue;
-                        }
-                    }
+                if matches!(
+                    &b.node,
+                    ast::ExprKind::Subscript { value, .. }
+                        if matches!(
+                            &value.node,
+                            ast::ExprKind::Name { id, .. } if id == "Generic"
+                        )
+                ) { continue }
+                has_base = true;
+                if has_base {
+                    return Err("a class def can only have at most one base class \
+                        declaration and one generic declaration".into())
                 }
-                // get the def id of the base class
+
+                let temp_def_list = self.extract_def_list();
                 let base_ty = class_resolver.parse_type_annotation(
-                    converted_top_level,
-                    unifier.borrow_mut(),
-                    primitives,
-                    b,
+                    &temp_def_list,
+                    self.unifier.borrow_mut(),
+                    &self.primitives,
+                    b
                 )?;
+
                 let base_id =
-                    if let TypeEnum::TObj { obj_id, .. } = unifier.get_ty(base_ty).as_ref() {
+                    if let TypeEnum::TObj { obj_id, .. } = self.unifier.get_ty(base_ty).as_ref() {
                         *obj_id
                     } else {
                         return Err("expect concrete class/type to be base class".into());
                     };
 
-                // write to the class ancestors, make sure the uniqueness
-                if !class_ancestors.contains(&base_id) {
-                    class_ancestors.push(base_id);
-                } else {
-                    return Err("cannot specify the same base class twice".into());
-                }
+                    
+                // TODO: when base class is generic, record the generic type parameter
+                // TODO: check to prevent cyclic base class
+                class_ancestors.push(base_id);
             }
         }
         Ok(())
     }
 
     /// step 3, class fields and methods
-    // FIXME: analyze base classes here
-    // FIXME: deal with self type
-    // NOTE: prevent cycles only roughly done
     fn analyze_top_level_class_fields_methods(&mut self) -> Result<(), String> {
-        let mut def_ast_list = self.definition_ast_list.write();
-        let converted_top_level = &self.to_top_level_context();
-        let primitives = &self.primitives;
-        let to_be_analyzed_class = &mut self.to_be_analyzed_class;
-        let unifier = &mut self.unifier;
-
-        // NOTE: roughly prevent infinite loop
         let mut max_iter = to_be_analyzed_class.len() * 4;
         'class: loop {
             if to_be_analyzed_class.is_empty() && {
@@ -506,6 +505,8 @@ impl TopLevelComposer {
                     unreachable!("should be class def ast")
                 }
             };
+            let class_resolver = class_resolver.as_ref().lock();
+            let class_resolver = class_resolver.deref();
 
             let all_base_class_analyzed = {
                 let not_yet_analyzed =
@@ -524,16 +525,7 @@ impl TopLevelComposer {
             let class_bases_ty = class_bases_ast
                 .iter()
                 .filter_map(|x| {
-                    class_resolver
-                        .as_ref()
-                        .lock()
-                        .parse_type_annotation(
-                            converted_top_level,
-                            unifier.borrow_mut(),
-                            primitives,
-                            x,
-                        )
-                        .ok()
+                    self.parse_type_annotation(class_resolver, x).ok()
                 })
                 .collect_vec();
 
@@ -564,12 +556,7 @@ impl TopLevelComposer {
                                     })?
                                     .as_ref();
 
-                                let ty = class_resolver.as_ref().lock().parse_type_annotation(
-                                    converted_top_level,
-                                    unifier.borrow_mut(),
-                                    primitives,
-                                    annotation,
-                                )?;
+                                let ty = self.parse_type_annotation(class_resolver, annotation)?;
                                 if !Self::check_ty_analyzed(ty, unifier, to_be_analyzed_class) {
                                     to_be_analyzed_class.push(DefinitionId(class_ind));
                                     continue 'class;
@@ -600,12 +587,7 @@ impl TopLevelComposer {
                             let ty = method_returns_ast
                                 .as_ref()
                                 .map(|x| {
-                                    class_resolver.as_ref().lock().parse_type_annotation(
-                                        converted_top_level,
-                                        unifier.borrow_mut(),
-                                        primitives,
-                                        x.as_ref(),
-                                    )
+                                    self.parse_type_annotation(class_resolver, x)
                                 })
                                 .ok_or_else(|| "return type annotation error".to_string())??;
                             if !Self::check_ty_analyzed(ty, unifier, to_be_analyzed_class) {
@@ -640,12 +622,7 @@ impl TopLevelComposer {
                                     } =>
                                 {
                                     let field_ty =
-                                        class_resolver.as_ref().lock().parse_type_annotation(
-                                            converted_top_level,
-                                            unifier.borrow_mut(),
-                                            primitives,
-                                            annotation.as_ref(),
-                                        )?;
+                                        self.parse_type_annotation(class_resolver, annotation)?;
                                     if !Self::check_ty_analyzed(
                                         field_ty,
                                         unifier,

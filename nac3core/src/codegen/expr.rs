@@ -56,7 +56,7 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
             // we cannot have other types, virtual type should be handled by function calls
             _ => unreachable!(),
         };
-        let def = &self.top_level.definitions.read()[obj_id.0];
+        let def = &self.top_level.definitions[obj_id.0];
         let index = if let TopLevelDef::Class { fields, .. } = &*def.read() {
             fields.iter().find_position(|x| x.0 == attr).unwrap().0
         } else {
@@ -104,8 +104,7 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
         ret: Type,
     ) -> Option<BasicValueEnum<'ctx>> {
         let key = self.get_subst_key(obj.map(|(a, _)| a), fun.0);
-        let defs = self.top_level.definitions.read();
-        let definition = defs.get(fun.1 .0).unwrap();
+        let definition = self.top_level.definitions.get(fun.1 .0).unwrap();
         let val = if let TopLevelDef::Function { instance_to_symbol, .. } = &*definition.read() {
             let symbol = instance_to_symbol.get(&key).unwrap_or_else(|| {
                 // TODO: codegen for function that are not yet generated

@@ -269,7 +269,7 @@ impl TestEnvironment {
         .collect();
 
         let top_level = TopLevelContext {
-            definitions: Arc::new(RwLock::new(top_level_defs)),
+            definitions: Arc::new(top_level_defs),
             unifiers: Default::default(),
         };
 

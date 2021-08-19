@@ -206,8 +206,7 @@ fn get_llvm_type<'ctx>(
         match &*unifier.get_ty(ty) {
             TObj { obj_id, fields, .. } => {
                 // a struct with fields in the order of declaration
-                let defs = top_level.definitions.read();
-                let definition = defs.get(obj_id.0).unwrap();
+                let definition = top_level.definitions.get(obj_id.0).unwrap();
                 let ty = if let TopLevelDef::Class { fields: fields_list, .. } = &*definition.read()
                 {
                     let fields = fields.borrow();

@@ -1,13 +1,14 @@
-use std::cell::RefCell;
+use std::{cell::RefCell, sync::Arc};
 use std::collections::HashMap;
 
-use crate::top_level::{DefinitionId, TopLevelContext, TopLevelDef};
+use crate::top_level::{DefinitionId, TopLevelDef};
 use crate::typecheck::{
     type_inferencer::PrimitiveStore,
     typedef::{Type, Unifier},
 };
 use crate::{location::Location, typecheck::typedef::TypeEnum};
 use itertools::{chain, izip};
+use parking_lot::RwLock;
 use rustpython_parser::ast::Expr;
 
 #[derive(Clone, PartialEq)]
@@ -39,7 +40,7 @@ pub trait SymbolResolver {
 // convert type annotation into type
 pub fn parse_type_annotation<T>(
     resolver: &dyn SymbolResolver,
-    top_level: &TopLevelContext,
+    top_level_defs: &[Arc<RwLock<TopLevelDef>>],
     unifier: &mut Unifier,
     primitives: &PrimitiveStore,
     expr: &Expr<T>,
@@ -55,8 +56,7 @@ pub fn parse_type_annotation<T>(
             x => {
                 let obj_id = resolver.get_identifier_def(x);
                 if let Some(obj_id) = obj_id {
-                    let defs = top_level.definitions.read();
-                    let def = defs[obj_id.0].read();
+                    let def = top_level_defs[obj_id.0].read();
                     if let TopLevelDef::Class { fields, methods, type_vars, .. } = &*def {
                         if !type_vars.is_empty() {
                             return Err(format!(
@@ -96,26 +96,25 @@ pub fn parse_type_annotation<T>(
             if let Name { id, .. } = &value.node {
                 if id == "virtual" {
                     let ty =
-                        parse_type_annotation(resolver, top_level, unifier, primitives, slice)?;
+                        parse_type_annotation(resolver, top_level_defs, unifier, primitives, slice)?;
                     Ok(unifier.add_ty(TypeEnum::TVirtual { ty }))
                 } else {
                     let types = if let Tuple { elts, .. } = &slice.node {
                         elts.iter()
                             .map(|v| {
-                                parse_type_annotation(resolver, top_level, unifier, primitives, v)
+                                parse_type_annotation(resolver, top_level_defs, unifier, primitives, v)
                             })
                             .collect::<Result<Vec<_>, _>>()?
                     } else {
                         vec![parse_type_annotation(
-                            resolver, top_level, unifier, primitives, slice,
+                            resolver, top_level_defs, unifier, primitives, slice,
                         )?]
                     };
 
                     let obj_id = resolver
                         .get_identifier_def(id)
                         .ok_or_else(|| format!("Unknown type annotation {}", id))?;
-                    let defs = top_level.definitions.read();
-                    let def = defs[obj_id.0].read();
+                    let def = top_level_defs[obj_id.0].read();
                     if let TopLevelDef::Class { fields, methods, type_vars, .. } = &*def {
                         if types.len() != type_vars.len() {
                             return Err(format!(
@@ -164,11 +163,11 @@ pub fn parse_type_annotation<T>(
 impl dyn SymbolResolver + Send + Sync {
     pub fn parse_type_annotation<T>(
         &self,
-        top_level: &TopLevelContext,
+        top_level_defs: &[Arc<RwLock<TopLevelDef>>],
         unifier: &mut Unifier,
         primitives: &PrimitiveStore,
         expr: &Expr<T>,
     ) -> Result<Type, String> {
-        parse_type_annotation(self, top_level, unifier, primitives, expr)
+        parse_type_annotation(self, top_level_defs, unifier, primitives, expr)
     }
 }
