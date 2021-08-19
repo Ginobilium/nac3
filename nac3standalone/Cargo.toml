@@ -5,6 +5,7 @@ authors = ["M-Labs"]
 edition = "2018"
 
 [dependencies]
-inkwell = { git = "https://github.com/TheDan64/inkwell", branch = "master", features = ["llvm10-0"] }
+inkwell = { git = "https://github.com/TheDan64/inkwell", branch = "master", features = ["llvm11-0"] }
 rustpython-parser = { git = "https://github.com/RustPython/RustPython", branch = "master" }
+parking_lot = "0.11.1"
 nac3core = { path = "../nac3core" }

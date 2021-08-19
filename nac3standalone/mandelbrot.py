@@ -1,18 +1,18 @@
 def run() -> int32:
     minX = -2.0
     maxX = 1.0
-    width = 78
-    height = 36
+    width = 78.0
+    height = 36.0
     aspectRatio = 2.0
 
-    yScale = float64(maxX-minX)*(float64(height)/float64(width))*aspectRatio
+    yScale = (maxX-minX)*(height/width)*aspectRatio
 
-    y = 0
+    y = 0.0
     while y < height:
-        x = 0
+        x = 0.0
         while x < width:
-            c_r = minX+float64(x)*(maxX-minX)/float64(width)
-            c_i = float64(y)*yScale/float64(height)-yScale/2.0
+            c_r = minX+x*(maxX-minX)/width
+            c_i = y*yScale/height-yScale/2.0
             z_r = c_r
             z_i = c_i
             i = 0
@@ -24,7 +24,8 @@ def run() -> int32:
                 z_r = new_z_r
                 i = i + 1
             output(i)
-            x = x + 1
+            x = x + 1.0
         output(-1)
-        y = y + 1
+        y = y + 1.0
     return 0
+

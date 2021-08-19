@@ -503,6 +503,7 @@ version = "0.1.0"
 dependencies = [
  "inkwell",
  "nac3core",
+ "parking_lot",
  "rustpython-parser",
 ]
 
