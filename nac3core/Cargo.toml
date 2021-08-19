@@ -7,7 +7,7 @@ edition = "2018"
 [dependencies]
 num-bigint = "0.3"
 num-traits = "0.2"
-inkwell = { git = "https://github.com/TheDan64/inkwell", branch = "master", features = ["llvm10-0"] }
+inkwell = { git = "https://github.com/TheDan64/inkwell", branch = "master", features = ["llvm11-0"] }
 rustpython-parser = { git = "https://github.com/RustPython/RustPython", branch = "master" }
 itertools = "0.10.1"
 crossbeam = "0.8.1"
@@ -17,4 +17,3 @@ rayon = "1.5.1"
 [dev-dependencies]
 test-case = "1.2.0"
 indoc = "1.0"
-
