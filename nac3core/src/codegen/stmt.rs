@@ -1,4 +1,7 @@
-use super::CodeGenContext;
+use super::{
+    expr::{assert_int_val, assert_pointer_val},
+    CodeGenContext,
+};
 use crate::typecheck::typedef::Type;
 use inkwell::values::{BasicValue, BasicValueEnum, PointerValue};
 use rustpython_parser::ast::{Expr, ExprKind, Stmt, StmtKind};
@@ -45,7 +48,21 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
                     )
                 }
             }
-            ExprKind::Subscript { .. } => unimplemented!(),
+            ExprKind::Subscript { value, slice, .. } => {
+                let i32_type = self.ctx.i32_type();
+                let v = assert_pointer_val(self.gen_expr(value).unwrap());
+                let index = assert_int_val(self.gen_expr(slice).unwrap());
+                unsafe {
+                    let ptr_to_arr = self.builder.build_in_bounds_gep(
+                        v,
+                        &[i32_type.const_zero(), i32_type.const_int(1, false)],
+                        "ptr_to_arr",
+                    );
+                    let arr_ptr =
+                        assert_pointer_val(self.builder.build_load(ptr_to_arr, "loadptr"));
+                    self.builder.build_gep(arr_ptr, &[index], "loadarrgep")
+                }
+            }
             _ => unreachable!(),
         }
     }

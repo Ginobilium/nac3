@@ -14,7 +14,7 @@ use inkwell::{
 use itertools::{chain, izip, zip, Itertools};
 use rustpython_parser::ast::{self, Boolop, Constant, Expr, ExprKind, Operator};
 
-fn assert_int_val<'ctx>(val: BasicValueEnum<'ctx>) -> IntValue<'ctx> {
+pub fn assert_int_val<'ctx>(val: BasicValueEnum<'ctx>) -> IntValue<'ctx> {
     if let BasicValueEnum::IntValue(v) = val {
         v
     } else {
@@ -22,7 +22,7 @@ fn assert_int_val<'ctx>(val: BasicValueEnum<'ctx>) -> IntValue<'ctx> {
     }
 }
 
-fn assert_pointer_val<'ctx>(val: BasicValueEnum<'ctx>) -> PointerValue<'ctx> {
+pub fn assert_pointer_val<'ctx>(val: BasicValueEnum<'ctx>) -> PointerValue<'ctx> {
     if let BasicValueEnum::PointerValue(v) = val {
         v
     } else {
@@ -556,7 +556,6 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
                             let arr_ptr =
                                 assert_pointer_val(self.builder.build_load(ptr_to_arr, "loadptr"));
                             let ptr = self.builder.build_gep(arr_ptr, &[index], "loadarrgep");
-                            println!("building element pointer");
                             self.builder.build_load(ptr, "loadarr")
                         }
                     }
