@@ -151,6 +151,8 @@ fn test_primitives() {
     };
 
     let mut inferencer = env.get_inferencer();
+    inferencer.variable_mapping.insert("a".into(), inferencer.primitives.int32);
+    inferencer.variable_mapping.insert("b".into(), inferencer.primitives.int32);
     let source = indoc! { "
         c = a + b
         d = a if c == 1 else 0
@@ -163,6 +165,8 @@ fn test_primitives() {
         .map(|v| inferencer.fold_stmt(v))
         .collect::<Result<Vec<_>, _>>()
         .unwrap();
+    let mut identifiers = vec!["a".to_string(), "b".to_string()];
+    inferencer.check_block(&statements, &mut identifiers).unwrap();
 
     let top_level = Arc::new(TopLevelContext {
         definitions: Default::default(),
@@ -198,41 +202,41 @@ fn test_primitives() {
         // after O2 optimization
 
         let expected = indoc! {"
-           ; ModuleID = 'test'
-           source_filename = \"test\"
+            ; ModuleID = 'test'
+            source_filename = \"test\"
 
-           define i32 @testing(i32 %0, i32 %1) {
-           init:
-             %a = alloca i32
-             store i32 %0, i32* %a
-             %b = alloca i32
-             store i32 %1, i32* %b
-             %tmp = alloca i32
-             %tmp4 = alloca i32
-             br label %body
+            define i32 @testing(i32 %0, i32 %1) {
+            init:
+              %a = alloca i32, align 4
+              store i32 %0, i32* %a, align 4
+              %b = alloca i32, align 4
+              store i32 %1, i32* %b, align 4
+              %tmp = alloca i32, align 4
+              %tmp4 = alloca i32, align 4
+              br label %body
 
-           body:                                             ; preds = %init
-             %load = load i32, i32* %a
-             %load1 = load i32, i32* %b
-             %add = add i32 %load, %load1
-             store i32 %add, i32* %tmp
-             %load2 = load i32, i32* %tmp
-             %cmp = icmp eq i32 %load2, 1
-             br i1 %cmp, label %then, label %else
+            body:                                             ; preds = %init
+              %load = load i32, i32* %a, align 4
+              %load1 = load i32, i32* %b, align 4
+              %add = add i32 %load, %load1
+              store i32 %add, i32* %tmp, align 4
+              %load2 = load i32, i32* %tmp, align 4
+              %cmp = icmp eq i32 %load2, 1
+              br i1 %cmp, label %then, label %else
 
-           then:                                             ; preds = %body
-             %load3 = load i32, i32* %a
-             br label %cont
+            then:                                             ; preds = %body
+              %load3 = load i32, i32* %a, align 4
+              br label %cont
 
-           else:                                             ; preds = %body
-             br label %cont
+            else:                                             ; preds = %body
+              br label %cont
 
-           cont:                                             ; preds = %else, %then
-             %ifexpr = phi i32 [ %load3, %then ], [ 0, %else ]
-             store i32 %ifexpr, i32* %tmp4
-             %load5 = load i32, i32* %tmp4
-             ret i32 %load5
-           }
+            cont:                                             ; preds = %else, %then
+              %ifexpr = phi i32 [ %load3, %then ], [ 0, %else ]
+              store i32 %ifexpr, i32* %tmp4, align 4
+              %load5 = load i32, i32* %tmp4, align 4
+              ret i32 %load5
+            }
        "}
         .trim();
         assert_eq!(expected, module.print_to_string().to_str().unwrap().trim());
