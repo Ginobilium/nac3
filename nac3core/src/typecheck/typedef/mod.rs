@@ -97,6 +97,7 @@ impl TypeEnum {
 
 pub type SharedUnifier = Arc<Mutex<(UnificationTable<TypeEnum>, u32, Vec<Call>)>>;
 
+#[derive(Clone)]
 pub struct Unifier {
     unification_table: UnificationTable<Rc<TypeEnum>>,
     calls: Vec<Rc<Call>>,
@@ -151,6 +152,15 @@ impl Unifier {
         let id = CallId(self.calls.len());
         self.calls.push(Rc::new(call));
         id
+    }
+
+    pub fn get_call_signature(&mut self, id: CallId) -> Option<FunSignature> {
+        let fun = self.calls.get(id.0).unwrap().fun.borrow().unwrap();
+        if let TypeEnum::TFunc(sign) = &*self.get_ty(fun) {
+            Some(sign.borrow().clone())
+        } else {
+            None
+        }
     }
 
     pub fn get_representative(&mut self, ty: Type) -> Type {

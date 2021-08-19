@@ -88,7 +88,7 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
     ) -> Option<BasicValueEnum<'ctx>> {
         let key = self.get_subst_key(obj.map(|(a, _)| a), fun.0);
         let defs = self.top_level.definitions.read();
-        let definition = defs.get(fun.1 .0).unwrap();
+        let definition = defs.get(fun.1.0).unwrap();
         let val = if let TopLevelDef::Function { instance_to_symbol, .. } = &*definition.read() {
             let symbol = instance_to_symbol.get(&key).unwrap_or_else(|| {
                 // TODO: codegen for function that are not yet generated
@@ -232,9 +232,9 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
         }
     }
 
-    pub fn gen_expr(&mut self, expr: &Expr<Option<Type>>) -> BasicValueEnum<'ctx> {
+    pub fn gen_expr(&mut self, expr: &Expr<Option<Type>>) -> Option<BasicValueEnum<'ctx>> {
         let zero = self.ctx.i32_type().const_int(0, false);
-        match &expr.node {
+        Some(match &expr.node {
             ExprKind::Constant { value, .. } => {
                 let ty = expr.custom.unwrap();
                 self.gen_const(value, ty)
@@ -254,7 +254,7 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
             ExprKind::List { elts, .. } => {
                 // this shall be optimized later for constant primitive lists...
                 // we should use memcpy for that instead of generating thousands of stores
-                let elements = elts.iter().map(|x| self.gen_expr(x)).collect_vec();
+                let elements = elts.iter().map(|x| self.gen_expr(x).unwrap()).collect_vec();
                 let ty = if elements.is_empty() {
                     self.ctx.i32_type().into()
                 } else {
@@ -293,7 +293,7 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
                 arr_str_ptr.into()
             }
             ExprKind::Tuple { elts, .. } => {
-                let element_val = elts.iter().map(|x| self.gen_expr(x)).collect_vec();
+                let element_val = elts.iter().map(|x| self.gen_expr(x).unwrap()).collect_vec();
                 let element_ty = element_val.iter().map(BasicValueEnum::get_type).collect_vec();
                 let tuple_ty = self.ctx.struct_type(&element_ty, false);
                 let tuple_ptr = self.builder.build_alloca(tuple_ty, "tuple");
@@ -311,7 +311,7 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
             ExprKind::Attribute { value, attr, .. } => {
                 // note that we would handle class methods directly in calls
                 let index = self.get_attr_index(value.custom.unwrap(), attr);
-                let val = self.gen_expr(value);
+                let val = self.gen_expr(value).unwrap();
                 let ptr = if let BasicValueEnum::PointerValue(v) = val {
                     v
                 } else {
@@ -327,11 +327,12 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
             }
             ExprKind::BoolOp { op, values } => {
                 // requires conditional branches for short-circuiting...
-                let left = if let BasicValueEnum::IntValue(left) = self.gen_expr(&values[0]) {
-                    left
-                } else {
-                    unreachable!()
-                };
+                let left =
+                    if let BasicValueEnum::IntValue(left) = self.gen_expr(&values[0]).unwrap() {
+                        left
+                    } else {
+                        unreachable!()
+                    };
                 let current = self.builder.get_insert_block().unwrap().get_parent().unwrap();
                 let a_bb = self.ctx.append_basic_block(current, "a");
                 let b_bb = self.ctx.append_basic_block(current, "b");
@@ -343,7 +344,9 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
                         let a = self.ctx.bool_type().const_int(1, false);
                         self.builder.build_unconditional_branch(cont_bb);
                         self.builder.position_at_end(b_bb);
-                        let b = if let BasicValueEnum::IntValue(b) = self.gen_expr(&values[1]) {
+                        let b = if let BasicValueEnum::IntValue(b) =
+                            self.gen_expr(&values[1]).unwrap()
+                        {
                             b
                         } else {
                             unreachable!()
@@ -353,7 +356,9 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
                     }
                     Boolop::And => {
                         self.builder.position_at_end(a_bb);
-                        let a = if let BasicValueEnum::IntValue(a) = self.gen_expr(&values[1]) {
+                        let a = if let BasicValueEnum::IntValue(a) =
+                            self.gen_expr(&values[1]).unwrap()
+                        {
                             a
                         } else {
                             unreachable!()
@@ -373,8 +378,8 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
             ExprKind::BinOp { op, left, right } => {
                 let ty1 = self.unifier.get_representative(left.custom.unwrap());
                 let ty2 = self.unifier.get_representative(right.custom.unwrap());
-                let left = self.gen_expr(left);
-                let right = self.gen_expr(right);
+                let left = self.gen_expr(left).unwrap();
+                let right = self.gen_expr(right).unwrap();
 
                 // we can directly compare the types, because we've got their representatives
                 // which would be unchanged until further unification, which we would never do
@@ -389,7 +394,7 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
             }
             ExprKind::UnaryOp { op, operand } => {
                 let ty = self.unifier.get_representative(operand.custom.unwrap());
-                let val = self.gen_expr(operand);
+                let val = self.gen_expr(operand).unwrap();
                 if ty == self.primitives.bool {
                     let val =
                         if let BasicValueEnum::IntValue(val) = val { val } else { unreachable!() };
@@ -454,7 +459,8 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
                             let (lhs, rhs) = if let (
                                 BasicValueEnum::IntValue(lhs),
                                 BasicValueEnum::IntValue(rhs),
-                            ) = (self.gen_expr(lhs), self.gen_expr(rhs))
+                            ) =
+                                (self.gen_expr(lhs).unwrap(), self.gen_expr(rhs).unwrap())
                             {
                                 (lhs, rhs)
                             } else {
@@ -474,7 +480,8 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
                             let (lhs, rhs) = if let (
                                 BasicValueEnum::FloatValue(lhs),
                                 BasicValueEnum::FloatValue(rhs),
-                            ) = (self.gen_expr(lhs), self.gen_expr(rhs))
+                            ) =
+                                (self.gen_expr(lhs).unwrap(), self.gen_expr(rhs).unwrap())
                             {
                                 (lhs, rhs)
                             } else {
@@ -499,7 +506,7 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
                 .into() // as there should be at least 1 element, it should never be none
             }
             ExprKind::IfExp { test, body, orelse } => {
-                let test = if let BasicValueEnum::IntValue(test) = self.gen_expr(test) {
+                let test = if let BasicValueEnum::IntValue(test) = self.gen_expr(test).unwrap() {
                     test
                 } else {
                     unreachable!()
@@ -511,17 +518,40 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
                 let cont_bb = self.ctx.append_basic_block(current, "cont");
                 self.builder.build_conditional_branch(test, then_bb, else_bb);
                 self.builder.position_at_end(then_bb);
-                let a = self.gen_expr(body);
+                let a = self.gen_expr(body).unwrap();
                 self.builder.build_unconditional_branch(cont_bb);
                 self.builder.position_at_end(else_bb);
-                let b = self.gen_expr(orelse);
+                let b = self.gen_expr(orelse).unwrap();
                 self.builder.build_unconditional_branch(cont_bb);
                 self.builder.position_at_end(cont_bb);
                 let phi = self.builder.build_phi(a.get_type(), "ifexpr");
                 phi.add_incoming(&[(&a, then_bb), (&b, else_bb)]);
                 phi.as_basic_value()
             }
+            ExprKind::Call { func, args, keywords } => {
+                if let ExprKind::Name { id, .. } = &func.as_ref().node {
+                    // TODO: handle primitive casts
+                    let fun = self.resolver.get_identifier_def(&id).expect("Unknown identifier");
+                    let ret = expr.custom.unwrap();
+                    let mut params =
+                        args.iter().map(|arg| (None, self.gen_expr(arg).unwrap())).collect_vec();
+                    let kw_iter = keywords.iter().map(|kw| {
+                        (
+                            Some(kw.node.arg.as_ref().unwrap().clone()),
+                            self.gen_expr(&kw.node.value).unwrap(),
+                        )
+                    });
+                    params.extend(kw_iter);
+                    let signature = self
+                        .unifier
+                        .get_call_signature(*self.calls.get(&expr.location.into()).unwrap())
+                        .unwrap();
+                    return self.gen_call(None, (&signature, fun), params, ret);
+                } else {
+                    unimplemented!()
+                }
+            }
             _ => unimplemented!(),
-        }
+        })
     }
 }

@@ -3,6 +3,7 @@ use std::rc::Rc;
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]
 pub struct UnificationKey(usize);
 
+#[derive(Clone)]
 pub struct UnificationTable<V> {
     parents: Vec<usize>,
     ranks: Vec<u32>,

@@ -1,8 +1,8 @@
 #![warn(clippy::all)]
 #![allow(dead_code)]
 
-mod codegen;
-mod location;
-mod symbol_resolver;
-mod top_level;
-mod typecheck;
+pub mod codegen;
+pub mod location;
+pub mod symbol_resolver;
+pub mod top_level;
+pub mod typecheck;

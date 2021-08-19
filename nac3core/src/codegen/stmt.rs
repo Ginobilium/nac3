@@ -28,7 +28,7 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
             }
             ExprKind::Attribute { value, attr, .. } => {
                 let index = self.get_attr_index(value.custom.unwrap(), attr);
-                let val = self.gen_expr(value);
+                let val = self.gen_expr(value).unwrap();
                 let ptr = if let BasicValueEnum::PointerValue(v) = val {
                     v
                 } else {
@@ -68,33 +68,82 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
         }
     }
 
-    pub fn gen_stmt(&mut self, stmt: &Stmt<Option<Type>>) {
+    // return true if it contains terminator
+    pub fn gen_stmt(&mut self, stmt: &Stmt<Option<Type>>) -> bool {
         match &stmt.node {
             StmtKind::Expr { value } => {
                 self.gen_expr(&value);
             }
             StmtKind::Return { value } => {
-                let value = value.as_ref().map(|v| self.gen_expr(&v));
+                let value = value.as_ref().map(|v| self.gen_expr(&v).unwrap());
                 let value = value.as_ref().map(|v| v as &dyn BasicValue);
                 self.builder.build_return(value);
+                return true;
             }
             StmtKind::AnnAssign { target, value, .. } => {
                 if let Some(value) = value {
-                    let value = self.gen_expr(&value);
+                    let value = self.gen_expr(&value).unwrap();
                     self.gen_assignment(target, value);
                 }
             }
             StmtKind::Assign { targets, value, .. } => {
-                let value = self.gen_expr(&value);
+                let value = self.gen_expr(&value).unwrap();
                 for target in targets.iter() {
                     self.gen_assignment(target, value);
                 }
             }
             StmtKind::Continue => {
                 self.builder.build_unconditional_branch(self.loop_bb.unwrap().0);
+                return true;
             }
             StmtKind::Break => {
                 self.builder.build_unconditional_branch(self.loop_bb.unwrap().1);
+                return true;
+            }
+            StmtKind::If { test, body, orelse } => {
+                let current = self.builder.get_insert_block().unwrap().get_parent().unwrap();
+                let test_bb = self.ctx.append_basic_block(current, "test");
+                let body_bb = self.ctx.append_basic_block(current, "body");
+                let cont_bb = self.ctx.append_basic_block(current, "cont");
+                // if there is no orelse, we just go to cont_bb
+                let orelse_bb = if orelse.is_empty() {
+                    cont_bb
+                } else {
+                    self.ctx.append_basic_block(current, "orelse")
+                };
+                self.builder.build_unconditional_branch(test_bb);
+                self.builder.position_at_end(test_bb);
+                let test = self.gen_expr(test).unwrap();
+                if let BasicValueEnum::IntValue(test) = test {
+                    self.builder.build_conditional_branch(test, body_bb, orelse_bb);
+                } else {
+                    unreachable!()
+                };
+                self.builder.position_at_end(body_bb);
+                let mut exited = false;
+                for stmt in body.iter() {
+                    exited = self.gen_stmt(stmt);
+                    if exited {
+                        break;
+                    }
+                }
+                if !exited {
+                    self.builder.build_unconditional_branch(cont_bb);
+                }
+                if !orelse.is_empty() {
+                    exited = false;
+                    self.builder.position_at_end(orelse_bb);
+                    for stmt in orelse.iter() {
+                        exited = self.gen_stmt(stmt);
+                        if exited {
+                            break;
+                        }
+                    }
+                    if !exited {
+                        self.builder.build_unconditional_branch(cont_bb);
+                    }
+                }
+                self.builder.position_at_end(cont_bb);
             }
             StmtKind::While { test, body, orelse } => {
                 let current = self.builder.get_insert_block().unwrap().get_parent().unwrap();
@@ -111,7 +160,7 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
                 let loop_bb = self.loop_bb.replace((test_bb, cont_bb));
                 self.builder.build_unconditional_branch(test_bb);
                 self.builder.position_at_end(test_bb);
-                let test = self.gen_expr(test);
+                let test = self.gen_expr(test).unwrap();
                 if let BasicValueEnum::IntValue(test) = test {
                     self.builder.build_conditional_branch(test, body_bb, orelse_bb);
                 } else {
@@ -132,7 +181,8 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
                 self.builder.position_at_end(cont_bb);
                 self.loop_bb = loop_bb;
             }
-            _ => unimplemented!(),
-        }
+            _ => unimplemented!("{:?}", stmt),
+        };
+        false
     }
 }

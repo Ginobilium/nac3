@@ -179,6 +179,7 @@ fn test_primitives() {
         body: statements,
         unifier_index: 0,
         resolver: env.function_data.resolver.clone(),
+        calls: Default::default(),
         signature,
     };
 

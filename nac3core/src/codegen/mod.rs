@@ -2,8 +2,8 @@ use crate::{
     symbol_resolver::SymbolResolver,
     top_level::{TopLevelContext, TopLevelDef},
     typecheck::{
-        type_inferencer::PrimitiveStore,
-        typedef::{FunSignature, Type, TypeEnum, Unifier},
+        type_inferencer::{CodeLocation, PrimitiveStore},
+        typedef::{CallId, FunSignature, Type, TypeEnum, Unifier},
     },
 };
 use crossbeam::channel::{unbounded, Receiver, Sender};
@@ -42,6 +42,7 @@ pub struct CodeGenContext<'ctx, 'a> {
     pub var_assignment: HashMap<String, PointerValue<'ctx>>,
     pub type_cache: HashMap<Type, BasicTypeEnum<'ctx>>,
     pub primitives: PrimitiveStore,
+    pub calls: HashMap<CodeLocation, CallId>,
     // stores the alloca for variables
     pub init_bb: BasicBlock<'ctx>,
     // where continue and break should go to respectively
@@ -186,6 +187,7 @@ pub struct CodeGenTask {
     pub symbol_name: String,
     pub signature: FunSignature,
     pub body: Vec<Stmt<Option<Type>>>,
+    pub calls: HashMap<CodeLocation, CallId>,
     pub unifier_index: usize,
     pub resolver: Arc<dyn SymbolResolver + Send + Sync>,
 }
@@ -323,6 +325,7 @@ pub fn gen_func<'ctx>(
         ctx: &context,
         resolver: task.resolver,
         top_level: top_level_ctx.as_ref(),
+        calls: task.calls,
         loop_bb: None,
         var_assignment,
         type_cache,
