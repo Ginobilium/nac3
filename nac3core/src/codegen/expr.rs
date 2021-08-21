@@ -258,7 +258,6 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
             }
             ExprKind::Name { id, .. } => {
                 let ptr = self.var_assignment.get(id).unwrap();
-                let primitives = &self.primitives;
                 self.builder.build_load(*ptr, "load")
             }
             ExprKind::List { elts, .. } => {
@@ -539,7 +538,7 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
                 }
             }
             ExprKind::Subscript { value, slice, .. } => {
-                if let TypeEnum::TList { ty } = &*self.unifier.get_ty(value.custom.unwrap()) {
+                if let TypeEnum::TList { .. } = &*self.unifier.get_ty(value.custom.unwrap()) {
                     if let ExprKind::Slice { .. } = slice.node {
                         unimplemented!()
                     } else {
