@@ -1,3 +1,5 @@
+use crate::typecheck::typedef::TypeEnum;
+
 use super::type_inferencer::Inferencer;
 use super::typedef::Type;
 use rustpython_parser::ast::{self, Expr, ExprKind, Stmt, StmtKind};
@@ -19,6 +21,17 @@ impl<'a> Inferencer<'a> {
             ExprKind::Tuple { elts, .. } => {
                 for elt in elts.iter() {
                     self.check_pattern(elt, defined_identifiers)?;
+                }
+                Ok(())
+            }
+            ExprKind::Subscript { value, slice, .. } => {
+                self.check_expr(value, defined_identifiers)?;
+                self.check_expr(slice, defined_identifiers)?;
+                if let TypeEnum::TTuple { .. } = &*self.unifier.get_ty(value.custom.unwrap()) {
+                    return Err(format!(
+                        "Error at {}: cannot assign to tuple element",
+                        value.location
+                    ));
                 }
                 Ok(())
             }
