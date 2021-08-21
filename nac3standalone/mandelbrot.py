@@ -5,6 +5,8 @@ def run() -> int32:
     height = 36.0
     aspectRatio = 2.0
 
+    test = 1.0 + 1
+
     yScale = (maxX-minX)*(height/width)*aspectRatio
 
     y = 0.0

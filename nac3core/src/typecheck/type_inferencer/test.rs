@@ -145,9 +145,10 @@ impl TestEnvironment {
             params: HashMap::new().into(),
         });
         identifier_mapping.insert("None".into(), none);
-        for i in 0..5 {
+        for (i, name) in ["int32", "int64", "float", "bool", "none"].iter().enumerate() {
             top_level_defs.push(
                 RwLock::new(TopLevelDef::Class {
+                    name: format!("obj{}", i),
                     object_id: DefinitionId(i),
                     type_vars: Default::default(),
                     fields: Default::default(),
@@ -170,6 +171,7 @@ impl TestEnvironment {
         });
         top_level_defs.push(
             RwLock::new(TopLevelDef::Class {
+                name: "Foo".to_string(),
                 object_id: DefinitionId(5),
                 type_vars: vec![v0],
                 fields: [("a".into(), v0)].into(),
@@ -206,6 +208,7 @@ impl TestEnvironment {
         });
         top_level_defs.push(
             RwLock::new(TopLevelDef::Class {
+                name: "Bar".to_string(),
                 object_id: DefinitionId(6),
                 type_vars: Default::default(),
                 fields: [("a".into(), int32), ("b".into(), fun)].into(),
@@ -233,6 +236,7 @@ impl TestEnvironment {
         });
         top_level_defs.push(
             RwLock::new(TopLevelDef::Class {
+                name: "Bar2".to_string(),
                 object_id: DefinitionId(7),
                 type_vars: Default::default(),
                 fields: [("a".into(), bool), ("b".into(), fun)].into(),

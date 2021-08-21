@@ -77,7 +77,7 @@ impl<'a> fold::Fold<()> for Inferencer<'a> {
                 let target = Box::new(self.fold_expr(*target)?);
                 let value = if let Some(v) = value {
                     let ty = Box::new(self.fold_expr(*v)?);
-                    self.unifier.unify(target.custom.unwrap(), ty.custom.unwrap())?;
+                    self.unify(target.custom.unwrap(), ty.custom.unwrap(), &node.location)?;
                     Some(ty)
                 } else {
                     None
@@ -88,7 +88,7 @@ impl<'a> fold::Fold<()> for Inferencer<'a> {
                     &self.primitives,
                     annotation.as_ref(),
                 )?;
-                self.unifier.unify(annotation_type, target.custom.unwrap())?;
+                self.unify(annotation_type, target.custom.unwrap(), &node.location)?;
                 let annotation = Box::new(NaiveFolder().fold_expr(*annotation)?);
                 Located {
                     location: node.location,
@@ -101,21 +101,21 @@ impl<'a> fold::Fold<()> for Inferencer<'a> {
         match &stmt.node {
             ast::StmtKind::For { target, iter, .. } => {
                 let list = self.unifier.add_ty(TypeEnum::TList { ty: target.custom.unwrap() });
-                self.unifier.unify(list, iter.custom.unwrap())?;
+                self.unify(list, iter.custom.unwrap(), &iter.location)?;
             }
             ast::StmtKind::If { test, .. } | ast::StmtKind::While { test, .. } => {
-                self.unifier.unify(test.custom.unwrap(), self.primitives.bool)?;
+                self.unify(test.custom.unwrap(), self.primitives.bool, &test.location)?;
             }
             ast::StmtKind::Assign { targets, value, .. } => {
                 for target in targets.iter() {
-                    self.unifier.unify(target.custom.unwrap(), value.custom.unwrap())?;
+                    self.unify(target.custom.unwrap(), value.custom.unwrap(), &target.location)?;
                 }
             }
             ast::StmtKind::AnnAssign { .. } | ast::StmtKind::Expr { .. } => {}
             ast::StmtKind::Break | ast::StmtKind::Continue => {}
             ast::StmtKind::Return { value } => match (value, self.function_data.return_type) {
                 (Some(v), Some(v1)) => {
-                    self.unifier.unify(v.custom.unwrap(), v1)?;
+                    self.unify(v.custom.unwrap(), v1, &v.location)?;
                 }
                 (Some(_), None) => {
                     return Err("Unexpected return value".to_string());
@@ -178,8 +178,12 @@ type InferenceResult = Result<Type, String>;
 impl<'a> Inferencer<'a> {
     /// Constrain a <: b
     /// Currently implemented as unification
-    fn constrain(&mut self, a: Type, b: Type) -> Result<(), String> {
-        self.unifier.unify(a, b)
+    fn constrain(&mut self, a: Type, b: Type, location: &Location) -> Result<(), String> {
+        self.unifier.unify(a, b).map_err(|old| format!("{} at {}", old, location))
+    }
+
+    fn unify(&mut self, a: Type, b: Type, location: &Location) -> Result<(), String> {
+        self.unifier.unify(a, b).map_err(|old| format!("{} at {}", old, location))
     }
 
     fn build_method_call(
@@ -200,7 +204,7 @@ impl<'a> Inferencer<'a> {
         let call = self.unifier.add_ty(TypeEnum::TCall(vec![call].into()));
         let fields = once((method, call)).collect();
         let record = self.unifier.add_record(fields);
-        self.constrain(obj, record)?;
+        self.constrain(obj, record, &location)?;
         Ok(ret)
     }
 
@@ -249,7 +253,7 @@ impl<'a> Inferencer<'a> {
             vars: Default::default(),
         };
         let body = new_context.fold_expr(body)?;
-        new_context.unifier.unify(fun.ret, body.custom.unwrap())?;
+        new_context.unify(fun.ret, body.custom.unwrap(), &location)?;
         let mut args = new_context.fold_arguments(args)?;
         for (arg, (name, ty)) in args.args.iter_mut().zip(fn_args.iter()) {
             assert_eq!(&arg.node.arg, name);
@@ -299,10 +303,10 @@ impl<'a> Inferencer<'a> {
         // iter should be a list of targets...
         // actually it should be an iterator of targets, but we don't have iter type for now
         let list = new_context.unifier.add_ty(TypeEnum::TList { ty: target.custom.unwrap() });
-        new_context.unifier.unify(iter.custom.unwrap(), list)?;
+        new_context.unify(iter.custom.unwrap(), list, &iter.location)?;
         // if conditions should be bool
         for v in ifs.iter() {
-            new_context.unifier.unify(v.custom.unwrap(), new_context.primitives.bool)?;
+            new_context.unify(v.custom.unwrap(), new_context.primitives.bool, &v.location)?;
         }
 
         Ok(Located {
@@ -409,7 +413,7 @@ impl<'a> Inferencer<'a> {
         });
         self.calls.insert(location.into(), call);
         let call = self.unifier.add_ty(TypeEnum::TCall(vec![call].into()));
-        self.unifier.unify(func.custom.unwrap(), call)?;
+        self.unify(func.custom.unwrap(), call, &func.location)?;
 
         Ok(Located { location, custom: Some(ret), node: ExprKind::Call { func, args, keywords } })
     }
@@ -454,7 +458,7 @@ impl<'a> Inferencer<'a> {
     fn infer_list(&mut self, elts: &[ast::Expr<Option<Type>>]) -> InferenceResult {
         let (ty, _) = self.unifier.get_fresh_var();
         for t in elts.iter() {
-            self.unifier.unify(ty, t.custom.unwrap())?;
+            self.unify(ty, t.custom.unwrap(), &t.location)?;
         }
         Ok(self.unifier.add_ty(TypeEnum::TList { ty }))
     }
@@ -468,14 +472,14 @@ impl<'a> Inferencer<'a> {
         let (attr_ty, _) = self.unifier.get_fresh_var();
         let fields = once((attr.to_string(), attr_ty)).collect();
         let record = self.unifier.add_record(fields);
-        self.constrain(value.custom.unwrap(), record)?;
+        self.constrain(value.custom.unwrap(), record, &value.location)?;
         Ok(attr_ty)
     }
 
     fn infer_bool_ops(&mut self, values: &[ast::Expr<Option<Type>>]) -> InferenceResult {
         let b = self.primitives.bool;
         for v in values {
-            self.constrain(v.custom.unwrap(), b)?;
+            self.constrain(v.custom.unwrap(), b, &v.location)?;
         }
         Ok(b)
     }
@@ -543,10 +547,10 @@ impl<'a> Inferencer<'a> {
         match &slice.node {
             ast::ExprKind::Slice { lower, upper, step } => {
                 for v in [lower.as_ref(), upper.as_ref(), step.as_ref()].iter().flatten() {
-                    self.constrain(v.custom.unwrap(), self.primitives.int32)?;
+                    self.constrain(v.custom.unwrap(), self.primitives.int32, &v.location)?;
                 }
                 let list = self.unifier.add_ty(TypeEnum::TList { ty });
-                self.constrain(value.custom.unwrap(), list)?;
+                self.constrain(value.custom.unwrap(), list, &value.location)?;
                 Ok(list)
             }
             ast::ExprKind::Constant { value: ast::Constant::Int(val), .. } => {
@@ -554,14 +558,14 @@ impl<'a> Inferencer<'a> {
                 let ind: i32 = val.try_into().map_err(|_| "Index must be int32".to_string())?;
                 let map = once((ind, ty)).collect();
                 let seq = self.unifier.add_sequence(map);
-                self.constrain(value.custom.unwrap(), seq)?;
+                self.constrain(value.custom.unwrap(), seq, &value.location)?;
                 Ok(ty)
             }
             _ => {
                 // the index is not a constant, so value can only be a list
-                self.constrain(slice.custom.unwrap(), self.primitives.int32)?;
+                self.constrain(slice.custom.unwrap(), self.primitives.int32, &slice.location)?;
                 let list = self.unifier.add_ty(TypeEnum::TList { ty });
-                self.constrain(value.custom.unwrap(), list)?;
+                self.constrain(value.custom.unwrap(), list, &value.location)?;
                 Ok(ty)
             }
         }
@@ -573,10 +577,10 @@ impl<'a> Inferencer<'a> {
         body: &ast::Expr<Option<Type>>,
         orelse: &ast::Expr<Option<Type>>,
     ) -> InferenceResult {
-        self.constrain(test.custom.unwrap(), self.primitives.bool)?;
+        self.constrain(test.custom.unwrap(), self.primitives.bool, &test.location)?;
         let ty = self.unifier.get_fresh_var().0;
-        self.constrain(body.custom.unwrap(), ty)?;
-        self.constrain(orelse.custom.unwrap(), ty)?;
+        self.constrain(body.custom.unwrap(), ty, &body.location)?;
+        self.constrain(orelse.custom.unwrap(), ty, &orelse.location)?;
         Ok(ty)
     }
 }

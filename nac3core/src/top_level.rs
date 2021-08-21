@@ -15,6 +15,8 @@ pub struct DefinitionId(pub usize);
 
 pub enum TopLevelDef {
     Class {
+        // name for error messages and symbols
+        name: String,
         // object ID used for TypeEnum
         object_id: DefinitionId,
         // type variables bounded to the class.
@@ -135,11 +137,11 @@ impl TopLevelComposer {
         let primitives = Self::make_primitives();
 
         let top_level_def_list = vec![
-            Arc::new(RwLock::new(Self::make_top_level_class_def(0, None))),
-            Arc::new(RwLock::new(Self::make_top_level_class_def(1, None))),
-            Arc::new(RwLock::new(Self::make_top_level_class_def(2, None))),
-            Arc::new(RwLock::new(Self::make_top_level_class_def(3, None))),
-            Arc::new(RwLock::new(Self::make_top_level_class_def(4, None))),
+            Arc::new(RwLock::new(Self::make_top_level_class_def(0, None, "int32"))),
+            Arc::new(RwLock::new(Self::make_top_level_class_def(1, None, "int64"))),
+            Arc::new(RwLock::new(Self::make_top_level_class_def(2, None, "float"))),
+            Arc::new(RwLock::new(Self::make_top_level_class_def(3, None, "bool"))),
+            Arc::new(RwLock::new(Self::make_top_level_class_def(4, None, "none"))),
         ];
 
         let ast_list: Vec<Option<ast::Stmt<()>>> = vec![None, None, None, None, None];
@@ -171,8 +173,10 @@ impl TopLevelComposer {
     pub fn make_top_level_class_def(
         index: usize,
         resolver: Option<Arc<Mutex<dyn SymbolResolver + Send + Sync>>>,
+        name: &str,
     ) -> TopLevelDef {
         TopLevelDef::Class {
+            name: name.to_string(),
             object_id: DefinitionId(index),
             type_vars: Default::default(),
             fields: Default::default(),
@@ -216,6 +220,7 @@ impl TopLevelComposer {
                     Arc::new(RwLock::new(Self::make_top_level_class_def(
                         class_def_id,
                         resolver.clone(),
+                        name.as_str(),
                     ))),
                     None,
                 );

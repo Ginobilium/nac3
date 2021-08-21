@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex};
 
 use super::unification_table::{UnificationKey, UnificationTable};
 use crate::symbol_resolver::SymbolValue;
-use crate::top_level::DefinitionId;
+use crate::top_level::{DefinitionId, TopLevelContext, TopLevelDef};
 
 #[cfg(test)]
 mod test;
@@ -99,6 +99,7 @@ pub type SharedUnifier = Arc<Mutex<(UnificationTable<TypeEnum>, u32, Vec<Call>)>
 
 #[derive(Clone)]
 pub struct Unifier {
+    pub top_level: Option<Arc<TopLevelContext>>,
     unification_table: UnificationTable<Rc<TypeEnum>>,
     calls: Vec<Rc<Call>>,
     var_id: u32,
@@ -107,7 +108,12 @@ pub struct Unifier {
 impl Unifier {
     /// Get an empty unifier
     pub fn new() -> Unifier {
-        Unifier { unification_table: UnificationTable::new(), var_id: 0, calls: Vec::new() }
+        Unifier {
+            unification_table: UnificationTable::new(),
+            var_id: 0,
+            calls: Vec::new(),
+            top_level: None,
+        }
     }
 
     /// Determine if the two types are the same
@@ -121,6 +127,7 @@ impl Unifier {
             unification_table: UnificationTable::from_send(&lock.0),
             var_id: lock.1,
             calls: lock.2.iter().map(|v| Rc::new(v.clone())).collect_vec(),
+            top_level: None,
         }
     }
 
@@ -338,7 +345,7 @@ impl Unifier {
                         }
                     }
                     _ => {
-                        return Err("Incompatible".to_string());
+                        return Err("Incompatible type variables".to_string());
                     }
                 }
                 let range1 = range1.borrow();
@@ -464,7 +471,7 @@ impl Unifier {
                 TObj { obj_id: id2, params: params2, .. },
             ) => {
                 if id1 != id2 {
-                    return Err(format!("Cannot unify objects with ID {} and {}", id1.0, id2.0));
+                    self.incompatible_types(a, b)?;
                 }
                 for (x, y) in zip(params1.borrow().values(), params2.borrow().values()) {
                     self.unify(*x, *y)?;
@@ -552,7 +559,7 @@ impl Unifier {
                         return Err("Functions differ in parameter names.".to_string());
                     }
                     if x.default_value != y.default_value {
-                        return Err("Functions differ in optional parameters.".to_string());
+                        return Err("Functions differ in optional parameters value".to_string());
                     }
                     self.unify(x.ty, y.ty)?;
                 }
@@ -561,13 +568,35 @@ impl Unifier {
             }
             _ => {
                 if swapped {
-                    return self.incompatible_types(&*ty_a, &*ty_b);
+                    return self.incompatible_types(a, b);
                 } else {
                     self.unify_impl(b, a, true)?;
                 }
             }
         }
         Ok(())
+    }
+
+    fn internal_stringify(&mut self, ty: Type) -> String {
+        let top_level = self.top_level.clone();
+        self.stringify(
+            ty,
+            &mut |id| {
+                top_level.as_ref().map_or_else(
+                    || format!("{}", id),
+                    |top_level| {
+                        if let TopLevelDef::Class { name, .. } =
+                            &*top_level.definitions.read()[id].read()
+                        {
+                            name.clone()
+                        } else {
+                            unreachable!("expected class definition")
+                        }
+                    },
+                )
+            },
+            &mut |id| format!("var{}", id),
+        )
     }
 
     /// Get string representation of the type
@@ -642,8 +671,8 @@ impl Unifier {
         table.set_value(a, ty_b)
     }
 
-    fn incompatible_types(&self, a: &TypeEnum, b: &TypeEnum) -> Result<(), String> {
-        Err(format!("Cannot unify {} with {}", a.get_type_name(), b.get_type_name()))
+    fn incompatible_types(&mut self, a: Type, b: Type) -> Result<(), String> {
+        Err(format!("Cannot unify {} with {}", self.internal_stringify(a), self.internal_stringify(b)))
     }
 
     /// Instantiate a function if it hasn't been instantiated.
@@ -949,9 +978,9 @@ impl Unifier {
             }
         }
         return Err(format!(
-            "Cannot unify type variable {} with {} due to incompatible value range",
+            "Cannot unify variable {} with {} due to incompatible value range",
             id,
-            self.get_ty(b).get_type_name()
+            self.internal_stringify(b)
         ));
     }
 }
