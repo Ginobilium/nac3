@@ -83,7 +83,7 @@ pub fn parse_type_annotation<T>(
                     // it could be a type variable
                     let ty = resolver
                         .get_symbol_type(unifier, primitives, x)
-                        .ok_or_else(|| "Cannot use function name as type".to_owned())?;
+                        .ok_or_else(|| "unknown type variable name".to_owned())?;
                     if let TypeEnum::TVar { .. } = &*unifier.get_ty(ty) {
                         Ok(ty)
                     } else {
