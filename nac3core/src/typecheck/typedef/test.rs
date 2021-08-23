@@ -469,10 +469,7 @@ fn test_rigid_var() {
 
     assert_eq!(env.unifier.unify(a, b), Err("Cannot unify var3 with var2".to_string()));
     env.unifier.unify(list_a, list_x).unwrap();
-    assert_eq!(
-        env.unifier.unify(list_x, list_int),
-        Err("Cannot unify 0 with var2".to_string())
-    );
+    assert_eq!(env.unifier.unify(list_x, list_int), Err("Cannot unify 0 with var2".to_string()));
 
     env.unifier.replace_rigid_var(a, int);
     env.unifier.unify(list_x, list_int).unwrap();

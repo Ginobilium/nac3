@@ -1,5 +1,5 @@
-use std::{cell::RefCell, sync::Arc};
 use std::collections::HashMap;
+use std::{cell::RefCell, sync::Arc};
 
 use crate::top_level::{DefinitionId, TopLevelDef};
 use crate::typecheck::{
@@ -95,19 +95,34 @@ pub fn parse_type_annotation<T>(
         Subscript { value, slice, .. } => {
             if let Name { id, .. } = &value.node {
                 if id == "virtual" {
-                    let ty =
-                        parse_type_annotation(resolver, top_level_defs, unifier, primitives, slice)?;
+                    let ty = parse_type_annotation(
+                        resolver,
+                        top_level_defs,
+                        unifier,
+                        primitives,
+                        slice,
+                    )?;
                     Ok(unifier.add_ty(TypeEnum::TVirtual { ty }))
                 } else {
                     let types = if let Tuple { elts, .. } = &slice.node {
                         elts.iter()
                             .map(|v| {
-                                parse_type_annotation(resolver, top_level_defs, unifier, primitives, v)
+                                parse_type_annotation(
+                                    resolver,
+                                    top_level_defs,
+                                    unifier,
+                                    primitives,
+                                    v,
+                                )
                             })
                             .collect::<Result<Vec<_>, _>>()?
                     } else {
                         vec![parse_type_annotation(
-                            resolver, top_level_defs, unifier, primitives, slice,
+                            resolver,
+                            top_level_defs,
+                            unifier,
+                            primitives,
+                            slice,
                         )?]
                     };
 

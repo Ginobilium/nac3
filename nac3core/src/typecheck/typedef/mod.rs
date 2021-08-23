@@ -672,7 +672,11 @@ impl Unifier {
     }
 
     fn incompatible_types(&mut self, a: Type, b: Type) -> Result<(), String> {
-        Err(format!("Cannot unify {} with {}", self.internal_stringify(a), self.internal_stringify(b)))
+        Err(format!(
+            "Cannot unify {} with {}",
+            self.internal_stringify(a),
+            self.internal_stringify(b)
+        ))
     }
 
     /// Instantiate a function if it hasn't been instantiated.
