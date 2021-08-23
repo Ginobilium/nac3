@@ -61,7 +61,7 @@ pub mod top_level_type_annotation_info {
         if results.len() == 1 {
             results[0].clone()
         } else {
-            Err("cannot be parsed the type annotation without ambiguity".into())
+            Err("cannot parsed the type annotation without ambiguity".into())
         }
     }
 
@@ -113,11 +113,11 @@ pub mod top_level_type_annotation_info {
                                 (name.clone(), subst_ty)
                             })
                             .collect::<HashMap<String, Type>>();
-
                         tobj_fields.extend(fields.iter().map(|(name, ty)| {
                             let subst_ty = unifier.subst(*ty, &subst).unwrap_or(*ty);
                             (name.clone(), subst_ty)
                         }));
+
                         Ok(unifier.add_ty(TypeEnum::TObj {
                             obj_id: *id,
                             fields: tobj_fields.into(),
@@ -146,8 +146,8 @@ pub mod top_level_type_annotation_info {
                         .iter()
                         .map(|(name, ty, _)| (name.clone(), *ty))
                         .collect::<HashMap<String, Type>>();
-
                     tobj_fields.extend(fields.clone().into_iter());
+
                     Ok(unifier.add_ty(TypeEnum::TObj {
                         obj_id: *obj_id,
                         fields: tobj_fields.into(),
@@ -268,11 +268,11 @@ pub mod top_level_type_annotation_info {
                         Err("function cannot be used as a type".into())
                     }
                 } else {
-                    Err("unsupported expression type".into())
+                    Err("unsupported expression type for class name".into())
                 }
             }
 
-            _ => Err("unsupported expression type".into()),
+            _ => Err("unsupported expression type for concretized class".into()),
         }
     }
 
@@ -295,7 +295,7 @@ pub mod top_level_type_annotation_info {
                     slice.as_ref(),
                 )?;
                 if !matches!(def, TypeAnnotation::ConcretizedCustomClassKind { .. }) {
-                    unreachable!("should must be concretized custom class kind")
+                    unreachable!("must be concretized custom class kind in the virtual")
                 }
                 Ok(TypeAnnotation::VirtualKind(def.into()))
             }
@@ -315,7 +315,11 @@ pub mod top_level_type_annotation_info {
             let ty = resolver
                 .get_symbol_type(unifier, primitives, id)
                 .ok_or_else(|| "unknown type variable name".to_string())?;
-            Ok(TypeAnnotation::TypeVarKind(ty))
+            if let TypeEnum::TVar { .. } = unifier.get_ty(ty).as_ref() {
+                Ok(TypeAnnotation::TypeVarKind(ty))
+            } else {
+                Err("not a type variable identifier".into())
+            }
         } else {
             Err("unsupported expression for type variable".into())
         }
@@ -376,10 +380,7 @@ pub struct TopLevelComposer {
     pub unifier: Unifier,
     // primitive store
     pub primitives_ty: PrimitiveStore,
-    // mangled class method name to def_id
-    // pub class_method_to_def_id: HashMap<String, DefinitionId>,
-    // record the def id of the classes whoses fields and methods are to be analyzed
-    // pub to_be_analyzed_class: Vec<DefinitionId>,
+    // keyword list to prevent same custom def class name
     pub keyword_list: Vec<String>,
 }
 
@@ -522,10 +523,16 @@ impl TopLevelComposer {
         ast: ast::Stmt<()>,
         resolver: Option<Arc<Mutex<dyn SymbolResolver + Send + Sync>>>,
     ) -> Result<(String, DefinitionId), String> {
+        let mut defined_class_name: HashSet<String> = HashSet::new();
+        let mut defined_class_method_name: HashSet<String> = HashSet::new();
+        let mut defined_function_name: HashSet<String> = HashSet::new();
         match &ast.node {
             ast::StmtKind::ClassDef { name, body, .. } => {
                 if self.keyword_list.contains(name) {
                     return Err("cannot use keyword as a class name".into());
+                }
+                if !defined_class_name.insert(name.clone()) {
+                    return Err("duplicate definition of class".into());
                 }
 
                 let class_name = name.to_string();
@@ -556,6 +563,11 @@ impl TopLevelComposer {
                 let mut class_method_index_offset = 0;
                 for b in body {
                     if let ast::StmtKind::FunctionDef { name: method_name, .. } = &b.node {
+                        let global_class_method_name =
+                            Self::make_class_method_name(class_name.clone(), method_name);
+                        if !defined_class_method_name.insert(global_class_method_name.clone()) {
+                            return Err("duplicate class method definition".into());
+                        }
                         let method_def_id = self.definition_ast_list.len() + {
                             class_method_index_offset += 1;
                             class_method_index_offset
@@ -566,7 +578,7 @@ impl TopLevelComposer {
                         class_method_name_def_ids.push((
                             method_name.clone(),
                             RwLock::new(Self::make_top_level_function_def(
-                                Self::make_class_method_name(class_name.clone(), method_name),
+                                global_class_method_name,
                                 // later unify with parsed type
                                 dummy_method_type.0,
                                 resolver.clone(),
@@ -610,6 +622,9 @@ impl TopLevelComposer {
 
             ast::StmtKind::FunctionDef { name, .. } => {
                 let fun_name = name.to_string();
+                if !defined_function_name.insert(name.to_string()) {
+                    return Err("duplicate top level function define".into());
+                }
 
                 // add to the definition list
                 self.definition_ast_list.push((
@@ -792,7 +807,7 @@ impl TopLevelComposer {
                     b,
                 )?;
 
-                if let TypeAnnotation::ConcretizedCustomClassKind { .. } = base_ty {
+                if let TypeAnnotation::ConcretizedCustomClassKind { .. } = &base_ty {
                     // TODO: check to prevent cyclic base class
                     class_ancestors.push(base_ty);
                 } else {
@@ -858,6 +873,13 @@ impl TopLevelComposer {
                     let resolver = resolver.unwrap();
                     let resolver = resolver.deref().lock();
                     let function_resolver = resolver.deref();
+
+                    let mut defined_paramter_name: HashSet<String> = HashSet::new();
+                    let have_unique_fuction_parameter_name =
+                        args.args.iter().all(|x| defined_paramter_name.insert(x.node.arg.clone()));
+                    if !have_unique_fuction_parameter_name {
+                        return Err("top level function have duplicate parameter name".into());
+                    }
 
                     let arg_types = {
                         args.args
@@ -935,7 +957,7 @@ impl TopLevelComposer {
     ) -> Result<(), String> {
         let mut class_def = class_def.write();
         let (
-            _class_id,
+            class_id,
             _class_name,
             _class_bases_ast,
             class_body_ast,
@@ -980,59 +1002,90 @@ impl TopLevelComposer {
             if let ast::StmtKind::FunctionDef { args, returns, name, body, .. } = &b.node {
                 let (method_dummy_ty, ..) =
                     Self::get_class_method_def_info(class_methods_def, name)?;
-                // TODO: handle self arg
+
+                let mut defined_paramter_name: HashSet<String> = HashSet::new();
+                let have_unique_fuction_parameter_name =
+                    args.args.iter().all(|x| defined_paramter_name.insert(x.node.arg.clone()));
+                if !have_unique_fuction_parameter_name {
+                    return Err("class method have duplicate parameter name".into());
+                }
+
                 // TODO: handle parameter with same name
                 let arg_type: Vec<FuncArg> = {
                     let mut result = Vec::new();
                     for x in &args.args {
                         let name = x.node.arg.clone();
-                        let type_ann = {
-                            let annotation_expr = x
-                                .node
-                                .annotation
-                                .as_ref()
-                                .ok_or_else(|| "type annotation needed".to_string())?
-                                .as_ref();
-                            parse_ast_to_type_annotation_kinds(
-                                class_resolver,
-                                temp_def_list,
-                                unifier,
-                                primitives,
-                                annotation_expr,
-                            )?
-                        };
-                        if let TypeAnnotation::TypeVarKind(_ty) = &type_ann {
-                            // TODO: need to handle to different type vars that are
-                            // asscosiated with the class and that are not
+                        if name != "self" {
+                            let type_ann = {
+                                let annotation_expr = x
+                                    .node
+                                    .annotation
+                                    .as_ref()
+                                    .ok_or_else(|| "type annotation needed".to_string())?
+                                    .as_ref();
+                                parse_ast_to_type_annotation_kinds(
+                                    class_resolver,
+                                    temp_def_list,
+                                    unifier,
+                                    primitives,
+                                    annotation_expr,
+                                )?
+                            };
+                            if let TypeAnnotation::TypeVarKind(_ty) = &type_ann {
+                                // TODO: need to handle to different type vars that are
+                                // asscosiated with the class and that are not
+                            }
+                            let dummy_func_arg = FuncArg {
+                                name,
+                                ty: unifier.get_fresh_var().0,
+                                // TODO: symbol default value?
+                                default_value: None,
+                            };
+                            // push the dummy type and the type annotation
+                            // into the list for later unification
+                            type_var_to_concrete_def.insert(dummy_func_arg.ty, type_ann.clone());
+                            result.push(dummy_func_arg)
+                        } else {
+                            // if the parameter name is self
+                            // python does not seem to enforce the name
+                            // representing the self class object to be
+                            // `self`, but we do it here
+
+                            let dummy_func_arg = FuncArg {
+                                name: "self".into(),
+                                ty: unifier.get_fresh_var().0,
+                                default_value: None,
+                            };
+                            type_var_to_concrete_def
+                                .insert(dummy_func_arg.ty, TypeAnnotation::SelfTypeKind(*class_id));
+                            result.push(dummy_func_arg);
                         }
-                        let dummy_func_arg = FuncArg {
-                            name,
-                            ty: unifier.get_fresh_var().0,
-                            // TODO: symbol default value?
-                            default_value: None,
-                        };
-                        // push the dummy type and the type annotation
-                        // into the list for later unification
-                        type_var_to_concrete_def.insert(dummy_func_arg.ty, type_ann.clone());
-                        result.push(dummy_func_arg)
                     }
                     result
                 };
                 let ret_type = {
-                    let result = returns
-                        .as_ref()
-                        .ok_or_else(|| "method return type annotation needed".to_string())?
-                        .as_ref();
-                    let annotation = parse_ast_to_type_annotation_kinds(
-                        class_resolver,
-                        temp_def_list,
-                        unifier,
-                        primitives,
-                        result,
-                    )?;
-                    let dummy_return_type = unifier.get_fresh_var().0;
-                    type_var_to_concrete_def.insert(dummy_return_type, annotation.clone());
-                    dummy_return_type
+                    if name != "__init__" {
+                        let result = returns
+                            .as_ref()
+                            .ok_or_else(|| "method return type annotation needed".to_string())?
+                            .as_ref();
+                        let annotation = parse_ast_to_type_annotation_kinds(
+                            class_resolver,
+                            temp_def_list,
+                            unifier,
+                            primitives,
+                            result,
+                        )?;
+                        let dummy_return_type = unifier.get_fresh_var().0;
+                        type_var_to_concrete_def.insert(dummy_return_type, annotation.clone());
+                        dummy_return_type
+                    } else {
+                        // if is the "__init__" function, the return type is self
+                        let dummy_return_type = unifier.get_fresh_var().0;
+                        type_var_to_concrete_def
+                            .insert(dummy_return_type, TypeAnnotation::SelfTypeKind(*class_id));
+                        dummy_return_type
+                    }
                 };
                 // TODO: handle var map, to create a new copy of type var
                 // while tracking the type var associated with class
