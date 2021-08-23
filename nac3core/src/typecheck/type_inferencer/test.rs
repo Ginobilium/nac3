@@ -173,7 +173,7 @@ impl TestEnvironment {
             RwLock::new(TopLevelDef::Class {
                 name: "Foo".to_string(),
                 object_id: DefinitionId(5),
-                type_vars: vec![v0],
+                type_vars: vec![(id, v0)],
                 fields: [("a".into(), v0)].into(),
                 methods: Default::default(),
                 ancestors: Default::default(),
