@@ -82,8 +82,9 @@ impl<'a> fold::Fold<()> for Inferencer<'a> {
                 } else {
                     None
                 };
+                let top_level_defs = self.top_level.definitions.read();
                 let annotation_type = self.function_data.resolver.parse_type_annotation(
-                    self.top_level.read_top_level_def_list(),
+                    top_level_defs.as_slice(),
                     self.unifier,
                     &self.primitives,
                     annotation.as_ref(),
@@ -344,8 +345,9 @@ impl<'a> Inferencer<'a> {
                     }
                     let arg0 = self.fold_expr(args.remove(0))?;
                     let ty = if let Some(arg) = args.pop() {
+                        let top_level_defs = self.top_level.definitions.read();
                         self.function_data.resolver.parse_type_annotation(
-                            self.top_level.read_top_level_def_list(),
+                            top_level_defs.as_slice(),
                             self.unifier,
                             self.primitives,
                             &arg,

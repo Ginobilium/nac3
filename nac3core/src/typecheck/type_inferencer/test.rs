@@ -269,7 +269,7 @@ impl TestEnvironment {
         .collect();
 
         let top_level = TopLevelContext {
-            definitions: Arc::new(top_level_defs),
+            definitions: Arc::new(top_level_defs.into()),
             unifiers: Default::default(),
         };
 

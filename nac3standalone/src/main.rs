@@ -52,8 +52,8 @@ fn main() {
 
     let (_, composer) = TopLevelComposer::new();
     let mut unifier = composer.unifier.clone();
-    let primitives = composer.primitives.clone();
-    let top_level = Arc::new(composer.to_top_level_context());
+    let primitives = composer.primitives_ty.clone();
+    let top_level = Arc::new(composer.make_top_level_context());
     unifier.top_level = Some(top_level.clone());
     let fun = unifier.add_ty(TypeEnum::TFunc(RefCell::new(FunSignature {
         args: vec![FuncArg {

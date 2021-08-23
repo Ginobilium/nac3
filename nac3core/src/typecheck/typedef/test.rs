@@ -263,7 +263,7 @@ fn test_unify(
         ("v1", "Tuple[int]"),
         ("v2", "List[int]"),
     ],
-    (("v1", "v2"), "Cannot unify TList with TTuple")
+    (("v1", "v2"), "Cannot unify list[0] with tuple[0]")
     ; "type mismatch"
 )]
 #[test_case(2,
@@ -271,7 +271,7 @@ fn test_unify(
         ("v1", "Tuple[int]"),
         ("v2", "Tuple[float]"),
     ],
-    (("v1", "v2"), "Cannot unify objects with ID 0 and 1")
+    (("v1", "v2"), "Cannot unify 0 with 1")
     ; "tuple parameter mismatch"
 )]
 #[test_case(2,
@@ -377,7 +377,7 @@ fn test_typevar_range() {
     let v = env.unifier.get_fresh_var_with_range(&[int, boolean]).0;
     assert_eq!(
         env.unifier.unify(int_list, v),
-        Err("Cannot unify type variable 3 with TList due to incompatible value range".to_string())
+        Err("Cannot unify variable 3 with list[0] due to incompatible value range".to_string())
     );
 
     // unification between v and float
@@ -385,7 +385,7 @@ fn test_typevar_range() {
     let v = env.unifier.get_fresh_var_with_range(&[int, boolean]).0;
     assert_eq!(
         env.unifier.unify(float, v),
-        Err("Cannot unify type variable 4 with TObj due to incompatible value range".to_string())
+        Err("Cannot unify variable 4 with 1 due to incompatible value range".to_string())
     );
 
     let v1 = env.unifier.get_fresh_var_with_range(&[int, boolean]).0;
@@ -405,7 +405,7 @@ fn test_typevar_range() {
     // where v in (int, List[v1]), v1 in (int, bool)
     assert_eq!(
         env.unifier.unify(float_list, v),
-        Err("Cannot unify type variable 8 with TList due to incompatible value range".to_string())
+        Err("Cannot unify variable 8 with list[1] due to incompatible value range".to_string())
     );
 
     let a = env.unifier.get_fresh_var_with_range(&[int, float]).0;
@@ -418,7 +418,7 @@ fn test_typevar_range() {
     env.unifier.unify(a, b).unwrap();
     assert_eq!(
         env.unifier.unify(a, int),
-        Err("Cannot unify type variable 12 with TObj due to incompatible value range".into())
+        Err("Cannot unify variable 12 with 0 due to incompatible value range".into())
     );
 
     let a = env.unifier.get_fresh_var_with_range(&[int, float]).0;
@@ -441,7 +441,7 @@ fn test_typevar_range() {
     let int_list = env.unifier.add_ty(TypeEnum::TList { ty: int });
     assert_eq!(
         env.unifier.unify(a_list, int_list),
-        Err("Cannot unify type variable 19 with TObj due to incompatible value range".into())
+        Err("Cannot unify variable 19 with 0 due to incompatible value range".into())
     );
 
     let a = env.unifier.get_fresh_var_with_range(&[int, float]).0;
@@ -452,7 +452,7 @@ fn test_typevar_range() {
     env.unifier.unify(a_list, b_list).unwrap();
     assert_eq!(
         env.unifier.unify(b, boolean),
-        Err("Cannot unify type variable 21 with TObj due to incompatible value range".into())
+        Err("Cannot unify variable 21 with 2 due to incompatible value range".into())
     );
 }
 
@@ -467,11 +467,11 @@ fn test_rigid_var() {
     let int = env.parse("int", &HashMap::new());
     let list_int = env.parse("List[int]", &HashMap::new());
 
-    assert_eq!(env.unifier.unify(a, b), Err("Cannot unify TRigidVar with TRigidVar".to_string()));
+    assert_eq!(env.unifier.unify(a, b), Err("Cannot unify var3 with var2".to_string()));
     env.unifier.unify(list_a, list_x).unwrap();
     assert_eq!(
         env.unifier.unify(list_x, list_int),
-        Err("Cannot unify TObj with TRigidVar".to_string())
+        Err("Cannot unify 0 with var2".to_string())
     );
 
     env.unifier.replace_rigid_var(a, int);

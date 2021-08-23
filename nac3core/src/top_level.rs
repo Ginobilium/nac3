@@ -339,7 +339,7 @@ pub enum TopLevelDef {
 }
 
 pub struct TopLevelContext {
-    pub definitions: Arc<Vec<Arc<RwLock<TopLevelDef>>>>,
+    pub definitions: Arc<RwLock<Vec<Arc<RwLock<TopLevelDef>>>>>,
     pub unifiers: Arc<RwLock<Vec<(SharedUnifier, PrimitiveStore)>>>,
 }
 
@@ -357,21 +357,15 @@ pub struct TopLevelComposer {
     pub keyword_list: Vec<String>,
 }
 
-impl TopLevelContext {
-    pub fn read_top_level_def_list(&self) -> &[Arc<RwLock<TopLevelDef>>] {
-        self.definitions.as_slice()
-    }
-}
-
 impl TopLevelComposer {
     pub fn make_top_level_context(self) -> TopLevelContext {
         TopLevelContext {
-            definitions: self
+            definitions: RwLock::new(self
                 .definition_ast_list
                 .into_iter()
                 .map(|(x, ..)| x)
                 .collect::<Vec<_>>()
-                .into(),
+            ).into(),
             // FIXME: all the big unifier or?
             unifiers: Default::default(),
         }
@@ -924,7 +918,8 @@ impl TopLevelComposer {
             fields,
             methods,
             resolver,
-            type_vars
+            type_vars,
+            ..
         } = class_def.deref_mut() {
             if let ast::StmtKind::ClassDef { name, bases, body, .. } = &class_ast {
                 (object_id, name.clone(), bases, body, ancestors, fields, methods, type_vars, resolver)
