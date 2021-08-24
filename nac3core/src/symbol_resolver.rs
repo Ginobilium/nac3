@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::{cell::RefCell, sync::Arc};
 
-use crate::top_level::{DefinitionId, TopLevelDef};
+use crate::toplevel::{DefinitionId, TopLevelDef};
 use crate::typecheck::{
     type_inferencer::PrimitiveStore,
     typedef::{Type, Unifier},

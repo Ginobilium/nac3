@@ -10,7 +10,7 @@ use std::{cell::RefCell, collections::HashMap, path::Path, sync::Arc};
 
 use nac3core::{
     codegen::{CodeGenTask, WithCall, WorkerRegistry},
-    top_level::{DefinitionId, TopLevelComposer, TopLevelContext, TopLevelDef},
+    toplevel::{DefinitionId, TopLevelComposer, TopLevelContext, TopLevelDef},
     typecheck::{
         type_inferencer::{FunctionData, Inferencer},
         typedef::{FunSignature, FuncArg, TypeEnum},

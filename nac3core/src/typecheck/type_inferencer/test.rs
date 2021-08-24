@@ -1,8 +1,7 @@
 use super::super::typedef::*;
 use super::*;
 use crate::symbol_resolver::*;
-use crate::top_level::DefinitionId;
-use crate::{location::Location, top_level::TopLevelDef};
+use crate::{location::Location, toplevel::{DefinitionId, TopLevelDef}};
 use indoc::indoc;
 use itertools::zip;
 use parking_lot::RwLock;

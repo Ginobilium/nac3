@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex};
 
 use super::unification_table::{UnificationKey, UnificationTable};
 use crate::symbol_resolver::SymbolValue;
-use crate::top_level::{DefinitionId, TopLevelContext, TopLevelDef};
+use crate::toplevel::{DefinitionId, TopLevelContext, TopLevelDef};
 
 #[cfg(test)]
 mod test;

@@ -3,7 +3,7 @@ use crate::{
     codegen::WithCall,
     location::Location,
     symbol_resolver::{SymbolResolver, SymbolValue},
-    top_level::{DefinitionId, TopLevelContext},
+    toplevel::{DefinitionId, TopLevelContext},
     typecheck::{
         magic_methods::set_primitives_magic_methods,
         type_inferencer::{CodeLocation, FunctionData, Inferencer, PrimitiveStore},

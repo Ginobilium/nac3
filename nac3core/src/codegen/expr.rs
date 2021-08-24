@@ -3,7 +3,7 @@ use std::{collections::HashMap, convert::TryInto, iter::once};
 use super::{get_llvm_type, CodeGenContext};
 use crate::{
     symbol_resolver::SymbolValue,
-    top_level::{DefinitionId, TopLevelDef},
+    toplevel::{DefinitionId, TopLevelDef},
     typecheck::typedef::{FunSignature, Type, TypeEnum},
 };
 use inkwell::{

@@ -1,7 +1,7 @@
 use nac3core::{
     location::Location,
     symbol_resolver::{SymbolResolver, SymbolValue},
-    top_level::DefinitionId,
+    toplevel::DefinitionId,
     typecheck::{
         type_inferencer::PrimitiveStore,
         typedef::{Type, Unifier},

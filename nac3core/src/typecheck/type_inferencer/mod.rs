@@ -5,7 +5,7 @@ use std::{cell::RefCell, sync::Arc};
 
 use super::typedef::{Call, FunSignature, FuncArg, Type, TypeEnum, Unifier};
 use super::{magic_methods::*, typedef::CallId};
-use crate::{symbol_resolver::SymbolResolver, top_level::TopLevelContext};
+use crate::{symbol_resolver::SymbolResolver, toplevel::TopLevelContext};
 use itertools::izip;
 use rustpython_parser::ast::{
     self,

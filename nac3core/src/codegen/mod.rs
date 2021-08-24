@@ -1,6 +1,6 @@
 use crate::{
     symbol_resolver::SymbolResolver,
-    top_level::{TopLevelContext, TopLevelDef},
+    toplevel::{TopLevelContext, TopLevelDef},
     typecheck::{
         type_inferencer::{CodeLocation, PrimitiveStore},
         typedef::{CallId, FunSignature, Type, TypeEnum, Unifier},
