@@ -3,14 +3,11 @@ use std::ops::{Deref, DerefMut};
 use std::{collections::HashMap, collections::HashSet, sync::Arc};
 
 use super::typecheck::type_inferencer::PrimitiveStore;
-use super::typecheck::typedef::{SharedUnifier, Type, TypeEnum, Unifier};
+use super::typecheck::typedef::{FunSignature, FuncArg, SharedUnifier, Type, TypeEnum, Unifier};
 use crate::symbol_resolver::SymbolResolver;
-use crate::typecheck::typedef::{FunSignature, FuncArg};
 use itertools::{izip, Itertools};
 use parking_lot::{Mutex, RwLock};
 use rustpython_parser::ast::{self, Stmt};
-
-
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
 pub struct DefinitionId(pub usize);
