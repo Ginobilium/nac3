@@ -94,77 +94,110 @@ pub fn parse_type_annotation<T>(
         },
         Subscript { value, slice, .. } => {
             if let Name { id, .. } = &value.node {
-                if id == "virtual" {
-                    let ty = parse_type_annotation(
-                        resolver,
-                        top_level_defs,
-                        unifier,
-                        primitives,
-                        slice,
-                    )?;
-                    Ok(unifier.add_ty(TypeEnum::TVirtual { ty }))
-                } else {
-                    let types = if let Tuple { elts, .. } = &slice.node {
-                        elts.iter()
-                            .map(|v| {
-                                parse_type_annotation(
-                                    resolver,
-                                    top_level_defs,
-                                    unifier,
-                                    primitives,
-                                    v,
-                                )
-                            })
-                            .collect::<Result<Vec<_>, _>>()?
-                    } else {
-                        vec![parse_type_annotation(
+                match id.as_str() {
+                    "virtual" => {
+                        let ty = parse_type_annotation(
                             resolver,
                             top_level_defs,
                             unifier,
                             primitives,
                             slice,
-                        )?]
-                    };
+                        )?;
+                        Ok(unifier.add_ty(TypeEnum::TVirtual { ty }))
+                    }
+                    "list" => {
+                        let ty = parse_type_annotation(
+                            resolver,
+                            top_level_defs,
+                            unifier,
+                            primitives,
+                            slice,
+                        )?;
+                        Ok(unifier.add_ty(TypeEnum::TList { ty }))
+                    }
+                    "tuple" => {
+                        if let Tuple { elts, .. } = &slice.node {
+                            let ty = elts
+                                .iter()
+                                .map(|elt| {
+                                    parse_type_annotation(
+                                        resolver,
+                                        top_level_defs,
+                                        unifier,
+                                        primitives,
+                                        elt,
+                                    )
+                                })
+                                .collect::<Result<Vec<_>, _>>()?;
+                            Ok(unifier.add_ty(TypeEnum::TTuple { ty }))
+                        } else {
+                            Err("Expected multiple elements for tuple".into())
+                        }
+                    }
+                    _ => {
+                        let types = if let Tuple { elts, .. } = &slice.node {
+                            elts.iter()
+                                .map(|v| {
+                                    parse_type_annotation(
+                                        resolver,
+                                        top_level_defs,
+                                        unifier,
+                                        primitives,
+                                        v,
+                                    )
+                                })
+                                .collect::<Result<Vec<_>, _>>()?
+                        } else {
+                            vec![parse_type_annotation(
+                                resolver,
+                                top_level_defs,
+                                unifier,
+                                primitives,
+                                slice,
+                            )?]
+                        };
 
-                    let obj_id = resolver
-                        .get_identifier_def(id)
-                        .ok_or_else(|| format!("Unknown type annotation {}", id))?;
-                    let def = top_level_defs[obj_id.0].read();
-                    if let TopLevelDef::Class { fields, methods, type_vars, .. } = &*def {
-                        if types.len() != type_vars.len() {
-                            return Err(format!(
-                                "Unexpected number of type parameters: expected {} but got {}",
-                                type_vars.len(),
-                                types.len()
-                            ));
-                        }
-                        let mut subst = HashMap::new();
-                        for (var, ty) in izip!(type_vars.iter(), types.iter()) {
-                            let id = if let TypeEnum::TVar { id, .. } = &*unifier.get_ty(var.1) {
-                                *id
-                            } else {
-                                unreachable!()
-                            };
-                            subst.insert(id, *ty);
-                        }
-                        let mut fields = fields
-                            .iter()
-                            .map(|(attr, ty)| {
+                        let obj_id = resolver
+                            .get_identifier_def(id)
+                            .ok_or_else(|| format!("Unknown type annotation {}", id))?;
+                        let def = top_level_defs[obj_id.0].read();
+                        if let TopLevelDef::Class { fields, methods, type_vars, .. } = &*def {
+                            if types.len() != type_vars.len() {
+                                return Err(format!(
+                                    "Unexpected number of type parameters: expected {} but got {}",
+                                    type_vars.len(),
+                                    types.len()
+                                ));
+                            }
+                            let mut subst = HashMap::new();
+                            for (var, ty) in izip!(type_vars.iter(), types.iter()) {
+                                let id = if let TypeEnum::TVar { id, .. } = &*unifier.get_ty(var.1)
+                                {
+                                    *id
+                                } else {
+                                    unreachable!()
+                                };
+                                subst.insert(id, *ty);
+                            }
+                            let mut fields = fields
+                                .iter()
+                                .map(|(attr, ty)| {
+                                    let ty = unifier.subst(*ty, &subst).unwrap_or(*ty);
+                                    (attr.clone(), ty)
+                                })
+                                .collect::<HashMap<_, _>>();
+                            fields.extend(methods.iter().map(|(attr, ty, _)| {
                                 let ty = unifier.subst(*ty, &subst).unwrap_or(*ty);
                                 (attr.clone(), ty)
-                            })
-                            .collect::<HashMap<_, _>>();
-                        fields.extend(methods.iter().map(|(attr, ty, _)| {
-                            let ty = unifier.subst(*ty, &subst).unwrap_or(*ty);
-                            (attr.clone(), ty)
-                        }));
-                        Ok(unifier.add_ty(TypeEnum::TObj {
-                            obj_id,
-                            fields: fields.into(),
-                            params: subst.into(),
-                        }))
-                    } else {
-                        Err("Cannot use function name as type".into())
+                            }));
+                            Ok(unifier.add_ty(TypeEnum::TObj {
+                                obj_id,
+                                fields: fields.into(),
+                                params: subst.into(),
+                            }))
+                        } else {
+                            Err("Cannot use function name as type".into())
+                        }
                     }
                 }
             } else {
