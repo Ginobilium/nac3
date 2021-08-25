@@ -125,7 +125,7 @@ impl Unifier {
         ty: Type,
         type_cache: &mut HashMap<Type, Type>,
     ) -> Type {
-        let representative = self.get_representative(ty);
+        let representative = unifier.get_representative(ty);
         type_cache.get(&representative).cloned().unwrap_or_else(|| {
             // put in a placeholder first to handle possible recursive type
             let placeholder = self.get_fresh_var().0;
@@ -183,7 +183,7 @@ impl Unifier {
                     TypeEnum::TVirtual { ty: self.copy_from(unifier, *ty, type_cache) }
                 }
             };
-            let ty = unifier.add_ty(ty);
+            let ty = self.add_ty(ty);
             self.unify(placeholder, ty).unwrap();
             type_cache.insert(representative, ty);
             ty

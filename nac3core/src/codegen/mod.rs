@@ -3,7 +3,7 @@ use crate::{
     toplevel::{TopLevelContext, TopLevelDef},
     typecheck::{
         type_inferencer::{CodeLocation, PrimitiveStore},
-        typedef::{CallId, FunSignature, Type, TypeEnum, Unifier},
+        typedef::{CallId, FunSignature, SharedUnifier, Type, TypeEnum, Unifier},
     },
 };
 use crossbeam::channel::{unbounded, Receiver, Sender};
@@ -38,11 +38,12 @@ pub struct CodeGenContext<'ctx, 'a> {
     pub module: Module<'ctx>,
     pub top_level: &'a TopLevelContext,
     pub unifier: Unifier,
-    pub resolver: Arc<dyn SymbolResolver>,
+    pub resolver: Arc<Box<dyn SymbolResolver + Send + Sync>>,
     pub var_assignment: HashMap<String, PointerValue<'ctx>>,
     pub type_cache: HashMap<Type, BasicTypeEnum<'ctx>>,
     pub primitives: PrimitiveStore,
     pub calls: HashMap<CodeLocation, CallId>,
+    pub registry: &'a WorkerRegistry,
     // stores the alloca for variables
     pub init_bb: BasicBlock<'ctx>,
     // where continue and break should go to respectively
@@ -166,7 +167,7 @@ impl WorkerRegistry {
         let mut module = context.create_module(&module_name);
 
         while let Some(task) = self.receiver.recv().unwrap() {
-            let result = gen_func(&context, builder, module, task, top_level_ctx.clone());
+            let result = gen_func(&context, self, builder, module, task, top_level_ctx.clone());
             builder = result.0;
             module = result.1;
             *self.task_count.lock() -= 1;
@@ -188,8 +189,8 @@ pub struct CodeGenTask {
     pub signature: FunSignature,
     pub body: Vec<Stmt<Option<Type>>>,
     pub calls: HashMap<CodeLocation, CallId>,
-    pub unifier_index: usize,
-    pub resolver: Arc<dyn SymbolResolver + Send + Sync>,
+    pub unifier: (SharedUnifier, PrimitiveStore),
+    pub resolver: Arc<Box<dyn SymbolResolver + Send + Sync>>,
 }
 
 fn get_llvm_type<'ctx>(
@@ -244,6 +245,7 @@ fn get_llvm_type<'ctx>(
 
 pub fn gen_func<'ctx>(
     context: &'ctx Context,
+    registry: &WorkerRegistry,
     builder: Builder<'ctx>,
     module: Module<'ctx>,
     task: CodeGenTask,
@@ -251,9 +253,8 @@ pub fn gen_func<'ctx>(
 ) -> (Builder<'ctx>, Module<'ctx>) {
     // unwrap_or(0) is for unit tests without using rayon
     let (mut unifier, primitives) = {
-        let unifiers = top_level_ctx.unifiers.read();
-        let (unifier, primitives) = &unifiers[task.unifier_index];
-        (Unifier::from_shared_unifier(unifier), *primitives)
+        let (unifier, primitives) = task.unifier;
+        (Unifier::from_shared_unifier(&unifier), primitives)
     };
 
     for (a, b) in task.subst.iter() {
@@ -327,6 +328,7 @@ pub fn gen_func<'ctx>(
         top_level: top_level_ctx.as_ref(),
         calls: task.calls,
         loop_bb: None,
+        registry,
         var_assignment,
         type_cache,
         primitives,

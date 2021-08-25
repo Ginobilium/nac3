@@ -21,7 +21,7 @@ pub enum TypeAnnotation {
 }
 
 pub fn parse_ast_to_type_annotation_kinds<T>(
-    resolver: &dyn SymbolResolver,
+    resolver: &Box<dyn SymbolResolver + Send + Sync>,
     top_level_defs: &[Arc<RwLock<TopLevelDef>>],
     unifier: &mut Unifier,
     primitives: &PrimitiveStore,

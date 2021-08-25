@@ -38,7 +38,7 @@ pub struct PrimitiveStore {
 }
 
 pub struct FunctionData {
-    pub resolver: Arc<dyn SymbolResolver + Send + Sync>,
+    pub resolver: Arc<Box<dyn SymbolResolver + Send + Sync>>,
     pub return_type: Option<Type>,
     pub bound_variables: Vec<Type>,
 }

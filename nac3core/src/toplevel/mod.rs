@@ -4,9 +4,12 @@ use std::{collections::HashMap, collections::HashSet, sync::Arc};
 
 use super::typecheck::type_inferencer::PrimitiveStore;
 use super::typecheck::typedef::{FunSignature, FuncArg, SharedUnifier, Type, TypeEnum, Unifier};
-use crate::symbol_resolver::SymbolResolver;
+use crate::{
+    symbol_resolver::SymbolResolver,
+    typecheck::{type_inferencer::CodeLocation, typedef::CallId},
+};
 use itertools::{izip, Itertools};
-use parking_lot::{Mutex, RwLock};
+use parking_lot::RwLock;
 use rustpython_parser::ast::{self, Stmt};
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
@@ -14,6 +17,13 @@ pub struct DefinitionId(pub usize);
 
 mod type_annotation;
 use type_annotation::*;
+
+pub struct FunInstance {
+    pub body: Vec<Stmt<Option<Type>>>,
+    pub calls: HashMap<CodeLocation, CallId>,
+    pub subst: HashMap<u32, Type>,
+    pub unifier_id: usize,
+}
 
 pub enum TopLevelDef {
     Class {
@@ -33,13 +43,15 @@ pub enum TopLevelDef {
         // ancestor classes, including itself.
         ancestors: Vec<TypeAnnotation>,
         // symbol resolver of the module defined the class, none if it is built-in type
-        resolver: Option<Arc<Mutex<dyn SymbolResolver + Send + Sync>>>,
+        resolver: Option<Arc<Box<dyn SymbolResolver + Send + Sync>>>,
     },
     Function {
         // prefix for symbol, should be unique globally, and not ending with numbers
         name: String,
         // function signature.
         signature: Type,
+        // instantiated type variable IDs
+        var_id: Vec<u32>,
         /// Function instance to symbol mapping
         /// Key: string representation of type variable values, sorted by variable ID in ascending
         /// order, including type variables associated with the class.
@@ -49,11 +61,10 @@ pub enum TopLevelDef {
         /// Key: string representation of type variable values, sorted by variable ID in ascending
         /// order, including type variables associated with the class. Excluding rigid type
         /// variables.
-        /// Value: AST annotated with types together with a unification table index. Could contain
         /// rigid type variables that would be substituted when the function is instantiated.
-        instance_to_stmt: HashMap<String, (Stmt<Option<Type>>, usize)>,
+        instance_to_stmt: HashMap<String, FunInstance>,
         // symbol resolver of the module defined the class
-        resolver: Option<Arc<Mutex<dyn SymbolResolver + Send + Sync>>>,
+        resolver: Option<Arc<Box<dyn SymbolResolver + Send + Sync>>>,
     },
     Initializer {
         class_id: DefinitionId,
@@ -171,7 +182,7 @@ impl TopLevelComposer {
     /// when first regitering, the type_vars, fields, methods, ancestors are invalid
     pub fn make_top_level_class_def(
         index: usize,
-        resolver: Option<Arc<Mutex<dyn SymbolResolver + Send + Sync>>>,
+        resolver: Option<Arc<Box<dyn SymbolResolver + Send + Sync>>>,
         name: &str,
     ) -> TopLevelDef {
         TopLevelDef::Class {
@@ -189,11 +200,12 @@ impl TopLevelComposer {
     pub fn make_top_level_function_def(
         name: String,
         ty: Type,
-        resolver: Option<Arc<Mutex<dyn SymbolResolver + Send + Sync>>>,
+        resolver: Option<Arc<Box<dyn SymbolResolver + Send + Sync>>>,
     ) -> TopLevelDef {
         TopLevelDef::Function {
             name,
             signature: ty,
+            var_id: Default::default(),
             instance_to_symbol: Default::default(),
             instance_to_stmt: Default::default(),
             resolver,
@@ -214,7 +226,7 @@ impl TopLevelComposer {
     pub fn register_top_level(
         &mut self,
         ast: ast::Stmt<()>,
-        resolver: Option<Arc<Mutex<dyn SymbolResolver + Send + Sync>>>,
+        resolver: Option<Arc<Box<dyn SymbolResolver + Send + Sync>>>,
     ) -> Result<(String, DefinitionId), String> {
         let mut defined_class_name: HashSet<String> = HashSet::new();
         let mut defined_class_method_name: HashSet<String> = HashSet::new();
@@ -363,7 +375,7 @@ impl TopLevelComposer {
                     continue;
                 }
             };
-            let class_resolver = class_resolver.as_ref().unwrap().lock();
+            let class_resolver = class_resolver.as_ref().unwrap();
             let class_resolver = class_resolver.deref();
 
             let mut is_generic = false;
@@ -467,7 +479,7 @@ impl TopLevelComposer {
                     continue;
                 }
             };
-            let class_resolver = class_resolver.as_ref().unwrap().lock();
+            let class_resolver = class_resolver.as_ref().unwrap();
             let class_resolver = class_resolver.deref();
 
             let mut has_base = false;
@@ -563,7 +575,7 @@ impl TopLevelComposer {
                 if let ast::StmtKind::FunctionDef { args, returns, .. } = &function_ast.node {
                     let resolver = resolver.as_ref();
                     let resolver = resolver.unwrap();
-                    let resolver = resolver.deref().lock();
+                    let resolver = resolver.deref();
                     let function_resolver = resolver.deref();
 
                     // occured type vars should not be handled separately
@@ -708,8 +720,7 @@ impl TopLevelComposer {
             unreachable!("here must be class def ast");
         };
         let class_resolver = class_resolver.as_ref().unwrap();
-        let mut class_resolver = class_resolver.lock();
-        let class_resolver = class_resolver.deref_mut();
+        let class_resolver = class_resolver;
 
         for b in class_body_ast {
             if let ast::StmtKind::FunctionDef { args, returns, name, body, .. } = &b.node {
