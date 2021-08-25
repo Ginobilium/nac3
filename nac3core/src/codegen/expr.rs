@@ -109,105 +109,104 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
         params: Vec<(Option<String>, BasicValueEnum<'ctx>)>,
     ) -> Option<BasicValueEnum<'ctx>> {
         let key = self.get_subst_key(obj.map(|a| a.0), fun.0, None);
-        let top_level_defs = self.top_level.definitions.read();
-        let definition = top_level_defs.get(fun.1 .0).unwrap();
-        let symbol =
-            if let TopLevelDef::Function { instance_to_symbol, .. } = &*definition.read() {
+        let definition = self.top_level.definitions.read().get(fun.1.0).cloned().unwrap();
+        let mut task = None;
+        let symbol = {
+            // make sure this lock guard is dropped at the end of this scope...
+            let def = definition.read();
+            if let TopLevelDef::Function { instance_to_symbol, .. } = &*def {
                 instance_to_symbol.get(&key).cloned()
             } else {
                 unreachable!()
             }
-            .unwrap_or_else(|| {
-                if let TopLevelDef::Function {
-                    name,
-                    instance_to_symbol,
-                    instance_to_stmt,
-                    var_id,
-                    resolver,
-                    ..
-                } = &mut *definition.write()
-                {
-                    instance_to_symbol.get(&key).cloned().unwrap_or_else(|| {
-                        let symbol = format!("{}_{}", name, instance_to_symbol.len());
-                        instance_to_symbol.insert(key, symbol.clone());
-                        let key = self.get_subst_key(obj.map(|a| a.0), fun.0, Some(var_id));
-                        let instance = instance_to_stmt.get(&key).unwrap();
-                        let unifiers = self.top_level.unifiers.read();
-                        let (unifier, primitives) = &unifiers[instance.unifier_id];
-                        let mut unifier = Unifier::from_shared_unifier(&unifier);
+        }
+        .unwrap_or_else(|| {
+            if let TopLevelDef::Function {
+                name,
+                instance_to_symbol,
+                instance_to_stmt,
+                var_id,
+                resolver,
+                ..
+            } = &mut *definition.write()
+            {
+                instance_to_symbol.get(&key).cloned().unwrap_or_else(|| {
+                    let symbol = format!("{}_{}", name, instance_to_symbol.len());
+                    instance_to_symbol.insert(key, symbol.clone());
+                    let key = self.get_subst_key(obj.map(|a| a.0), fun.0, Some(var_id));
+                    let instance = instance_to_stmt.get(&key).unwrap();
+                    let unifiers = self.top_level.unifiers.read();
+                    let (unifier, primitives) = &unifiers[instance.unifier_id];
+                    let mut unifier = Unifier::from_shared_unifier(&unifier);
 
-                        let mut type_cache = [
-                            (self.primitives.int32, primitives.int32),
-                            (self.primitives.int64, primitives.int64),
-                            (self.primitives.float, primitives.float),
-                            (self.primitives.bool, primitives.bool),
-                            (self.primitives.none, primitives.none),
-                        ]
+                    let mut type_cache = [
+                        (self.primitives.int32, primitives.int32),
+                        (self.primitives.int64, primitives.int64),
+                        (self.primitives.float, primitives.float),
+                        (self.primitives.bool, primitives.bool),
+                        (self.primitives.none, primitives.none),
+                    ]
+                    .iter()
+                    .map(|(a, b)| {
+                        (self.unifier.get_representative(*a), unifier.get_representative(*b))
+                    })
+                    .collect();
+
+                    let subst = fun
+                        .0
+                        .vars
                         .iter()
-                        .map(|(a, b)| {
-                            (self.unifier.get_representative(*a), unifier.get_representative(*b))
+                        .map(|(id, ty)| {
+                            (
+                                *instance.subst.get(id).unwrap(),
+                                unifier.copy_from(&mut self.unifier, *ty, &mut type_cache),
+                            )
                         })
                         .collect();
 
-                        let subst = fun
+                    let signature = FunSignature {
+                        args: fun
+                            .0
+                            .args
+                            .iter()
+                            .map(|arg| FuncArg {
+                                name: arg.name.clone(),
+                                ty: unifier.copy_from(&mut self.unifier, arg.ty, &mut type_cache),
+                                default_value: arg.default_value.clone(),
+                            })
+                            .collect(),
+                        ret: unifier.copy_from(&mut self.unifier, fun.0.ret, &mut type_cache),
+                        vars: fun
                             .0
                             .vars
                             .iter()
                             .map(|(id, ty)| {
-                                (
-                                    *instance.subst.get(id).unwrap(),
-                                    unifier.copy_from(&mut self.unifier, *ty, &mut type_cache),
-                                )
+                                (*id, unifier.copy_from(&mut self.unifier, *ty, &mut type_cache))
                             })
-                            .collect();
+                            .collect(),
+                    };
 
-                        let signature = FunSignature {
-                            args: fun
-                                .0
-                                .args
-                                .iter()
-                                .map(|arg| FuncArg {
-                                    name: arg.name.clone(),
-                                    ty: unifier.copy_from(
-                                        &mut self.unifier,
-                                        arg.ty,
-                                        &mut type_cache,
-                                    ),
-                                    default_value: arg.default_value.clone(),
-                                })
-                                .collect(),
-                            ret: unifier.copy_from(&mut self.unifier, fun.0.ret, &mut type_cache),
-                            vars: fun
-                                .0
-                                .vars
-                                .iter()
-                                .map(|(id, ty)| {
-                                    (
-                                        *id,
-                                        unifier.copy_from(&mut self.unifier, *ty, &mut type_cache),
-                                    )
-                                })
-                                .collect(),
-                        };
+                    let unifier = (unifier.get_shared_unifier(), *primitives);
 
-                        let unifier = (unifier.get_shared_unifier(), *primitives);
+                    task = Some(CodeGenTask {
+                        symbol_name: symbol.clone(),
+                        body: instance.body.clone(),
+                        resolver: resolver.as_ref().unwrap().clone(),
+                        calls: instance.calls.clone(),
+                        subst,
+                        signature,
+                        unifier,
+                    });
+                    symbol
+                })
+            } else {
+                unreachable!()
+            }
+        });
 
-                        let task = CodeGenTask {
-                            symbol_name: symbol.clone(),
-                            body: instance.body.clone(),
-                            resolver: resolver.as_ref().unwrap().clone(),
-                            calls: instance.calls.clone(),
-                            subst,
-                            signature,
-                            unifier,
-                        };
-                        self.registry.add_task(task);
-                        symbol
-                    })
-                } else {
-                    unreachable!()
-                }
-            });
+        if let Some(task) = task {
+            self.registry.add_task(task);
+        }
 
         let fun_val = self.module.get_function(&symbol).unwrap_or_else(|| {
             let params = fun.0.args.iter().map(|arg| self.get_llvm_type(arg.ty)).collect_vec();
