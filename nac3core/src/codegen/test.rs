@@ -48,7 +48,7 @@ fn test_primitives() {
         "};
     let statements = parse_program(source).unwrap();
 
-    let (_, composer) = TopLevelComposer::new();
+    let composer = TopLevelComposer::new();
     let mut unifier = composer.unifier.clone();
     let primitives = composer.primitives_ty;
     let top_level = Arc::new(composer.make_top_level_context());
@@ -190,7 +190,7 @@ fn test_simple_call() {
         "};
     let statements_2 = parse_program(source_2).unwrap();
 
-    let (_, composer) = TopLevelComposer::new();
+    let composer = TopLevelComposer::new();
     let mut unifier = composer.unifier.clone();
     let primitives = composer.primitives_ty;
     let top_level = Arc::new(composer.make_top_level_context());
