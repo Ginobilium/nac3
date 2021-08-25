@@ -56,7 +56,7 @@ pub fn parse_ast_to_type_annotation_kinds<T>(
                         Ok(TypeAnnotation::TypeVarKind(
                             *id,
                             // TODO: maybe not duplicate will also be fine here?
-                            duplicate_type_var(unifier, ty).0.0
+                            duplicate_type_var(unifier, ty).0
                         ))
                     } else {
                         Err("not a type variable identifier".into())
@@ -217,12 +217,13 @@ pub fn get_type_from_type_annotation_kinds(
 pub fn duplicate_type_var(
     unifier: &mut Unifier,
     type_var: Type
-) -> ((Type, u32), u32) {
+) -> (Type, u32, u32) {
     let ty = unifier.get_ty(type_var);
     if let TypeEnum::TVar { id, range, .. } = ty.as_ref() {
         let range = range.borrow();
         let range = range.as_slice();
-        (unifier.get_fresh_var_with_range(range), *id)
+        let dup = unifier.get_fresh_var_with_range(range);
+        (dup.0, dup.1, *id)
     } else {
         unreachable!("must be type var here to be duplicated");
     }
@@ -253,7 +254,7 @@ pub fn make_self_type_annotation(
                 .iter()
                 .map(|(var_id, ty)| TypeAnnotation::TypeVarKind(
                         *var_id,
-                        duplicate_type_var(unifier, *ty).0.0
+                        duplicate_type_var(unifier, *ty).0
                 ))
                 .collect_vec()
         })

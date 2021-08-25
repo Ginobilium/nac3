@@ -420,15 +420,17 @@ impl TopLevelComposer {
                             .collect::<Result<Vec<_>, _>>()?;
 
                         // check if all are unique type vars
-                        let mut occured_type_var_id: HashSet<u32> = HashSet::new();
-                        let all_unique_type_var = type_vars.iter().all(|x| {
-                            let ty = unifier.get_ty(*x);
-                            if let TypeEnum::TVar { id, .. } = ty.as_ref() {
-                                occured_type_var_id.insert(*id)
-                            } else {
-                                false
-                            }
-                        });
+                        let all_unique_type_var = {
+                            let mut occured_type_var_id: HashSet<u32> = HashSet::new();
+                            type_vars.iter().all(|x| {
+                                let ty = unifier.get_ty(*x);
+                                if let TypeEnum::TVar { id, .. } = ty.as_ref() {
+                                    occured_type_var_id.insert(*id)
+                                } else {
+                                    false
+                                }
+                            })
+                        };
                         if !all_unique_type_var {
                             return Err("expect unique type variables".into());
                         }
@@ -439,7 +441,7 @@ impl TopLevelComposer {
                             .map(|x| {
                                 // must be type var here after previous check
                                 let dup = duplicate_type_var(unifier, x);
-                                (dup.1, (dup.0).0)
+                                (dup.1, dup.0)
                             })
                             .collect_vec();
 
@@ -620,9 +622,9 @@ impl TopLevelComposer {
                                     } else {
                                         // if not, create a duplicate
                                         let ty_copy = duplicate_type_var(unifier, ty);
-                                        ty = ty_copy.0.0;
+                                        ty = ty_copy.0;
                                         occured_type_var.insert(*id, ty);
-                                        function_var_map.insert(ty_copy.1, ty_copy.0.0);
+                                        function_var_map.insert(ty_copy.1, ty_copy.0);
                                     }
                                 }
 
