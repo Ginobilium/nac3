@@ -1,15 +1,17 @@
 use super::*;
-use crate::typecheck::typedef::TypeVarMeta;
+
 #[derive(Clone)]
 pub enum TypeAnnotation {
     PrimitiveKind(Type),
-    ConcretizedCustomClassKind {
+    // we use type vars kind at
+    // params to represent self type
+    CustomClassKind {
         id: DefinitionId,
         // can not be type var, others are all fine
         // TODO: can also be type var?
         params: Vec<TypeAnnotation>,
     },
-    // can only be ConcretizedCustomClassKind
+    // can only be CustomClassKind
     VirtualKind(Box<TypeAnnotation>),
     // the first u32 refers to the var_id of the
     // TVar returned by the symbol resolver,
@@ -17,7 +19,6 @@ pub enum TypeAnnotation {
     // associated with class/functions
     // since when associating we create a copy of type vars
     TypeVarKind(u32, Type),
-    SelfTypeKind(DefinitionId),
 }
 
 pub fn parse_ast_to_type_annotation_kinds<T>(
@@ -38,7 +39,7 @@ pub fn parse_ast_to_type_annotation_kinds<T>(
                 if let Some(obj_id) = resolver.get_identifier_def(x) {
                     let def = top_level_defs[obj_id.0].read();
                     if let TopLevelDef::Class { .. } = &*def {
-                        Ok(TypeAnnotation::ConcretizedCustomClassKind {
+                        Ok(TypeAnnotation::CustomClassKind {
                             id: obj_id,
                             params: vec![],
                         })
@@ -46,17 +47,16 @@ pub fn parse_ast_to_type_annotation_kinds<T>(
                         Err("function cannot be used as a type".into())
                     }
                 } else if let Some(ty) = resolver.get_symbol_type(unifier, primitives, id) {
-                    if let TypeEnum::TVar { id, meta: TypeVarMeta::Generic, range } =
-                        unifier.get_ty(ty).as_ref()
+                    if let TypeEnum::TVar { id, .. } = unifier.get_ty(ty).as_ref()
                     {
                         // NOTE: always create a new one here
                         // and later unify if needed
-                        // but record the var_id of the original type var returned by symbol resolver
-                        let range = range.borrow();
-                        let range = range.as_slice();
+                        // but record the var_id of the original type var
+                        // returned by symbol resolver
                         Ok(TypeAnnotation::TypeVarKind(
                             *id,
-                            unifier.get_fresh_var_with_range(range).0,
+                            // TODO: maybe not duplicate will also be fine here?
+                            duplicate_type_var(unifier, ty).0.0
                         ))
                     } else {
                         Err("not a type variable identifier".into())
@@ -67,7 +67,7 @@ pub fn parse_ast_to_type_annotation_kinds<T>(
             }
         },
 
-        // TODO: subscript or call
+        // TODO: subscript or call?
         ast::ExprKind::Subscript { value, slice, .. }
             if { matches!(&value.node, ast::ExprKind::Name { id, .. } if id == "virtual") } =>
         {
@@ -78,7 +78,7 @@ pub fn parse_ast_to_type_annotation_kinds<T>(
                 primitives,
                 slice.as_ref(),
             )?;
-            if !matches!(def, TypeAnnotation::ConcretizedCustomClassKind { .. }) {
+            if !matches!(def, TypeAnnotation::CustomClassKind { .. }) {
                 unreachable!("must be concretized custom class kind in the virtual")
             }
             Ok(TypeAnnotation::VirtualKind(def.into()))
@@ -116,7 +116,7 @@ pub fn parse_ast_to_type_annotation_kinds<T>(
                         )?]
                     };
                     // NOTE: allow type var in class generic application list
-                    Ok(TypeAnnotation::ConcretizedCustomClassKind {
+                    Ok(TypeAnnotation::CustomClassKind {
                         id: obj_id,
                         params: param_type_infos,
                     })
@@ -139,7 +139,7 @@ pub fn get_type_from_type_annotation_kinds(
     ann: &TypeAnnotation,
 ) -> Result<Type, String> {
     match ann {
-        TypeAnnotation::ConcretizedCustomClassKind { id, params } => {
+        TypeAnnotation::CustomClassKind { id, params } => {
             let class_def = top_level_defs[id.0].read();
             if let TopLevelDef::Class { fields, methods, type_vars, .. } = &*class_def {
                 if type_vars.len() != params.len() {
@@ -160,6 +160,7 @@ pub fn get_type_from_type_annotation_kinds(
                             )
                         })
                         .collect::<Result<Vec<_>, _>>()?;
+                    // FIXME: TODO: cannot directy subst type var here? need to subst types in fields/methods
                     let subst = type_vars
                         .iter()
                         .map(|x| {
@@ -195,33 +196,6 @@ pub fn get_type_from_type_annotation_kinds(
                 unreachable!("should be class def here")
             }
         }
-        TypeAnnotation::SelfTypeKind(obj_id) => {
-            let class_def = top_level_defs[obj_id.0].read();
-            if let TopLevelDef::Class { fields, methods, type_vars, .. } = &*class_def {
-                let subst = type_vars
-                    .iter()
-                    .map(|x| {
-                        if let TypeEnum::TVar { id, .. } = unifier.get_ty(x.1).as_ref() {
-                            (*id, x.1)
-                        } else {
-                            unreachable!()
-                        }
-                    })
-                    .collect::<HashMap<u32, Type>>();
-                let mut tobj_fields = methods
-                    .iter()
-                    .map(|(name, ty, _)| (name.clone(), *ty))
-                    .collect::<HashMap<String, Type>>();
-                tobj_fields.extend(fields.clone().into_iter());
-                Ok(unifier.add_ty(TypeEnum::TObj {
-                    obj_id: *obj_id,
-                    fields: tobj_fields.into(),
-                    params: subst.into(),
-                }))
-            } else {
-                unreachable!("should be class def here")
-            }
-        }
         TypeAnnotation::PrimitiveKind(ty) => Ok(*ty),
         TypeAnnotation::TypeVarKind(_, ty) => Ok(*ty),
         TypeAnnotation::VirtualKind(ty) => {
@@ -234,4 +208,75 @@ pub fn get_type_from_type_annotation_kinds(
             Ok(unifier.add_ty(TypeEnum::TVirtual { ty }))
         }
     }
+}
+
+/// the first return is the duplicated type \
+/// the second return is the var_id of the duplicated type \
+/// the third return is the var_id of the original type
+#[inline]
+pub fn duplicate_type_var(
+    unifier: &mut Unifier,
+    type_var: Type
+) -> ((Type, u32), u32) {
+    let ty = unifier.get_ty(type_var);
+    if let TypeEnum::TVar { id, range, .. } = ty.as_ref() {
+        let range = range.borrow();
+        let range = range.as_slice();
+        (unifier.get_fresh_var_with_range(range), *id)
+    } else {
+        unreachable!("must be type var here to be duplicated");
+    }
+}
+
+/// given an def id, return a type annotation of self \
+/// ```python
+/// class A(Generic[T, V]):
+///     def fun(self):
+/// ```
+/// the type of `self` should be equivalent to `A[T, V]`, where `T`, `V`
+/// considered to be type variables associated with the class
+pub fn make_self_type_annotation(
+    top_level_defs: &[Arc<RwLock<TopLevelDef>>],
+    def_id: DefinitionId,
+    unifier: &mut Unifier,
+) -> Result<TypeAnnotation, String> {
+    let obj_def = top_level_defs
+        .get(def_id.0)
+        .ok_or_else(|| "invalid definition id".to_string())?;
+    let obj_def = obj_def.read();
+    let obj_def = obj_def.deref();
+
+    if let TopLevelDef::Class { type_vars, .. } = obj_def {
+        Ok(TypeAnnotation::CustomClassKind {
+            id: def_id,
+            params: type_vars
+                .iter()
+                .map(|(var_id, ty)| TypeAnnotation::TypeVarKind(
+                        *var_id,
+                        duplicate_type_var(unifier, *ty).0.0
+                ))
+                .collect_vec()
+        })
+    } else {
+        unreachable!("must be top level class def here")
+    }
+}
+
+/// get all the occurences of type vars contained in a type annotation
+/// e.g. `A[int, B[T], V]` => [T, V]
+pub fn get_type_var_contained_in_type_annotation(ann: &TypeAnnotation) -> Vec<TypeAnnotation> {
+    let mut result: Vec<TypeAnnotation> = Vec::new();
+    match ann {
+        TypeAnnotation::TypeVarKind( .. ) => result.push(ann.clone()),
+        TypeAnnotation::VirtualKind(ann) => result.extend(
+            get_type_var_contained_in_type_annotation(ann.as_ref())
+        ),
+        TypeAnnotation::CustomClassKind { params, .. } => {
+            for p in params {
+                result.extend(get_type_var_contained_in_type_annotation(p));
+            }
+        },
+        _ => { }
+    }
+    result
 }

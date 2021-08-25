@@ -51,7 +51,7 @@ fn main() {
         }
     };
 
-    let (_, composer) = TopLevelComposer::new();
+    let composer = TopLevelComposer::new();
     let mut unifier = composer.unifier.clone();
     let primitives = composer.primitives_ty;
     let top_level = Arc::new(composer.make_top_level_context());
