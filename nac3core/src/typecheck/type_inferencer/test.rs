@@ -92,11 +92,11 @@ impl TestEnvironment {
         let mut identifier_mapping = HashMap::new();
         identifier_mapping.insert("None".into(), none);
 
-        let resolver = Arc::new(Resolver {
+        let resolver = Arc::new(Box::new(Resolver {
             id_to_type: identifier_mapping.clone(),
             id_to_def: Default::default(),
             class_names: Default::default(),
-        }) as Arc<dyn SymbolResolver + Send + Sync>;
+        }) as Box<dyn SymbolResolver + Send + Sync>);
 
         TestEnvironment {
             top_level: TopLevelContext {
@@ -150,7 +150,7 @@ impl TestEnvironment {
         for (i, name) in ["int32", "int64", "float", "bool", "none"].iter().enumerate() {
             top_level_defs.push(
                 RwLock::new(TopLevelDef::Class {
-                    name: format!("obj{}", i),
+                    name: name.to_string(),
                     object_id: DefinitionId(i),
                     type_vars: Default::default(),
                     fields: Default::default(),
@@ -275,7 +275,7 @@ impl TestEnvironment {
             unifiers: Default::default(),
         };
 
-        let resolver = Arc::new(Resolver {
+        let resolver = Arc::new(Box::new(Resolver {
             id_to_type: identifier_mapping.clone(),
             id_to_def: [
                 ("Foo".into(), DefinitionId(5)),
@@ -286,7 +286,7 @@ impl TestEnvironment {
             .cloned()
             .collect(),
             class_names,
-        }) as Arc<dyn SymbolResolver + Send + Sync>;
+        }) as Box<dyn SymbolResolver + Send + Sync>);
 
         TestEnvironment {
             unifier,

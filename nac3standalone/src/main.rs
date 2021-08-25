@@ -10,6 +10,7 @@ use std::{cell::RefCell, collections::HashMap, path::Path, sync::Arc};
 
 use nac3core::{
     codegen::{CodeGenTask, WithCall, WorkerRegistry},
+    symbol_resolver::SymbolResolver,
     toplevel::{DefinitionId, TopLevelComposer, TopLevelContext, TopLevelDef},
     typecheck::{
         type_inferencer::{FunctionData, Inferencer},
@@ -52,10 +53,10 @@ fn main() {
 
     let (_, composer) = TopLevelComposer::new();
     let mut unifier = composer.unifier.clone();
-    let primitives = composer.primitives_ty.clone();
+    let primitives = composer.primitives_ty;
     let top_level = Arc::new(composer.make_top_level_context());
     unifier.top_level = Some(top_level.clone());
-    let fun = unifier.add_ty(TypeEnum::TFunc(RefCell::new(FunSignature {
+    let output_fun = unifier.add_ty(TypeEnum::TFunc(RefCell::new(FunSignature {
         args: vec![FuncArg {
             name: "c".into(),
             ty: primitives.int32,
@@ -70,22 +71,24 @@ fn main() {
         .write()
         .push(Arc::new(RwLock::new(TopLevelDef::Function {
             name: "output".into(),
-            signature: fun,
+            signature: output_fun,
             instance_to_stmt: HashMap::new(),
             instance_to_symbol: [("".to_string(), "output".to_string())]
                 .iter()
                 .cloned()
                 .collect(),
+            var_id: Default::default(),
             resolver: None,
         })));
-    let resolver = Arc::new(basic_symbol_resolver::Resolver {
-        id_to_type: [("output".into(), fun)].iter().cloned().collect(),
+
+    let resolver = Arc::new(Box::new(basic_symbol_resolver::Resolver {
+        id_to_type: [("output".into(), output_fun)].iter().cloned().collect(),
         id_to_def: [("output".into(), DefinitionId(def_id))]
             .iter()
             .cloned()
             .collect(),
         class_names: Default::default(),
-    });
+    }) as Box<dyn SymbolResolver + Send + Sync>);
 
     let threads = ["test"];
     let signature = FunSignature {
@@ -116,6 +119,7 @@ fn main() {
         .map(|v| inferencer.fold_stmt(v))
         .collect::<Result<Vec<_>, _>>()
         .unwrap();
+
     let mut identifiers = vec!["output".to_string()];
     inferencer
         .check_block(&statements, &mut identifiers)
@@ -126,15 +130,18 @@ fn main() {
         ))),
         unifiers: Arc::new(RwLock::new(vec![(
             unifier.get_shared_unifier(),
-            primitives.clone(),
+            primitives,
         )])),
     });
+
+    let unifier = (unifier.get_shared_unifier(), primitives);
+
     let task = CodeGenTask {
         subst: Default::default(),
         symbol_name: "run".to_string(),
         body: statements,
-        unifier_index: 0,
         resolver,
+        unifier,
         calls,
         signature,
     };

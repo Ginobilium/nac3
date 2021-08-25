@@ -1,13 +1,11 @@
-use super::{CodeGenTask, WorkerRegistry};
 use crate::{
-    codegen::WithCall,
+    codegen::{CodeGenTask, WithCall, WorkerRegistry},
     location::Location,
     symbol_resolver::{SymbolResolver, SymbolValue},
-    toplevel::{DefinitionId, TopLevelContext},
+    toplevel::{DefinitionId, TopLevelComposer, TopLevelContext},
     typecheck::{
-        magic_methods::set_primitives_magic_methods,
-        type_inferencer::{CodeLocation, FunctionData, Inferencer, PrimitiveStore},
-        typedef::{CallId, FunSignature, FuncArg, Type, TypeEnum, Unifier},
+        type_inferencer::{FunctionData, Inferencer, PrimitiveStore},
+        typedef::{FunSignature, FuncArg, Type, Unifier},
     },
 };
 use indoc::indoc;
@@ -41,118 +39,8 @@ impl SymbolResolver for Resolver {
     }
 }
 
-struct TestEnvironment {
-    pub unifier: Unifier,
-    pub function_data: FunctionData,
-    pub primitives: PrimitiveStore,
-    pub id_to_name: HashMap<usize, String>,
-    pub identifier_mapping: HashMap<String, Type>,
-    pub virtual_checks: Vec<(Type, Type)>,
-    pub calls: HashMap<CodeLocation, CallId>,
-    pub top_level: TopLevelContext,
-}
-
-impl TestEnvironment {
-    pub fn basic_test_env() -> TestEnvironment {
-        let mut unifier = Unifier::new();
-
-        let int32 = unifier.add_ty(TypeEnum::TObj {
-            obj_id: DefinitionId(0),
-            fields: HashMap::new().into(),
-            params: HashMap::new().into(),
-        });
-        let int64 = unifier.add_ty(TypeEnum::TObj {
-            obj_id: DefinitionId(1),
-            fields: HashMap::new().into(),
-            params: HashMap::new().into(),
-        });
-        let float = unifier.add_ty(TypeEnum::TObj {
-            obj_id: DefinitionId(2),
-            fields: HashMap::new().into(),
-            params: HashMap::new().into(),
-        });
-        let bool = unifier.add_ty(TypeEnum::TObj {
-            obj_id: DefinitionId(3),
-            fields: HashMap::new().into(),
-            params: HashMap::new().into(),
-        });
-        let none = unifier.add_ty(TypeEnum::TObj {
-            obj_id: DefinitionId(4),
-            fields: HashMap::new().into(),
-            params: HashMap::new().into(),
-        });
-        let primitives = PrimitiveStore { int32, int64, float, bool, none };
-        set_primitives_magic_methods(&primitives, &mut unifier);
-
-        let id_to_name = [
-            (0, "int32".to_string()),
-            (1, "int64".to_string()),
-            (2, "float".to_string()),
-            (3, "bool".to_string()),
-            (4, "none".to_string()),
-        ]
-        .iter()
-        .cloned()
-        .collect();
-
-        let mut identifier_mapping = HashMap::new();
-        identifier_mapping.insert("None".into(), none);
-
-        let resolver = Arc::new(Resolver {
-            id_to_type: identifier_mapping.clone(),
-            id_to_def: Default::default(),
-            class_names: Default::default(),
-        }) as Arc<dyn SymbolResolver + Send + Sync>;
-
-        TestEnvironment {
-            unifier,
-            top_level: TopLevelContext {
-                definitions: Default::default(),
-                unifiers: Default::default(),
-                // conetexts: Default::default(),
-            },
-            function_data: FunctionData {
-                resolver,
-                bound_variables: Vec::new(),
-                return_type: Some(primitives.int32),
-            },
-            primitives,
-            id_to_name,
-            identifier_mapping,
-            virtual_checks: Vec::new(),
-            calls: HashMap::new(),
-        }
-    }
-
-    fn get_inferencer(&mut self) -> Inferencer {
-        Inferencer {
-            top_level: &self.top_level,
-            function_data: &mut self.function_data,
-            unifier: &mut self.unifier,
-            variable_mapping: Default::default(),
-            primitives: &mut self.primitives,
-            virtual_checks: &mut self.virtual_checks,
-            calls: &mut self.calls,
-        }
-    }
-}
-
 #[test]
 fn test_primitives() {
-    let mut env = TestEnvironment::basic_test_env();
-    let threads = ["test"];
-    let signature = FunSignature {
-        args: vec![
-            FuncArg { name: "a".to_string(), ty: env.primitives.int32, default_value: None },
-            FuncArg { name: "b".to_string(), ty: env.primitives.int32, default_value: None },
-        ],
-        ret: env.primitives.int32,
-        vars: HashMap::new(),
-    };
-
-    let mut inferencer = env.get_inferencer();
-    inferencer.variable_mapping.insert("a".into(), inferencer.primitives.int32);
-    inferencer.variable_mapping.insert("b".into(), inferencer.primitives.int32);
     let source = indoc! { "
         c = a + b
         d = a if c == 1 else 0
@@ -160,29 +48,71 @@ fn test_primitives() {
         "};
     let statements = parse_program(source).unwrap();
 
+    let (_, composer) = TopLevelComposer::new();
+    let mut unifier = composer.unifier.clone();
+    let primitives = composer.primitives_ty;
+    let top_level = Arc::new(composer.make_top_level_context());
+    unifier.top_level = Some(top_level.clone());
+
+    let resolver = Arc::new(Box::new(Resolver {
+        id_to_type: HashMap::new(),
+        id_to_def: HashMap::new(),
+        class_names: Default::default(),
+    }) as Box<dyn SymbolResolver + Send + Sync>);
+
+    let threads = ["test"];
+    let signature = FunSignature {
+        args: vec![
+            FuncArg { name: "a".to_string(), ty: primitives.int32, default_value: None },
+            FuncArg { name: "b".to_string(), ty: primitives.int32, default_value: None },
+        ],
+        ret: primitives.int32,
+        vars: HashMap::new(),
+    };
+
+    let mut function_data = FunctionData {
+        resolver: resolver.clone(),
+        bound_variables: Vec::new(),
+        return_type: Some(primitives.int32),
+    };
+    let mut virtual_checks = Vec::new();
+    let mut calls = HashMap::new();
+    let mut inferencer = Inferencer {
+        top_level: &top_level,
+        function_data: &mut function_data,
+        unifier: &mut unifier,
+        variable_mapping: Default::default(),
+        primitives: &primitives,
+        virtual_checks: &mut virtual_checks,
+        calls: &mut calls,
+    };
+    inferencer.variable_mapping.insert("a".into(), inferencer.primitives.int32);
+    inferencer.variable_mapping.insert("b".into(), inferencer.primitives.int32);
+
     let statements = statements
         .into_iter()
         .map(|v| inferencer.fold_stmt(v))
         .collect::<Result<Vec<_>, _>>()
         .unwrap();
+
     let mut identifiers = vec!["a".to_string(), "b".to_string()];
     inferencer.check_block(&statements, &mut identifiers).unwrap();
-
     let top_level = Arc::new(TopLevelContext {
-        definitions: Default::default(),
-        unifiers: Arc::new(RwLock::new(vec![(env.unifier.get_shared_unifier(), env.primitives)])),
-        // conetexts: Default::default(),
+        definitions: Arc::new(RwLock::new(std::mem::take(&mut *top_level.definitions.write()))),
+        unifiers: Arc::new(RwLock::new(vec![(unifier.get_shared_unifier(), primitives)])),
     });
+
+    let unifier = (unifier.get_shared_unifier(), primitives);
+
     let task = CodeGenTask {
         subst: Default::default(),
         symbol_name: "testing".to_string(),
         body: statements,
-        unifier_index: 0,
-        resolver: env.function_data.resolver.clone(),
-        calls: Default::default(),
+        resolver,
+        unifier,
+        calls,
         signature,
     };
-
     let f = Arc::new(WithCall::new(Box::new(|module| {
         // the following IR is equivalent to
         // ```
@@ -245,4 +175,5 @@ fn test_primitives() {
     let (registry, handles) = WorkerRegistry::create_workers(&threads, top_level, f);
     registry.add_task(task);
     registry.wait_tasks_complete(handles);
+    println!("object file is in mandelbrot.o")
 }
