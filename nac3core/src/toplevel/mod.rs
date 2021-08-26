@@ -466,13 +466,13 @@ impl TopLevelComposer {
         let temp_def_list = self.extract_def_list();
         for (class_def, class_ast) in self.definition_ast_list.iter_mut() {
             let mut class_def = class_def.write();
-            let (class_bases, class_ancestors, class_resolver, class_id) = {
-                if let TopLevelDef::Class { ancestors, resolver, object_id, .. } = class_def.deref_mut() {
+            let (class_bases, class_ancestors, class_resolver, class_id, class_type_vars) = {
+                if let TopLevelDef::Class { ancestors, resolver, object_id, type_vars, .. } = class_def.deref_mut() {
                     if let Some(ast::Located {
                         node: ast::StmtKind::ClassDef { bases, .. }, ..
                     }) = class_ast
                     {
-                        (bases, ancestors, resolver, *object_id)
+                        (bases, ancestors, resolver, *object_id, type_vars)
                     } else {
                         unreachable!("must be both class")
                     }
@@ -519,10 +519,27 @@ impl TopLevelComposer {
                     if all_base.contains(&class_id) {
                         return Err("cyclic base detected".into());
                     }
+
+                    // find the intersection between type vars occured in the base class type parameter
+                    // and the type vars occured in the class generic declaration
+                    let type_var_occured_in_base = get_type_var_contained_in_type_annotation(&base_ty);
+                    for type_ann in type_var_occured_in_base {
+                        if let TypeAnnotation::TypeVarKind(id, ty) = type_ann {
+                            for (ty_id, class_typvar_ty) in class_type_vars.iter() {
+                                if id == *ty_id {
+                                    // if they refer to the same top level defined type var, we unify them together
+                                    self.unifier.unify(ty, *class_typvar_ty)?;
+                                }
+                            }
+                        } else {
+                            unreachable!("must be type var annotation")
+                        }
+                    }
+
                     class_ancestors.push(base_ty);
                 } else {
                     return Err(
-                        "class base declaration can only be concretized custom class".into()
+                        "class base declaration can only be custom class".into()
                     );
                 }
             }

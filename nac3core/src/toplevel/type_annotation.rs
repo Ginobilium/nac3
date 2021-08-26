@@ -38,7 +38,11 @@ pub fn parse_ast_to_type_annotation_kinds<T>(
             x => {
                 if let Some(obj_id) = resolver.get_identifier_def(x) {
                     let def = top_level_defs[obj_id.0].read();
-                    if let TopLevelDef::Class { .. } = &*def {
+                    if let TopLevelDef::Class { type_vars, .. } = &*def {
+                        // also check param number here
+                        if !type_vars.is_empty() {
+                            return Err(format!("expect {} type variable parameter but got 0", type_vars.len()))
+                        }
                         Ok(TypeAnnotation::CustomClassKind {
                             id: obj_id,
                             params: vec![],
@@ -67,7 +71,7 @@ pub fn parse_ast_to_type_annotation_kinds<T>(
             }
         },
 
-        // TODO: subscript or call?
+        // TODO: subscript or call for virtual?
         ast::ExprKind::Subscript { value, slice, .. }
             if { matches!(&value.node, ast::ExprKind::Name { id, .. } if id == "virtual") } =>
         {
@@ -93,7 +97,7 @@ pub fn parse_ast_to_type_annotation_kinds<T>(
                     .get_identifier_def(id)
                     .ok_or_else(|| "unknown class name".to_string())?;
                 let def = top_level_defs[obj_id.0].read();
-                if let TopLevelDef::Class { .. } = &*def {
+                if let TopLevelDef::Class { type_vars, .. } = &*def {
                     let param_type_infos = if let ast::ExprKind::Tuple { elts, .. } = &slice.node {
                         elts.iter()
                             .map(|v| {
@@ -115,6 +119,13 @@ pub fn parse_ast_to_type_annotation_kinds<T>(
                             slice,
                         )?]
                     };
+                    if type_vars.len() != param_type_infos.len() {
+                        return Err(format!(
+                            "expect {} type parameters but got {}",
+                            type_vars.len(),
+                            param_type_infos.len()
+                        ))
+                    }
                     // NOTE: allow type var in class generic application list
                     Ok(TypeAnnotation::CustomClassKind {
                         id: obj_id,
