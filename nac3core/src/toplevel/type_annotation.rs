@@ -21,6 +21,7 @@ pub enum TypeAnnotation {
     TypeVarKind(u32, Type),
 }
 
+/// if is typevar, this function will make a copy of it
 pub fn parse_ast_to_type_annotation_kinds<T>(
     resolver: &Box<dyn SymbolResolver + Send + Sync>,
     top_level_defs: &[Arc<RwLock<TopLevelDef>>],
@@ -58,8 +59,8 @@ pub fn parse_ast_to_type_annotation_kinds<T>(
                         // but record the var_id of the original type var
                         // returned by symbol resolver
                         Ok(TypeAnnotation::TypeVarKind(
+                            // this id is the id of the top level type var
                             *id,
-                            // TODO: maybe not duplicate will also be fine here?
                             duplicate_type_var(unifier, ty).0
                         ))
                     } else {
@@ -143,6 +144,7 @@ pub fn parse_ast_to_type_annotation_kinds<T>(
     }
 }
 
+/// if is typeannotation::tvar, this function will NOT make a copy of it
 pub fn get_type_from_type_annotation_kinds(
     top_level_defs: &[Arc<RwLock<TopLevelDef>>],
     unifier: &mut Unifier,
@@ -245,8 +247,19 @@ pub fn duplicate_type_var(
 /// class A(Generic[T, V]):
 ///     def fun(self):
 /// ```
-/// the type of `self` should be equivalent to `A[T, V]`, where `T`, `V`
-/// considered to be type variables associated with the class
+/// the type of `self` should be similar to `A[T, V]`, where `T`, `V`
+/// considered to be type variables associated with the class \
+/// \
+/// But note that here we do not make a duplication of `T`, `V`, we direclty
+/// use them as they are in the TopLevelDef::Class since those in the
+/// TopLevelDef::Class.type_vars will be substitute later when seeing applications/instantiations
+/// the Type of their fields and methods will also be subst when application/instantiation \
+/// \
+/// Note this implicit self type is different with seeing `A[T, V]` explicitly outside
+/// the class def ast body, where it is a new instantiation of the generic class `A`,
+/// but equivalent to seeing `A[T, V]` inside the class def body ast, where although we
+/// create copies of `T` and `V`, we will find them out as occured type vars in the analyze_class()
+/// and unify them with the class generic `T`, `V`
 pub fn make_self_type_annotation(
     top_level_defs: &[Arc<RwLock<TopLevelDef>>],
     def_id: DefinitionId,
@@ -263,10 +276,9 @@ pub fn make_self_type_annotation(
             id: def_id,
             params: type_vars
                 .iter()
-                .map(|(var_id, ty)| TypeAnnotation::TypeVarKind(
-                        *var_id,
-                        duplicate_type_var(unifier, *ty).0
-                ))
+                // note here the var_id also points to the var_id of
+                // the top level defined type var's var id
+                .map(|(var_id, ty)| TypeAnnotation::TypeVarKind(*var_id, *ty))
                 .collect_vec()
         })
     } else {
@@ -276,6 +288,7 @@ pub fn make_self_type_annotation(
 
 /// get all the occurences of type vars contained in a type annotation
 /// e.g. `A[int, B[T], V]` => [T, V]
+/// this function will not make a duplicate of type var
 pub fn get_type_var_contained_in_type_annotation(ann: &TypeAnnotation) -> Vec<TypeAnnotation> {
     let mut result: Vec<TypeAnnotation> = Vec::new();
     match ann {
