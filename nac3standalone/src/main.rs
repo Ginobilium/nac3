@@ -1,6 +1,7 @@
 use std::fs;
+use std::time::SystemTime;
 
-use inkwell::{targets::*, OptimizationLevel};
+use inkwell::{OptimizationLevel, passes::{PassManager, PassManagerBuilder}, targets::*};
 use parking_lot::RwLock;
 use rustpython_parser::{
     ast::{fold::Fold, StmtKind},
@@ -31,6 +32,7 @@ fn main() {
         }
     };
 
+    let start = SystemTime::now();
     let statements = match parser::parse_program(&program) {
         Ok(mut ast) => {
             let first = ast.remove(0);
@@ -112,19 +114,25 @@ fn main() {
         primitives: &primitives,
         virtual_checks: &mut virtual_checks,
         calls: &mut calls,
-        defined_identifiers: vec![]
+        defined_identifiers: Default::default(),
     };
 
+    let setup_time = SystemTime::now();
+    println!(
+        "Setup time: {}ms",
+        setup_time.duration_since(start).unwrap().as_millis()
+    );
     let statements = statements
         .into_iter()
         .map(|v| inferencer.fold_stmt(v))
         .collect::<Result<Vec<_>, _>>()
         .unwrap();
 
-    let mut identifiers = vec!["output".to_string()];
+    let mut identifiers = ["output".to_string()].iter().cloned().collect();
     if !inferencer
         .check_block(&statements, &mut identifiers)
-        .unwrap() {
+        .unwrap()
+    {
         panic!("expected return");
     }
 
@@ -138,6 +146,12 @@ fn main() {
         )])),
     });
 
+    let inference_time = SystemTime::now();
+    println!(
+        "Type inference time: {}ms",
+        inference_time.duration_since(setup_time).unwrap().as_millis()
+    );
+
     let unifier = (unifier.get_shared_unifier(), primitives);
 
     let task = CodeGenTask {
@@ -149,7 +163,22 @@ fn main() {
         calls,
         signature,
     };
-    let f = Arc::new(WithCall::new(Box::new(|module| {
+    let f = Arc::new(WithCall::new(Box::new(move |module| {
+        let codegen_time = SystemTime::now();
+        println!(
+            "Code generation time: {}ms",
+            codegen_time
+                .duration_since(inference_time)
+                .unwrap()
+                .as_millis()
+        );
+
+        let builder = PassManagerBuilder::create();
+        builder.set_optimization_level(OptimizationLevel::Aggressive);
+        let passes = PassManager::create(());
+        builder.populate_module_pass_manager(&passes);
+        passes.run_on(module);
+
         let triple = TargetMachine::get_default_triple();
         let target =
             Target::from_triple(&triple).expect("couldn't create target from target triple");
@@ -166,6 +195,13 @@ fn main() {
         target_machine
             .write_to_file(module, FileType::Object, Path::new("mandelbrot.o"))
             .expect("couldn't write module to file");
+        println!(
+            "LLVM time: {}ms",
+            SystemTime::now()
+                .duration_since(codegen_time)
+                .unwrap()
+                .as_millis()
+        );
     })));
     let (registry, handles) = WorkerRegistry::create_workers(&threads, top_level, f);
     registry.add_task(task);
