@@ -122,9 +122,11 @@ fn main() {
         .unwrap();
 
     let mut identifiers = vec!["output".to_string()];
-    inferencer
+    if !inferencer
         .check_block(&statements, &mut identifiers)
-        .unwrap();
+        .unwrap() {
+        panic!("expected return");
+    }
 
     let top_level = Arc::new(TopLevelContext {
         definitions: Arc::new(RwLock::new(std::mem::take(
