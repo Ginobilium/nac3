@@ -326,9 +326,7 @@ fn test_simple_call() {
               ret i32 %mul
             }
 
-            declare i32 @foo_0(i32)
-
-            define i32 @foo_0.1(i32 %0) {
+            define i32 @foo_0(i32 %0) {
             init:
               %a = alloca i32, align 4
               store i32 %0, i32* %a, align 4
