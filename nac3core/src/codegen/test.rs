@@ -1,13 +1,19 @@
-use crate::{codegen::{CodeGenTask, WithCall, WorkerRegistry}, location::Location, symbol_resolver::{SymbolResolver, SymbolValue}, toplevel::{DefinitionId, FunInstance, TopLevelComposer, TopLevelContext, TopLevelDef}, typecheck::{
+use crate::{
+    codegen::{CodeGenTask, WithCall, WorkerRegistry},
+    location::Location,
+    symbol_resolver::{SymbolResolver, SymbolValue},
+    toplevel::{DefinitionId, FunInstance, TopLevelComposer, TopLevelContext, TopLevelDef},
+    typecheck::{
         type_inferencer::{FunctionData, Inferencer, PrimitiveStore},
         typedef::{FunSignature, FuncArg, Type, TypeEnum, Unifier},
-    }};
+    },
+};
 use indoc::indoc;
 use parking_lot::RwLock;
 use rustpython_parser::{ast::fold::Fold, parser::parse_program};
-use std::collections::HashMap;
-use std::sync::Arc;
 use std::cell::RefCell;
+use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 struct Resolver {
     id_to_type: HashMap<String, Type>,
@@ -77,7 +83,7 @@ fn test_primitives() {
     };
     let mut virtual_checks = Vec::new();
     let mut calls = HashMap::new();
-    let mut identifiers = vec!["a".to_string(), "b".to_string()];
+    let mut identifiers: HashSet<_> = ["a".to_string(), "b".to_string()].iter().cloned().collect();
     let mut inferencer = Inferencer {
         top_level: &top_level,
         function_data: &mut function_data,
@@ -86,7 +92,7 @@ fn test_primitives() {
         primitives: &primitives,
         virtual_checks: &mut virtual_checks,
         calls: &mut calls,
-        defined_identifiers: identifiers.clone()
+        defined_identifiers: identifiers.clone(),
     };
     inferencer.variable_mapping.insert("a".into(), inferencer.primitives.int32);
     inferencer.variable_mapping.insert("b".into(), inferencer.primitives.int32);
@@ -211,7 +217,7 @@ fn test_simple_call() {
         var_id: vec![],
         instance_to_stmt: HashMap::new(),
         instance_to_symbol: HashMap::new(),
-        resolver: None
+        resolver: None,
     })));
 
     let resolver = Box::new(Resolver {
@@ -222,7 +228,9 @@ fn test_simple_call() {
     resolver.add_id_def("foo".to_string(), DefinitionId(foo_id));
     let resolver = Arc::new(resolver as Box<dyn SymbolResolver + Send + Sync>);
 
-    if let TopLevelDef::Function {resolver: r, ..} = &mut *top_level.definitions.read()[foo_id].write() {
+    if let TopLevelDef::Function { resolver: r, .. } =
+        &mut *top_level.definitions.read()[foo_id].write()
+    {
         *r = Some(resolver.clone());
     } else {
         unreachable!()
@@ -236,7 +244,7 @@ fn test_simple_call() {
     };
     let mut virtual_checks = Vec::new();
     let mut calls = HashMap::new();
-    let mut identifiers = vec!["a".to_string(), "foo".into()];
+    let mut identifiers: HashSet<_> = ["a".to_string(), "foo".into()].iter().cloned().collect();
     let mut inferencer = Inferencer {
         top_level: &top_level,
         function_data: &mut function_data,
@@ -245,7 +253,7 @@ fn test_simple_call() {
         primitives: &primitives,
         virtual_checks: &mut virtual_checks,
         calls: &mut calls,
-        defined_identifiers: identifiers.clone()
+        defined_identifiers: identifiers.clone(),
     };
     inferencer.variable_mapping.insert("a".into(), inferencer.primitives.int32);
     inferencer.variable_mapping.insert("foo".into(), fun_ty);
@@ -265,13 +273,18 @@ fn test_simple_call() {
         .collect::<Result<Vec<_>, _>>()
         .unwrap();
 
-    if let TopLevelDef::Function {instance_to_stmt, ..} = &mut *top_level.definitions.read()[foo_id].write() {
-        instance_to_stmt.insert("".to_string(), FunInstance {
-            body: statements_2,
-            calls: inferencer.calls.clone(),
-            subst: Default::default(),
-            unifier_id: 0
-        });
+    if let TopLevelDef::Function { instance_to_stmt, .. } =
+        &mut *top_level.definitions.read()[foo_id].write()
+    {
+        instance_to_stmt.insert(
+            "".to_string(),
+            FunInstance {
+                body: statements_2,
+                calls: inferencer.calls.clone(),
+                subst: Default::default(),
+                unifier_id: 0,
+            },
+        );
     } else {
         unreachable!()
     }
