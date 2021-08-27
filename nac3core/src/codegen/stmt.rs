@@ -127,10 +127,11 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
                 let current = self.builder.get_insert_block().unwrap().get_parent().unwrap();
                 let test_bb = self.ctx.append_basic_block(current, "test");
                 let body_bb = self.ctx.append_basic_block(current, "body");
-                let cont_bb = self.ctx.append_basic_block(current, "cont");
-                // if there is no orelse, we just go to cont_bb
+                let mut cont_bb = None; // self.ctx.append_basic_block(current, "cont");
+                                        // if there is no orelse, we just go to cont_bb
                 let orelse_bb = if orelse.is_empty() {
-                    cont_bb
+                    cont_bb = Some(self.ctx.append_basic_block(current, "cont"));
+                    cont_bb.unwrap()
                 } else {
                     self.ctx.append_basic_block(current, "orelse")
                 };
@@ -151,7 +152,10 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
                     }
                 }
                 if !exited {
-                    self.builder.build_unconditional_branch(cont_bb);
+                    if cont_bb.is_none() {
+                        cont_bb = Some(self.ctx.append_basic_block(current, "cont"));
+                    }
+                    self.builder.build_unconditional_branch(cont_bb.unwrap());
                 }
                 if !orelse.is_empty() {
                     exited = false;
@@ -163,10 +167,15 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
                         }
                     }
                     if !exited {
-                        self.builder.build_unconditional_branch(cont_bb);
+                        if cont_bb.is_none() {
+                            cont_bb = Some(self.ctx.append_basic_block(current, "cont"));
+                        }
+                        self.builder.build_unconditional_branch(cont_bb.unwrap());
                     }
                 }
-                self.builder.position_at_end(cont_bb);
+                if let Some(cont_bb) = cont_bb {
+                    self.builder.position_at_end(cont_bb);
+                }
             }
             StmtKind::While { test, body, orelse } => {
                 let current = self.builder.get_insert_block().unwrap().get_parent().unwrap();
