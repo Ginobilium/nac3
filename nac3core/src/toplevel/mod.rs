@@ -20,6 +20,7 @@ pub struct DefinitionId(pub usize);
 
 mod type_annotation;
 use type_annotation::*;
+mod helper;
 
 pub struct FunInstance {
     pub body: Vec<Stmt<Option<Type>>>,
@@ -97,49 +98,6 @@ impl Default for TopLevelComposer {
 }
 
 impl TopLevelComposer {
-    pub fn make_top_level_context(self) -> TopLevelContext {
-        TopLevelContext {
-            definitions: RwLock::new(
-                self.definition_ast_list.into_iter().map(|(x, ..)| x).collect::<Vec<_>>(),
-            )
-            .into(),
-            // FIXME: all the big unifier or?
-            unifiers: Default::default(),
-        }
-    }
-
-    pub fn make_primitives() -> (PrimitiveStore, Unifier) {
-        let mut unifier = Unifier::new();
-        let int32 = unifier.add_ty(TypeEnum::TObj {
-            obj_id: DefinitionId(0),
-            fields: HashMap::new().into(),
-            params: HashMap::new().into(),
-        });
-        let int64 = unifier.add_ty(TypeEnum::TObj {
-            obj_id: DefinitionId(1),
-            fields: HashMap::new().into(),
-            params: HashMap::new().into(),
-        });
-        let float = unifier.add_ty(TypeEnum::TObj {
-            obj_id: DefinitionId(2),
-            fields: HashMap::new().into(),
-            params: HashMap::new().into(),
-        });
-        let bool = unifier.add_ty(TypeEnum::TObj {
-            obj_id: DefinitionId(3),
-            fields: HashMap::new().into(),
-            params: HashMap::new().into(),
-        });
-        let none = unifier.add_ty(TypeEnum::TObj {
-            obj_id: DefinitionId(4),
-            fields: HashMap::new().into(),
-            params: HashMap::new().into(),
-        });
-        let primitives = PrimitiveStore { int32, int64, float, bool, none };
-        crate::typecheck::magic_methods::set_primitives_magic_methods(&primitives, &mut unifier);
-        (primitives, unifier)
-    }
-
     /// return a composer and things to make a "primitive" symbol resolver, so that the symbol
     /// resolver can later figure out primitive type definitions when passed a primitive type name
     // TODO: add list and tuples?
@@ -177,43 +135,15 @@ impl TopLevelComposer {
         }
     }
 
-    /// already include the definition_id of itself inside the ancestors vector
-    /// when first regitering, the type_vars, fields, methods, ancestors are invalid
-    pub fn make_top_level_class_def(
-        index: usize,
-        resolver: Option<Arc<Box<dyn SymbolResolver + Send + Sync>>>,
-        name: &str,
-    ) -> TopLevelDef {
-        TopLevelDef::Class {
-            name: name.to_string(),
-            object_id: DefinitionId(index),
-            type_vars: Default::default(),
-            fields: Default::default(),
-            methods: Default::default(),
-            ancestors: Default::default(),
-            resolver,
+    pub fn make_top_level_context(self) -> TopLevelContext {
+        TopLevelContext {
+            definitions: RwLock::new(
+                self.definition_ast_list.into_iter().map(|(x, ..)| x).collect::<Vec<_>>(),
+            )
+            .into(),
+            // FIXME: all the big unifier or?
+            unifiers: Default::default(),
         }
-    }
-
-    /// when first registering, the type is a invalid value
-    pub fn make_top_level_function_def(
-        name: String,
-        ty: Type,
-        resolver: Option<Arc<Box<dyn SymbolResolver + Send + Sync>>>,
-    ) -> TopLevelDef {
-        TopLevelDef::Function {
-            name,
-            signature: ty,
-            var_id: Default::default(),
-            instance_to_symbol: Default::default(),
-            instance_to_stmt: Default::default(),
-            resolver,
-        }
-    }
-
-    fn make_class_method_name(mut class_name: String, method_name: &str) -> String {
-        class_name.push_str(method_name);
-        class_name
     }
 
     fn extract_def_list(&self) -> Vec<Arc<RwLock<TopLevelDef>>> {
@@ -527,14 +457,16 @@ impl TopLevelComposer {
                         return Err("cyclic base detected".into());
                     }
 
-                    // find the intersection between type vars occured in the base class type parameter
+                    // find the intersection of type vars occured
+                    // in the base class type parameter
                     // and the type vars occured in the class generic declaration
                     let type_var_occured_in_base =
                         get_type_var_contained_in_type_annotation(&base_ty);
                     for type_ann in type_var_occured_in_base {
                         if let TypeAnnotation::TypeVarKind(id, ty) = type_ann {
                             for (ty_id, class_typvar_ty) in class_type_vars.iter() {
-                                // if they refer to the same top level defined type var, we unify them together
+                                // if they refer to the same top level defined
+                                // type var, we unify them together
                                 if id == *ty_id {
                                     // assert to make sure
                                     assert!(matches!(
@@ -961,14 +893,14 @@ impl TopLevelComposer {
                             get_type_var_contained_in_type_annotation(&annotation);
                         // handle the class type var and the method type var
                         for type_var_within in type_vars_within {
-                            if let TypeAnnotation::TypeVarKind(top_level_id, ty) = type_var_within {
-                                if let Some(duped_ty) = occured_type_vars.get(&top_level_id) {
+                            if let TypeAnnotation::TypeVarKind(top_id, ty) = type_var_within {
+                                if let Some(duped_ty) = occured_type_vars.get(&top_id) {
                                     // if already occured, not matter if it is class typevar or method typevar, just unify
                                     unifier.unify(ty, *duped_ty)?;
                                 } else {
                                     // if not insert them to the occured_type_vars and the method_varmap
                                     // note that the content to insert is different
-                                    occured_type_vars.insert(top_level_id, ty);
+                                    occured_type_vars.insert(top_id, ty);
                                     method_var_map.insert(
                                         if let TypeEnum::TVar { id, .. } =
                                             unifier.get_ty(ty).as_ref()
@@ -1065,45 +997,5 @@ impl TopLevelComposer {
             }
         }
         Ok(())
-    }
-
-    fn get_class_method_def_info(
-        class_methods_def: &[(String, Type, DefinitionId)],
-        method_name: &str,
-    ) -> Result<(Type, DefinitionId), String> {
-        for (name, ty, def_id) in class_methods_def {
-            if name == method_name {
-                return Ok((*ty, *def_id));
-            }
-        }
-        Err(format!("no method {} in the current class", method_name))
-    }
-
-    /// get all base class def id of a class, including itself
-    fn get_all_base(
-        child: DefinitionId,
-        temp_def_list: &[Arc<RwLock<TopLevelDef>>],
-    ) -> Vec<DefinitionId> {
-        let mut result: Vec<DefinitionId> = Vec::new();
-        let child_def = temp_def_list.get(child.0).unwrap();
-        let child_def = child_def.read();
-        let child_def = child_def.deref();
-
-        if let TopLevelDef::Class { ancestors, .. } = child_def {
-            for a in ancestors {
-                if let TypeAnnotation::CustomClassKind { id, .. } = a {
-                    if *id != child {
-                        result.extend(Self::get_all_base(*id, temp_def_list));
-                    }
-                } else {
-                    unreachable!("must be class type annotation type")
-                }
-            }
-        } else {
-            unreachable!("this function should only be called with class def id as parameter")
-        }
-
-        result.push(child);
-        result
     }
 }
