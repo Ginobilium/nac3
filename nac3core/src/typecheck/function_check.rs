@@ -42,7 +42,7 @@ impl<'a> Inferencer<'a> {
     fn check_expr(
         &mut self,
         expr: &Expr<Option<Type>>,
-        defined_identifiers: &[String],
+        defined_identifiers: &mut Vec<String>,
     ) -> Result<(), String> {
         // there are some cases where the custom field is None
         if let Some(ty) = &expr.custom {
@@ -57,10 +57,14 @@ impl<'a> Inferencer<'a> {
         match &expr.node {
             ExprKind::Name { id, .. } => {
                 if !defined_identifiers.contains(id) {
-                    return Err(format!(
-                        "unknown identifier {} (use before def?) at {}",
-                        id, expr.location
-                    ));
+                    if self.function_data.resolver.get_identifier_def(id).is_some() {
+                        defined_identifiers.push(id.clone());
+                    } else {
+                        return Err(format!(
+                            "unknown identifier {} (use before def?) at {}",
+                            id, expr.location
+                        ));
+                    }
                 }
             }
             ExprKind::List { elts, .. }
@@ -106,7 +110,7 @@ impl<'a> Inferencer<'a> {
                         defined_identifiers.push(arg.node.arg.clone());
                     }
                 }
-                self.check_expr(body, &defined_identifiers)?;
+                self.check_expr(body, &mut defined_identifiers)?;
             }
             ExprKind::ListComp { elt, generators, .. } => {
                 // in our type inference stage, we already make sure that there is only 1 generator
@@ -115,7 +119,7 @@ impl<'a> Inferencer<'a> {
                 let mut defined_identifiers = defined_identifiers.to_vec();
                 self.check_pattern(target, &mut defined_identifiers)?;
                 for term in once(elt.as_ref()).chain(ifs.iter()) {
-                    self.check_expr(term, &defined_identifiers)?;
+                    self.check_expr(term, &mut defined_identifiers)?;
                 }
             }
             ExprKind::Call { func, args, keywords } => {

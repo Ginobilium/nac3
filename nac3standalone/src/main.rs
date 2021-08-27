@@ -112,6 +112,7 @@ fn main() {
         primitives: &primitives,
         virtual_checks: &mut virtual_checks,
         calls: &mut calls,
+        defined_identifiers: vec![]
     };
 
     let statements = statements
@@ -124,6 +125,7 @@ fn main() {
     inferencer
         .check_block(&statements, &mut identifiers)
         .unwrap();
+
     let top_level = Arc::new(TopLevelContext {
         definitions: Arc::new(RwLock::new(std::mem::take(
             &mut *top_level.definitions.write(),

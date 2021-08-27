@@ -45,6 +45,7 @@ pub struct FunctionData {
 
 pub struct Inferencer<'a> {
     pub top_level: &'a TopLevelContext,
+    pub defined_identifiers: Vec<String>,
     pub function_data: &'a mut FunctionData,
     pub unifier: &'a mut Unifier,
     pub primitives: &'a PrimitiveStore,
@@ -74,13 +75,14 @@ impl<'a> fold::Fold<()> for Inferencer<'a> {
         let stmt = match node.node {
             // we don't want fold over type annotation
             ast::StmtKind::AnnAssign { target, annotation, value, simple } => {
+                self.infer_pattern(&target)?;
                 let target = Box::new(self.fold_expr(*target)?);
                 let value = if let Some(v) = value {
                     let ty = Box::new(self.fold_expr(*v)?);
                     self.unify(target.custom.unwrap(), ty.custom.unwrap(), &node.location)?;
                     Some(ty)
                 } else {
-                    None
+                    return Err(format!("declaration without definition is not yet supported, at {}", node.location))
                 };
                 let top_level_defs = self.top_level.definitions.read();
                 let annotation_type = self.function_data.resolver.parse_type_annotation(
@@ -96,6 +98,16 @@ impl<'a> fold::Fold<()> for Inferencer<'a> {
                     custom: None,
                     node: ast::StmtKind::AnnAssign { target, annotation, value, simple },
                 }
+            }
+            ast::StmtKind::For { ref target, .. } => {
+                self.infer_pattern(target)?;
+                fold::fold_stmt(self, node)?
+            }
+            ast::StmtKind::Assign { ref targets, .. } => {
+                for target in targets {
+                    self.infer_pattern(target)?;
+                }
+                fold::fold_stmt(self, node)?
             }
             _ => fold::fold_stmt(self, node)?,
         };
@@ -146,7 +158,19 @@ impl<'a> fold::Fold<()> for Inferencer<'a> {
         };
         let custom = match &expr.node {
             ast::ExprKind::Constant { value, .. } => Some(self.infer_constant(value)?),
-            ast::ExprKind::Name { id, .. } => Some(self.infer_identifier(id)?),
+            ast::ExprKind::Name { id, .. } => {
+                if !self.defined_identifiers.contains(id) {
+                    if self.function_data.resolver.get_identifier_def(id.as_str()).is_some() {
+                        self.defined_identifiers.push(id.clone());
+                    } else {
+                        return Err(format!(
+                            "unknown identifier {} (use before def?) at {}",
+                            id, expr.location
+                        ));
+                    }
+                }
+                Some(self.infer_identifier(id)?)
+            }
             ast::ExprKind::List { elts, .. } => Some(self.infer_list(elts)?),
             ast::ExprKind::Tuple { elts, .. } => Some(self.infer_tuple(elts)?),
             ast::ExprKind::Attribute { value, attr, ctx: _ } => {
@@ -185,6 +209,24 @@ impl<'a> Inferencer<'a> {
 
     fn unify(&mut self, a: Type, b: Type, location: &Location) -> Result<(), String> {
         self.unifier.unify(a, b).map_err(|old| format!("{} at {}", old, location))
+    }
+
+    fn infer_pattern(&mut self, pattern: &ast::Expr<()>) -> Result<(), String> {
+        match &pattern.node {
+            ExprKind::Name { id, .. } => {
+                if !self.defined_identifiers.contains(id) {
+                    self.defined_identifiers.push(id.clone());
+                }
+                Ok(())
+            }
+            ExprKind::Tuple { elts, .. } => {
+                for elt in elts.iter() {
+                    self.infer_pattern(elt)?;
+                }
+                Ok(())
+            }
+            _ => Ok(()),
+        }
     }
 
     fn build_method_call(
@@ -228,6 +270,13 @@ impl<'a> Inferencer<'a> {
             );
         }
 
+        let mut defined_identifiers = self.defined_identifiers.clone();
+        for arg in args.args.iter() {
+            let name = &arg.node.arg;
+            if !defined_identifiers.contains(name) {
+                defined_identifiers.push(name.clone());
+            }
+        }
         let fn_args: Vec<_> = args
             .args
             .iter()
@@ -236,6 +285,7 @@ impl<'a> Inferencer<'a> {
         let mut variable_mapping = self.variable_mapping.clone();
         variable_mapping.extend(fn_args.iter().cloned());
         let ret = self.unifier.get_fresh_var().0;
+
         let mut new_context = Inferencer {
             function_data: self.function_data,
             unifier: self.unifier,
@@ -243,6 +293,7 @@ impl<'a> Inferencer<'a> {
             virtual_checks: self.virtual_checks,
             calls: self.calls,
             top_level: self.top_level,
+            defined_identifiers,
             variable_mapping,
         };
         let fun = FunSignature {
@@ -279,6 +330,7 @@ impl<'a> Inferencer<'a> {
             );
         }
         let variable_mapping = self.variable_mapping.clone();
+        let defined_identifiers = self.defined_identifiers.clone();
         let mut new_context = Inferencer {
             function_data: self.function_data,
             unifier: self.unifier,
@@ -287,12 +339,14 @@ impl<'a> Inferencer<'a> {
             variable_mapping,
             primitives: self.primitives,
             calls: self.calls,
+            defined_identifiers,
         };
-        let elt = new_context.fold_expr(elt)?;
         let generator = generators.pop().unwrap();
         if generator.is_async {
             return Err("Async iterator not supported.".to_string());
         }
+        new_context.infer_pattern(&generator.target)?;
+        let elt = new_context.fold_expr(elt)?;
         let target = new_context.fold_expr(*generator.target)?;
         let iter = new_context.fold_expr(*generator.iter)?;
         let ifs: Vec<_> = generator

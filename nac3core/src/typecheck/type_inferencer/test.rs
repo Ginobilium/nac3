@@ -313,6 +313,7 @@ impl TestEnvironment {
             primitives: &mut self.primitives,
             virtual_checks: &mut self.virtual_checks,
             calls: &mut self.calls,
+            defined_identifiers: vec![]
         }
     }
 }
@@ -382,6 +383,7 @@ fn test_basic(source: &str, mapping: HashMap<&str, &str>, virtuals: &[(&str, &st
     let mut defined_identifiers: Vec<_> = env.identifier_mapping.keys().cloned().collect();
     defined_identifiers.push("virtual".to_string());
     let mut inferencer = env.get_inferencer();
+    inferencer.defined_identifiers = defined_identifiers.clone();
     let statements = parse_program(source).unwrap();
     let statements = statements
         .into_iter()
@@ -523,6 +525,7 @@ fn test_primitive_magic_methods(source: &str, mapping: HashMap<&str, &str>) {
     let mut defined_identifiers: Vec<_> = env.identifier_mapping.keys().cloned().collect();
     defined_identifiers.push("virtual".to_string());
     let mut inferencer = env.get_inferencer();
+    inferencer.defined_identifiers = defined_identifiers.clone();
     let statements = parse_program(source).unwrap();
     let statements = statements
         .into_iter()

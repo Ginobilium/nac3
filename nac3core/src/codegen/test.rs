@@ -77,6 +77,7 @@ fn test_primitives() {
     };
     let mut virtual_checks = Vec::new();
     let mut calls = HashMap::new();
+    let mut identifiers = vec!["a".to_string(), "b".to_string()];
     let mut inferencer = Inferencer {
         top_level: &top_level,
         function_data: &mut function_data,
@@ -85,6 +86,7 @@ fn test_primitives() {
         primitives: &primitives,
         virtual_checks: &mut virtual_checks,
         calls: &mut calls,
+        defined_identifiers: identifiers.clone()
     };
     inferencer.variable_mapping.insert("a".into(), inferencer.primitives.int32);
     inferencer.variable_mapping.insert("b".into(), inferencer.primitives.int32);
@@ -95,7 +97,6 @@ fn test_primitives() {
         .collect::<Result<Vec<_>, _>>()
         .unwrap();
 
-    let mut identifiers = vec!["a".to_string(), "b".to_string()];
     inferencer.check_block(&statements, &mut identifiers).unwrap();
     let top_level = Arc::new(TopLevelContext {
         definitions: Arc::new(RwLock::new(std::mem::take(&mut *top_level.definitions.write()))),
@@ -235,6 +236,7 @@ fn test_simple_call() {
     };
     let mut virtual_checks = Vec::new();
     let mut calls = HashMap::new();
+    let mut identifiers = vec!["a".to_string(), "foo".into()];
     let mut inferencer = Inferencer {
         top_level: &top_level,
         function_data: &mut function_data,
@@ -243,6 +245,7 @@ fn test_simple_call() {
         primitives: &primitives,
         virtual_checks: &mut virtual_checks,
         calls: &mut calls,
+        defined_identifiers: identifiers.clone()
     };
     inferencer.variable_mapping.insert("a".into(), inferencer.primitives.int32);
     inferencer.variable_mapping.insert("foo".into(), fun_ty);
@@ -273,7 +276,6 @@ fn test_simple_call() {
         unreachable!()
     }
 
-    let mut identifiers = vec!["a".to_string(), "foo".into()];
     inferencer.check_block(&statements_1, &mut identifiers).unwrap();
     let top_level = Arc::new(TopLevelContext {
         definitions: Arc::new(RwLock::new(std::mem::take(&mut *top_level.definitions.write()))),
