@@ -22,6 +22,7 @@ mod type_annotation;
 use type_annotation::*;
 mod helper;
 
+#[derive(Clone)]
 pub struct FunInstance {
     pub body: Vec<Stmt<Option<Type>>>,
     pub calls: HashMap<CodeLocation, CallId>,
