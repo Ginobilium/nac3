@@ -491,8 +491,7 @@ impl TopLevelComposer {
             // push self to the ancestors
             class_ancestors.push(make_self_type_annotation(
                 &temp_def_list,
-                class_id,
-                self.unifier.borrow_mut(),
+                class_id
             )?)
         }
         Ok(())
@@ -867,7 +866,7 @@ impl TopLevelComposer {
                             };
                             type_var_to_concrete_def.insert(
                                 dummy_func_arg.ty,
-                                make_self_type_annotation(temp_def_list, *class_id, unifier)?,
+                                make_self_type_annotation(temp_def_list, *class_id)?,
                             );
                             result.push(dummy_func_arg);
                         }
@@ -926,7 +925,7 @@ impl TopLevelComposer {
                         let dummy_return_type = unifier.get_fresh_var().0;
                         type_var_to_concrete_def.insert(
                             dummy_return_type,
-                            make_self_type_annotation(temp_def_list, *class_id, unifier)?,
+                            make_self_type_annotation(temp_def_list, *class_id)?,
                         );
                         dummy_return_type
                     }

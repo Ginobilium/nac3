@@ -222,7 +222,6 @@ pub fn get_type_from_type_annotation_kinds(
 /// the first return is the duplicated type \
 /// the second return is the var_id of the duplicated type \
 /// the third return is the var_id of the original type
-#[inline]
 pub fn duplicate_type_var(unifier: &mut Unifier, type_var: Type) -> (Type, u32, u32) {
     let ty = unifier.get_ty(type_var);
     if let TypeEnum::TVar { id, range, .. } = ty.as_ref() {
@@ -255,8 +254,7 @@ pub fn duplicate_type_var(unifier: &mut Unifier, type_var: Type) -> (Type, u32, 
 /// and unify them with the class generic `T`, `V`
 pub fn make_self_type_annotation(
     top_level_defs: &[Arc<RwLock<TopLevelDef>>],
-    def_id: DefinitionId,
-    _unifier: &mut Unifier,
+    def_id: DefinitionId
 ) -> Result<TypeAnnotation, String> {
     let obj_def =
         top_level_defs.get(def_id.0).ok_or_else(|| "invalid definition id".to_string())?;
