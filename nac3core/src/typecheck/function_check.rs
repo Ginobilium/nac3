@@ -3,18 +3,18 @@ use crate::typecheck::typedef::TypeEnum;
 use super::type_inferencer::Inferencer;
 use super::typedef::Type;
 use rustpython_parser::ast::{self, Expr, ExprKind, Stmt, StmtKind};
-use std::iter::once;
+use std::{collections::HashSet, iter::once};
 
 impl<'a> Inferencer<'a> {
     fn check_pattern(
         &mut self,
         pattern: &Expr<Option<Type>>,
-        defined_identifiers: &mut Vec<String>,
+        defined_identifiers: &mut HashSet<String>,
     ) -> Result<(), String> {
         match &pattern.node {
             ExprKind::Name { id, .. } => {
                 if !defined_identifiers.contains(id) {
-                    defined_identifiers.push(id.clone());
+                    defined_identifiers.insert(id.clone());
                 }
                 Ok(())
             }
@@ -42,7 +42,7 @@ impl<'a> Inferencer<'a> {
     fn check_expr(
         &mut self,
         expr: &Expr<Option<Type>>,
-        defined_identifiers: &mut Vec<String>,
+        defined_identifiers: &mut HashSet<String>,
     ) -> Result<(), String> {
         // there are some cases where the custom field is None
         if let Some(ty) = &expr.custom {
@@ -58,7 +58,7 @@ impl<'a> Inferencer<'a> {
             ExprKind::Name { id, .. } => {
                 if !defined_identifiers.contains(id) {
                     if self.function_data.resolver.get_identifier_def(id).is_some() {
-                        defined_identifiers.push(id.clone());
+                        defined_identifiers.insert(id.clone());
                     } else {
                         return Err(format!(
                             "unknown identifier {} (use before def?) at {}",
@@ -104,10 +104,10 @@ impl<'a> Inferencer<'a> {
                 }
             }
             ExprKind::Lambda { args, body } => {
-                let mut defined_identifiers = defined_identifiers.to_vec();
+                let mut defined_identifiers = defined_identifiers.clone();
                 for arg in args.args.iter() {
                     if !defined_identifiers.contains(&arg.node.arg) {
-                        defined_identifiers.push(arg.node.arg.clone());
+                        defined_identifiers.insert(arg.node.arg.clone());
                     }
                 }
                 self.check_expr(body, &mut defined_identifiers)?;
@@ -116,7 +116,7 @@ impl<'a> Inferencer<'a> {
                 // in our type inference stage, we already make sure that there is only 1 generator
                 let ast::Comprehension { target, iter, ifs, .. } = &generators[0];
                 self.check_expr(iter, defined_identifiers)?;
-                let mut defined_identifiers = defined_identifiers.to_vec();
+                let mut defined_identifiers = defined_identifiers.clone();
                 self.check_pattern(target, &mut defined_identifiers)?;
                 for term in once(elt.as_ref()).chain(ifs.iter()) {
                     self.check_expr(term, &mut defined_identifiers)?;
@@ -143,7 +143,7 @@ impl<'a> Inferencer<'a> {
     fn check_stmt(
         &mut self,
         stmt: &Stmt<Option<Type>>,
-        defined_identifiers: &mut Vec<String>,
+        defined_identifiers: &mut HashSet<String>,
     ) -> Result<bool, String> {
         match &stmt.node {
             StmtKind::For { target, iter, body, orelse, .. } => {
@@ -167,7 +167,7 @@ impl<'a> Inferencer<'a> {
 
                 for ident in body_identifiers.iter() {
                     if !defined_identifiers.contains(ident) && orelse_identifiers.contains(ident) {
-                        defined_identifiers.push(ident.clone())
+                        defined_identifiers.insert(ident.clone());
                     }
                 }
                 Ok(body_returned && orelse_returned)
@@ -217,7 +217,7 @@ impl<'a> Inferencer<'a> {
     pub fn check_block(
         &mut self,
         block: &[Stmt<Option<Type>>],
-        defined_identifiers: &mut Vec<String>,
+        defined_identifiers: &mut HashSet<String>,
     ) -> Result<bool, String> {
         let mut ret = false;
         for stmt in block {

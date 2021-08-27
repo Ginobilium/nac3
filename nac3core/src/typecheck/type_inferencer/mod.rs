@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::convert::{From, TryInto};
 use std::iter::once;
 use std::{cell::RefCell, sync::Arc};
@@ -45,7 +45,7 @@ pub struct FunctionData {
 
 pub struct Inferencer<'a> {
     pub top_level: &'a TopLevelContext,
-    pub defined_identifiers: Vec<String>,
+    pub defined_identifiers: HashSet<String>,
     pub function_data: &'a mut FunctionData,
     pub unifier: &'a mut Unifier,
     pub primitives: &'a PrimitiveStore,
@@ -161,7 +161,7 @@ impl<'a> fold::Fold<()> for Inferencer<'a> {
             ast::ExprKind::Name { id, .. } => {
                 if !self.defined_identifiers.contains(id) {
                     if self.function_data.resolver.get_identifier_def(id.as_str()).is_some() {
-                        self.defined_identifiers.push(id.clone());
+                        self.defined_identifiers.insert(id.clone());
                     } else {
                         return Err(format!(
                             "unknown identifier {} (use before def?) at {}",
@@ -215,7 +215,7 @@ impl<'a> Inferencer<'a> {
         match &pattern.node {
             ExprKind::Name { id, .. } => {
                 if !self.defined_identifiers.contains(id) {
-                    self.defined_identifiers.push(id.clone());
+                    self.defined_identifiers.insert(id.clone());
                 }
                 Ok(())
             }
@@ -274,7 +274,7 @@ impl<'a> Inferencer<'a> {
         for arg in args.args.iter() {
             let name = &arg.node.arg;
             if !defined_identifiers.contains(name) {
-                defined_identifiers.push(name.clone());
+                defined_identifiers.insert(name.clone());
             }
         }
         let fn_args: Vec<_> = args
