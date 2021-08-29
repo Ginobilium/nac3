@@ -171,8 +171,7 @@ pub fn parse_type_annotation<T>(
                             }
                             let mut subst = HashMap::new();
                             for (var, ty) in izip!(type_vars.iter(), types.iter()) {
-                                let id = if let TypeEnum::TVar { id, .. } = &*unifier.get_ty(var.1)
-                                {
+                                let id = if let TypeEnum::TVar { id, .. } = &*unifier.get_ty(*var) {
                                     *id
                                 } else {
                                     unreachable!()

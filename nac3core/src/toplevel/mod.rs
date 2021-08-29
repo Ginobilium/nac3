@@ -1,6 +1,7 @@
 use std::{
     borrow::BorrowMut,
     collections::{HashMap, HashSet},
+    iter::FromIterator,
     ops::{Deref, DerefMut},
     sync::Arc,
 };
@@ -37,10 +38,7 @@ pub enum TopLevelDef {
         // object ID used for TypeEnum
         object_id: DefinitionId,
         /// type variables bounded to the class.
-        /// the first field in the tuple is the var_id of the
-        ///original typevar defined in the top level and returned
-        /// by the symbol resolver
-        type_vars: Vec<(u32, Type)>,
+        type_vars: Vec<Type>,
         // class fields
         fields: Vec<(String, Type)>,
         // class methods, pointing to the corresponding function definition.
@@ -88,8 +86,8 @@ pub struct TopLevelComposer {
     pub unifier: Unifier,
     // primitive store
     pub primitives_ty: PrimitiveStore,
-    // keyword list to prevent same custom def class name
-    pub keyword_list: Vec<String>,
+    // keyword list to prevent same user-defined name
+    pub keyword_list: HashSet<String>,
 }
 
 impl Default for TopLevelComposer {
@@ -121,7 +119,7 @@ impl TopLevelComposer {
             unifier: primitives.1,
             // class_method_to_def_id: Default::default(),
             // to_be_analyzed_class: Default::default(),
-            keyword_list: vec![
+            keyword_list: HashSet::from_iter(vec![
                 "Generic".into(),
                 "virtual".into(),
                 "list".into(),
@@ -132,7 +130,7 @@ impl TopLevelComposer {
                 "bool".into(),
                 "none".into(),
                 "None".into(),
-            ],
+            ]),
         }
     }
 
@@ -200,6 +198,9 @@ impl TopLevelComposer {
                 let mut class_method_index_offset = 0;
                 for b in body {
                     if let ast::StmtKind::FunctionDef { name: method_name, .. } = &b.node {
+                        if self.keyword_list.contains(name) {
+                            return Err("cannot use keyword as a method name".into());
+                        }
                         let global_class_method_name =
                             Self::make_class_method_name(class_name.clone(), method_name);
                         if !defined_class_method_name.insert(global_class_method_name.clone()) {
@@ -259,6 +260,9 @@ impl TopLevelComposer {
             }
 
             ast::StmtKind::FunctionDef { name, .. } => {
+                if self.keyword_list.contains(name) {
+                    return Err("cannot use keyword as a top level function name".into());
+                }
                 let fun_name = name.to_string();
                 if !defined_function_name.insert(name.to_string()) {
                     return Err("duplicate top level function define".into());
@@ -285,8 +289,6 @@ impl TopLevelComposer {
     }
 
     /// step 1, analyze the type vars associated with top level class
-    /// note that we make a duplicate of the type var returned by symbol resolver
-    /// since one top level type var may be used at multiple places
     fn analyze_top_level_class_type_var(&mut self) -> Result<(), String> {
         let def_list = &self.definition_ast_list;
         let temp_def_list = self.extract_def_list();
@@ -373,16 +375,6 @@ impl TopLevelComposer {
                             return Err("expect unique type variables".into());
                         }
 
-                        // NOTE: create a copy of all type vars for the type vars associated with class
-                        let type_vars = type_vars
-                            .into_iter()
-                            .map(|x| {
-                                // must be type var here after previous check
-                                let dup = duplicate_type_var(unifier, x);
-                                (dup.2, dup.0)
-                            })
-                            .collect_vec();
-
                         // add to TopLevelDef
                         class_def_type_vars.extend(type_vars);
                     }
@@ -400,6 +392,7 @@ impl TopLevelComposer {
     /// put Self class into the ancestors list. We only allow single inheritance
     fn analyze_top_level_class_bases(&mut self) -> Result<(), String> {
         let temp_def_list = self.extract_def_list();
+        let unifier = self.unifier.borrow_mut();
         for (class_def, class_ast) in self.definition_ast_list.iter_mut() {
             let mut class_def = class_def.write();
             let (class_bases, class_ancestors, class_resolver, class_id, class_type_vars) = {
@@ -446,53 +439,49 @@ impl TopLevelComposer {
                 let base_ty = parse_ast_to_type_annotation_kinds(
                     class_resolver,
                     &temp_def_list,
-                    self.unifier.borrow_mut(),
+                    unifier,
                     &self.primitives_ty,
                     b,
                 )?;
 
                 if let TypeAnnotation::CustomClassKind { id, .. } = &base_ty {
-                    // check to prevent cyclic base class
+                    // TODO: change a way to check to prevent cyclic base class
                     let all_base = Self::get_all_base(*id, &temp_def_list);
                     if all_base.contains(&class_id) {
                         return Err("cyclic base detected".into());
                     }
 
-                    // find the intersection of type vars occured
-                    // in the base class type parameter
-                    // and the type vars occured in the class generic declaration
-                    let type_var_occured_in_base =
-                        get_type_var_contained_in_type_annotation(&base_ty);
-                    for type_ann in type_var_occured_in_base {
-                        if let TypeAnnotation::TypeVarKind(id, ty) = type_ann {
-                            for (ty_id, class_typvar_ty) in class_type_vars.iter() {
-                                // if they refer to the same top level defined
-                                // type var, we unify them together
-                                if id == *ty_id {
-                                    // assert to make sure
-                                    assert!(matches!(
-                                        self.unifier.get_ty(ty).as_ref(),
-                                        TypeEnum::TVar { .. }
-                                    ));
-                                    self.unifier.unify(ty, *class_typvar_ty)?;
-                                }
+                    // NOTE: type vars occured in the base type annotation must be
+                    // a subset of the class decalred type annotation
+                    let base_type_var_ids = get_type_var_contained_in_type_annotation(&base_ty)
+                        .into_iter()
+                        .map(|x| {
+                            if let TypeAnnotation::TypeVarKind(ty) = x {
+                                get_var_id(ty, unifier)
+                            } else {
+                                unreachable!("must be type var")
                             }
-                        } else {
-                            unreachable!("must be type var annotation")
-                        }
+                        })
+                        .collect::<Result<HashSet<_>, _>>()?;
+                    let class_generic_type_var_ids = class_type_vars
+                        .iter()
+                        .map(|x| get_var_id(*x, unifier))
+                        .collect::<Result<HashSet<_>, _>>()?;
+                    if class_generic_type_var_ids.is_superset(&base_type_var_ids) {
+                        // TODO: this base confirmed
+                        // in what order to push all the ancestors?
+                        // class_ancestors.push(base_ty);
+                    } else {
+                        return Err("base class generic type parameter must be declared".into());
                     }
-
-                    class_ancestors.push(base_ty);
                 } else {
                     return Err("class base declaration can only be custom class".into());
                 }
             }
 
+            // TODO: ancestors should include all bases, need to rewrite
             // push self to the ancestors
-            class_ancestors.push(make_self_type_annotation(
-                &temp_def_list,
-                class_id
-            )?)
+            class_ancestors.push(make_self_type_annotation(&temp_def_list, class_id)?)
         }
         Ok(())
     }
@@ -514,6 +503,7 @@ impl TopLevelComposer {
                 unifier,
                 primitives,
                 &mut type_var_to_concrete_def,
+                &self.keyword_list,
             )?
         }
 
@@ -533,6 +523,7 @@ impl TopLevelComposer {
     /// step 4, after class methods are done
     fn analyze_top_level_function(&mut self) -> Result<(), String> {
         let def_list = &self.definition_ast_list;
+        let keyword_list = &self.keyword_list;
         let temp_def_list = self.extract_def_list();
         let unifier = self.unifier.borrow_mut();
         let primitives_store = &self.primitives_ty;
@@ -553,18 +544,19 @@ impl TopLevelComposer {
                     let resolver = resolver.unwrap();
                     let resolver = resolver.deref();
 
-                    // occured type vars should not be handled separately
-                    let mut occured_type_var: HashMap<u32, Type> = HashMap::new();
                     let mut function_var_map: HashMap<u32, Type> = HashMap::new();
                     let arg_types = {
                         // make sure no duplicate parameter
                         let mut defined_paramter_name: HashSet<String> = HashSet::new();
-                        let have_unique_fuction_parameter_name = args
-                            .args
-                            .iter()
-                            .all(|x| defined_paramter_name.insert(x.node.arg.clone()));
+                        let have_unique_fuction_parameter_name = args.args.iter().all(|x| {
+                            defined_paramter_name.insert(x.node.arg.clone())
+                                && keyword_list.contains(&x.node.arg)
+                                && "self" != x.node.arg
+                        });
                         if !have_unique_fuction_parameter_name {
-                            return Err("top level function have duplicate parameter name".into());
+                            return Err("top level function must have unique parameter names \
+                            and names thould not be the same as the keywords"
+                                .into());
                         }
 
                         args.args
@@ -591,43 +583,21 @@ impl TopLevelComposer {
                                 let type_vars_within =
                                     get_type_var_contained_in_type_annotation(&type_annotation)
                                         .into_iter()
-                                        .map(|x| {
-                                            if let TypeAnnotation::TypeVarKind(id, ty) = x {
-                                                // assert here to make sure the ty is TypeEnum::TVar
-                                                assert!(matches!(
-                                                    unifier.get_ty(ty).as_ref(),
-                                                    TypeEnum::TVar { .. }
-                                                ));
-                                                (id, ty)
+                                        .map(|x| -> Result<(u32, Type), String> {
+                                            if let TypeAnnotation::TypeVarKind(ty) = x {
+                                                Ok((get_var_id(ty, unifier)?, ty))
                                             } else {
                                                 unreachable!("must be type var annotation kind")
                                             }
                                         })
-                                        .collect_vec();
-                                for (top_level_var_id, ty) in type_vars_within {
-                                    if let Some(occured_ty) =
-                                        occured_type_var.get(&top_level_var_id)
-                                    {
-                                        // if already occured, we unify this two duplicated
-                                        // type var of the same top level type var
-                                        unifier.unify(ty, *occured_ty)?;
-                                    } else {
-                                        // if not, put it into the occured type var hashmap,
-                                        // since parse_ast_to_type_var already duplicated it
-                                        // we do not need to duplicate it again
-                                        occured_type_var.insert(top_level_var_id, ty);
-                                        // the type var map to it self
-                                        if let TypeEnum::TVar { id: self_id, .. } =
-                                            unifier.get_ty(ty).as_ref()
-                                        {
-                                            function_var_map.insert(*self_id, ty);
-                                        } else {
-                                            unreachable!("must be type var");
-                                        }
+                                        .collect::<Result<Vec<_>, _>>()?;
+                                for (id, ty) in type_vars_within {
+                                    if let Some(prev_ty) = function_var_map.insert(id, ty) {
+                                        // if already have the type inserted, make sure they are the same thing
+                                        assert_eq!(prev_ty, ty);
                                     }
                                 }
 
-                                // NOTE: get the actual ty after handling the type vars, really? why?
                                 let ty = get_type_from_type_annotation_kinds(
                                     temp_def_list.as_ref(),
                                     unifier,
@@ -662,24 +632,21 @@ impl TopLevelComposer {
                     let type_vars_within =
                         get_type_var_contained_in_type_annotation(&return_ty_annotation)
                             .into_iter()
-                            .map(|x| {
-                                if let TypeAnnotation::TypeVarKind(id, ty) = x {
-                                    (id, ty)
+                            .map(|x| -> Result<(u32, Type), String> {
+                                if let TypeAnnotation::TypeVarKind(ty) = x {
+                                    Ok((get_var_id(ty, unifier)?, ty))
                                 } else {
                                     unreachable!("must be type var here")
                                 }
                             })
-                            .collect_vec();
-                    for (top_level_var_id, ty) in type_vars_within {
-                        if let Some(existing_ty) = occured_type_var.get(&top_level_var_id) {
-                            // should not return err here
-                            unifier.unify(ty, *existing_ty)?;
-                        } else {
-                            occured_type_var.insert(top_level_var_id, ty);
+                            .collect::<Result<Vec<_>, _>>()?;
+                    for (id, ty) in type_vars_within {
+                        if let Some(prev_ty) = function_var_map.insert(id, ty) {
+                            // if already have the type inserted, make sure they are the same thing
+                            assert_eq!(prev_ty, ty);
                         }
                     }
 
-                    // NOTE: get the actual ty after handling the type vars, really? why?
                     let return_ty = get_type_from_type_annotation_kinds(
                         &temp_def_list,
                         unifier,
@@ -715,6 +682,7 @@ impl TopLevelComposer {
         unifier: &mut Unifier,
         primitives: &PrimitiveStore,
         type_var_to_concrete_def: &mut HashMap<Type, TypeAnnotation>,
+        keyword_list: &HashSet<String>,
     ) -> Result<(), String> {
         let mut class_def = class_def.write();
         let (
@@ -763,13 +731,10 @@ impl TopLevelComposer {
                 let (method_dummy_ty, ..) =
                     Self::get_class_method_def_info(class_methods_def, name)?;
 
-                // handle var map, to create a new copy of type var
-                // while tracking the type var associated with class
-                // from the duplicated type var's var_id to themselves
-                // include the class type vars like the type var context of the method
+                // the method var map can surely include the class's generic parameters
                 let mut method_var_map: HashMap<u32, Type> = class_type_vars_def
                     .iter()
-                    .map(|(_, ty)| {
+                    .map(|ty| {
                         if let TypeEnum::TVar { id, .. } = unifier.get_ty(*ty).as_ref() {
                             (*id, *ty)
                         } else {
@@ -778,18 +743,17 @@ impl TopLevelComposer {
                     })
                     .collect();
 
-                // from the def_id of top level type vars to duplicated type vars
-                // also include the class type var like the type var context of the method
-                let mut occured_type_vars: HashMap<u32, Type> =
-                    class_type_vars_def.iter().map(|(id, ty)| (*id, *ty)).collect();
-
                 let arg_types: Vec<FuncArg> = {
                     // check method parameters cannot have same name
                     let mut defined_paramter_name: HashSet<String> = HashSet::new();
-                    let have_unique_fuction_parameter_name =
-                        args.args.iter().all(|x| defined_paramter_name.insert(x.node.arg.clone()));
+                    let have_unique_fuction_parameter_name = args.args.iter().all(|x| {
+                        defined_paramter_name.insert(x.node.arg.clone())
+                            && !keyword_list.contains(&x.node.arg)
+                    });
                     if !have_unique_fuction_parameter_name {
-                        return Err("class method have duplicate parameter name".into());
+                        return Err("class method must have unique parameter names \
+                        and names thould not be the same as the keywords"
+                            .into());
                     }
 
                     let mut result = Vec::new();
@@ -817,26 +781,11 @@ impl TopLevelComposer {
                                 get_type_var_contained_in_type_annotation(&type_ann);
                             // handle the class type var and the method type var
                             for type_var_within in type_vars_within {
-                                if let TypeAnnotation::TypeVarKind(top_level_id, ty) =
-                                    type_var_within
-                                {
-                                    if let Some(duped_ty) = occured_type_vars.get(&top_level_id) {
-                                        // if already occured, not matter if it is class typevar or method typevar, just unify
-                                        unifier.unify(ty, *duped_ty)?;
-                                    } else {
-                                        // if not insert them to the occured_type_vars and the method_varmap
-                                        // note that the content to insert is different
-                                        occured_type_vars.insert(top_level_id, ty);
-                                        method_var_map.insert(
-                                            if let TypeEnum::TVar { id, .. } =
-                                                unifier.get_ty(ty).as_ref()
-                                            {
-                                                *id
-                                            } else {
-                                                unreachable!("must be type var")
-                                            },
-                                            ty,
-                                        );
+                                if let TypeAnnotation::TypeVarKind(ty) = type_var_within {
+                                    let id = get_var_id(ty, unifier)?;
+                                    if let Some(prev_ty) = method_var_map.insert(id, ty) {
+                                        // if already in the list, make sure they are the same?
+                                        assert_eq!(prev_ty, ty);
                                     }
                                 } else {
                                     unreachable!("must be type var annotation");
@@ -893,24 +842,15 @@ impl TopLevelComposer {
                             get_type_var_contained_in_type_annotation(&annotation);
                         // handle the class type var and the method type var
                         for type_var_within in type_vars_within {
-                            if let TypeAnnotation::TypeVarKind(top_id, ty) = type_var_within {
-                                if let Some(duped_ty) = occured_type_vars.get(&top_id) {
-                                    // if already occured, not matter if it is class typevar or method typevar, just unify
-                                    unifier.unify(ty, *duped_ty)?;
+                            if let TypeAnnotation::TypeVarKind(ty) = type_var_within {
+                                if let TypeAnnotation::TypeVarKind(ty) = type_var_within {
+                                    let id = get_var_id(ty, unifier)?;
+                                    if let Some(prev_ty) = method_var_map.insert(id, ty) {
+                                        // if already in the list, make sure they are the same?
+                                        assert_eq!(prev_ty, ty);
+                                    }
                                 } else {
-                                    // if not insert them to the occured_type_vars and the method_varmap
-                                    // note that the content to insert is different
-                                    occured_type_vars.insert(top_id, ty);
-                                    method_var_map.insert(
-                                        if let TypeEnum::TVar { id, .. } =
-                                            unifier.get_ty(ty).as_ref()
-                                        {
-                                            *id
-                                        } else {
-                                            unreachable!("must be type var")
-                                        },
-                                        ty,
-                                    );
+                                    unreachable!("must be type var annotation");
                                 }
                             } else {
                                 unreachable!("must be type var annotation");
@@ -966,16 +906,12 @@ impl TopLevelComposer {
                                             get_type_var_contained_in_type_annotation(&annotation);
                                         // handle the class type var and the method type var
                                         for type_var_within in type_vars_within {
-                                            if let TypeAnnotation::TypeVarKind(top_level_id, ty) =
-                                                type_var_within
+                                            if let TypeAnnotation::TypeVarKind(t) = type_var_within
                                             {
-                                                if let Some(duped_ty) =
-                                                    occured_type_vars.get(&top_level_id)
-                                                {
-                                                    // if already occured, not matter if it is class typevar or method typevar, just unify
-                                                    unifier.unify(ty, *duped_ty)?;
-                                                } else {
-                                                    return Err("this type var is not available inside this function".into());
+                                                if !class_type_vars_def.contains(&t) {
+                                                    return Err("class fields can only use type \
+                                                    vars declared as class generic type vars"
+                                                        .into());
                                                 }
                                             } else {
                                                 unreachable!("must be type var annotation");
