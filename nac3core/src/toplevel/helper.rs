@@ -103,18 +103,26 @@ impl TopLevelComposer {
         result
     }
 
+    /// should only be called when finding all ancestors, so panic when wrong
     fn get_parent(
         child: &TypeAnnotation,
         temp_def_list: &[Arc<RwLock<TopLevelDef>>],
     ) -> Option<TypeAnnotation> {
-        let child_id =
-            if let TypeAnnotation::CustomClassKind { id, .. } = child { *id } else { return None };
+        let child_id = if let TypeAnnotation::CustomClassKind { id, .. } = child {
+            *id
+        } else {
+            unreachable!("should be class type annotation")
+        };
         let child_def = temp_def_list.get(child_id.0).unwrap();
         let child_def = child_def.read();
         if let TopLevelDef::Class { ancestors, .. } = &*child_def {
-            Some(ancestors[0].clone())
+            if !ancestors.is_empty() {
+                Some(ancestors[0].clone())
+            } else {
+                None
+            }
         } else {
-            None
+            unreachable!("child must be top level class def")
         }
     }
 
@@ -160,6 +168,15 @@ impl TopLevelComposer {
             }
 
             _ => false,
+        }
+    }
+
+    /// get the var_id of a given TVar type
+    pub fn get_var_id(var_ty: Type, unifier: &mut Unifier) -> Result<u32, String> {
+        if let TypeEnum::TVar { id, .. } = unifier.get_ty(var_ty).as_ref() {
+            Ok(*id)
+        } else {
+            Err("not type var".to_string())
         }
     }
 }

@@ -176,7 +176,7 @@ impl TopLevelComposer {
                     Arc::new(RwLock::new(Self::make_top_level_class_def(
                         class_def_id,
                         resolver.clone(),
-                        name.as_str(),
+                        name,
                     ))),
                     None,
                 );
@@ -233,7 +233,7 @@ impl TopLevelComposer {
 
                 // move the ast to the entry of the class in the ast_list
                 class_def_ast.1 = Some(ast);
-                // get the methods into the class_def
+                // get the methods into the top level class_def
                 for (name, _, id, ty) in &class_method_name_def_ids {
                     let mut class_def = class_def_ast.0.write();
                     if let TopLevelDef::Class { methods, .. } = class_def.deref_mut() {
@@ -271,7 +271,7 @@ impl TopLevelComposer {
                 self.definition_ast_list.push((
                     RwLock::new(Self::make_top_level_function_def(
                         name.into(),
-                        // unify with correct type later
+                        // dummy here, unify with correct type later
                         self.unifier.get_fresh_var().0,
                         resolver,
                     ))
@@ -336,13 +336,13 @@ impl TopLevelComposer {
                             return Err("Only single Generic[...] can be in bases".into());
                         }
 
-                        let mut type_var_list: Vec<&ast::Expr<()>> = vec![];
+                        let type_var_list: Vec<&ast::Expr<()>>;
                         // if `class A(Generic[T, V, G])`
                         if let ast::ExprKind::Tuple { elts, .. } = &slice.node {
-                            type_var_list.extend(elts.iter());
+                            type_var_list = elts.iter().collect_vec();
                         // `class A(Generic[T])`
                         } else {
-                            type_var_list.push(slice.deref());
+                            type_var_list = vec![slice.deref()];
                         }
 
                         // parse the type vars
@@ -454,39 +454,32 @@ impl TopLevelComposer {
 
         // second, get all ancestors
         let mut ancestors_store: HashMap<DefinitionId, Vec<TypeAnnotation>> = Default::default();
-        for (class_def, class_ast) in self.definition_ast_list.iter_mut() {
+        for (class_def, _) in self.definition_ast_list.iter_mut() {
             let mut class_def = class_def.write();
             let (class_ancestors, class_id) = {
                 if let TopLevelDef::Class { ancestors, object_id, .. } = class_def.deref_mut() {
-                    if let Some(ast::Located { node: ast::StmtKind::ClassDef { .. }, .. }) =
-                        class_ast
-                    {
-                        (ancestors, *object_id)
-                    } else {
-                        unreachable!("must be both class")
-                    }
+                    (ancestors, *object_id)
                 } else {
                     continue;
                 }
             };
             ancestors_store.insert(
                 class_id,
-                Self::get_all_ancestors_helper(&class_ancestors[0], temp_def_list.as_slice()),
+                // if class has direct parents, get all ancestors of its parents. Else just empty
+                if class_ancestors.is_empty() {
+                    vec![]
+                } else {
+                    Self::get_all_ancestors_helper(&class_ancestors[0], temp_def_list.as_slice())
+                },
             );
         }
 
         // insert the ancestors to the def list
-        for (class_def, class_ast) in self.definition_ast_list.iter_mut() {
+        for (class_def, _) in self.definition_ast_list.iter_mut() {
             let mut class_def = class_def.write();
             let (class_ancestors, class_id) = {
                 if let TopLevelDef::Class { ancestors, object_id, .. } = class_def.deref_mut() {
-                    if let Some(ast::Located { node: ast::StmtKind::ClassDef { .. }, .. }) =
-                        class_ast
-                    {
-                        (ancestors, *object_id)
-                    } else {
-                        unreachable!("must be both class")
-                    }
+                    (ancestors, *object_id)
                 } else {
                     continue;
                 }
@@ -495,7 +488,7 @@ impl TopLevelComposer {
             let ans = ancestors_store.get_mut(&class_id).unwrap();
             class_ancestors.append(ans);
 
-            // insert self type annotation
+            // insert self type annotation to the front of the vector to maintain the order
             class_ancestors
                 .insert(0, make_self_type_annotation(temp_def_list.as_slice(), class_id)?);
         }
@@ -609,7 +602,7 @@ impl TopLevelComposer {
                                         .into_iter()
                                         .map(|x| -> Result<(u32, Type), String> {
                                             if let TypeAnnotation::TypeVarKind(ty) = x {
-                                                Ok((get_var_id(ty, unifier)?, ty))
+                                                Ok((Self::get_var_id(ty, unifier)?, ty))
                                             } else {
                                                 unreachable!("must be type var annotation kind")
                                             }
@@ -657,7 +650,7 @@ impl TopLevelComposer {
                             .into_iter()
                             .map(|x| -> Result<(u32, Type), String> {
                                 if let TypeAnnotation::TypeVarKind(ty) = x {
-                                    Ok((get_var_id(ty, unifier)?, ty))
+                                    Ok((Self::get_var_id(ty, unifier)?, ty))
                                 } else {
                                     unreachable!("must be type var here")
                                 }
@@ -799,7 +792,7 @@ impl TopLevelComposer {
                             // handle the class type var and the method type var
                             for type_var_within in type_vars_within {
                                 if let TypeAnnotation::TypeVarKind(ty) = type_var_within {
-                                    let id = get_var_id(ty, unifier)?;
+                                    let id = Self::get_var_id(ty, unifier)?;
                                     if let Some(prev_ty) = method_var_map.insert(id, ty) {
                                         // if already in the list, make sure they are the same?
                                         assert_eq!(prev_ty, ty);
@@ -860,7 +853,7 @@ impl TopLevelComposer {
                         // handle the class type var and the method type var
                         for type_var_within in type_vars_within {
                             if let TypeAnnotation::TypeVarKind(ty) = type_var_within {
-                                let id = get_var_id(ty, unifier)?;
+                                let id = Self::get_var_id(ty, unifier)?;
                                 if let Some(prev_ty) = method_var_map.insert(id, ty) {
                                     // if already in the list, make sure they are the same?
                                     assert_eq!(prev_ty, ty);

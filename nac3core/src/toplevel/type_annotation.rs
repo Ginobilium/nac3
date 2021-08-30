@@ -323,12 +323,3 @@ pub fn get_type_var_contained_in_type_annotation(ann: &TypeAnnotation) -> Vec<Ty
     }
     result
 }
-
-/// get the var_id of a given TVar type
-pub fn get_var_id(var_ty: Type, unifier: &mut Unifier) -> Result<u32, String> {
-    if let TypeEnum::TVar { id, .. } = unifier.get_ty(var_ty).as_ref() {
-        Ok(*id)
-    } else {
-        Err("not type var".to_string())
-    }
-}
