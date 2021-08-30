@@ -95,7 +95,7 @@ pub fn parse_ast_to_type_annotation_kinds<T>(
                                 params_ast.len()
                             ));
                         }
-                        params_ast
+                        let result = params_ast
                             .into_iter()
                             .map(|x| {
                                 parse_ast_to_type_annotation_kinds(
@@ -106,7 +106,19 @@ pub fn parse_ast_to_type_annotation_kinds<T>(
                                     x,
                                 )
                             })
-                            .collect::<Result<Vec<_>, _>>()?
+                            .collect::<Result<Vec<_>, _>>()?;
+
+                        // make sure the result do not contain any type vars
+                        let no_type_var = result
+                            .iter()
+                            .all(|x| get_type_var_contained_in_type_annotation(x).is_empty());
+                        if no_type_var {
+                            result
+                        } else {
+                            return Err("application of type vars to generic class \
+                            not currently supported"
+                                .into());
+                        }
                     };
 
                     // allow type var in class generic application list
@@ -156,9 +168,6 @@ pub fn get_type_from_type_annotation_kinds(
                         .iter()
                         .map(|x| {
                             if let TypeEnum::TVar { id, .. } = unifier.get_ty(*x).as_ref() {
-                                // this is for the class generic application,
-                                // we only need the information for the copied type var
-                                // associated with the class
                                 *id
                             } else {
                                 unreachable!()

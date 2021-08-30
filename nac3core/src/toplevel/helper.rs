@@ -84,31 +84,36 @@ impl TopLevelComposer {
         Err(format!("no method {} in the current class", method_name))
     }
 
-    /// get all base class def id of a class, including itself
-    pub fn get_all_base(
-        child: DefinitionId,
+    /// get all base class def id of a class, excluding itself. \
+    /// this function should called only after the direct parent is set
+    /// and before all the ancestors are set
+    /// and when we allow single inheritance \
+    /// the order of the returned list is from the child to the deepest ancestor
+    pub fn get_all_ancestors_helper(
+        child: &TypeAnnotation,
         temp_def_list: &[Arc<RwLock<TopLevelDef>>],
-    ) -> Vec<DefinitionId> {
-        let mut result: Vec<DefinitionId> = Vec::new();
-        let child_def = temp_def_list.get(child.0).unwrap();
-        let child_def = child_def.read();
-        let child_def = child_def.deref();
-
-        if let TopLevelDef::Class { ancestors, .. } = child_def {
-            for a in ancestors {
-                if let TypeAnnotation::CustomClassKind { id, .. } = a {
-                    if *id != child {
-                        result.extend(Self::get_all_base(*id, temp_def_list));
-                    }
-                } else {
-                    unreachable!("must be class type annotation type")
-                }
-            }
-        } else {
-            unreachable!("this function should only be called with class def id as parameter")
+    ) -> Vec<TypeAnnotation> {
+        let mut result: Vec<TypeAnnotation> = Vec::new();
+        let mut parent = Self::get_parent(child, temp_def_list);
+        while let Some(p) = parent {
+            parent = Self::get_parent(&p, temp_def_list);
+            result.push(p);
         }
-
-        result.push(child);
         result
+    }
+
+    fn get_parent(
+        child: &TypeAnnotation,
+        temp_def_list: &[Arc<RwLock<TopLevelDef>>],
+    ) -> Option<TypeAnnotation> {
+        let child_id =
+            if let TypeAnnotation::CustomClassKind { id, .. } = child { *id } else { return None };
+        let child_def = temp_def_list.get(child_id.0).unwrap();
+        let child_def = child_def.read();
+        if let TopLevelDef::Class { ancestors, .. } = &*child_def {
+            Some(ancestors[0].clone())
+        } else {
+            None
+        }
     }
 }

@@ -16,7 +16,7 @@ use itertools::{izip, Itertools};
 use parking_lot::RwLock;
 use rustpython_parser::ast::{self, Stmt};
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Hash)]
 pub struct DefinitionId(pub usize);
 
 mod type_annotation;
@@ -393,6 +393,8 @@ impl TopLevelComposer {
     fn analyze_top_level_class_bases(&mut self) -> Result<(), String> {
         let temp_def_list = self.extract_def_list();
         let unifier = self.unifier.borrow_mut();
+
+        // first, only push direct parent into the list
         for (class_def, class_ast) in self.definition_ast_list.iter_mut() {
             let mut class_def = class_def.write();
             let (class_bases, class_ancestors, class_resolver, class_id, class_type_vars) = {
@@ -414,7 +416,6 @@ impl TopLevelComposer {
             let class_resolver = class_resolver.as_ref().unwrap();
             let class_resolver = class_resolver.deref();
 
-            // only allow single inheritance
             let mut has_base = false;
             for b in class_bases {
                 // type vars have already been handled, so skip on `Generic[...]`
@@ -436,6 +437,8 @@ impl TopLevelComposer {
                 }
                 has_base = true;
 
+                // the function parse_ast_to make sure that no type var occured in
+                // bast_ty if it is a CustomClassKind
                 let base_ty = parse_ast_to_type_annotation_kinds(
                     class_resolver,
                     &temp_def_list,
@@ -444,36 +447,8 @@ impl TopLevelComposer {
                     b,
                 )?;
 
-                if let TypeAnnotation::CustomClassKind { id, .. } = &base_ty {
-                    // TODO: change a way to check to prevent cyclic base class
-                    let all_base = Self::get_all_base(*id, &temp_def_list);
-                    if all_base.contains(&class_id) {
-                        return Err("cyclic base detected".into());
-                    }
-
-                    // NOTE: type vars occured in the base type annotation must be
-                    // a subset of the class decalred type annotation
-                    let base_type_var_ids = get_type_var_contained_in_type_annotation(&base_ty)
-                        .into_iter()
-                        .map(|x| {
-                            if let TypeAnnotation::TypeVarKind(ty) = x {
-                                get_var_id(ty, unifier)
-                            } else {
-                                unreachable!("must be type var")
-                            }
-                        })
-                        .collect::<Result<HashSet<_>, _>>()?;
-                    let class_generic_type_var_ids = class_type_vars
-                        .iter()
-                        .map(|x| get_var_id(*x, unifier))
-                        .collect::<Result<HashSet<_>, _>>()?;
-                    if class_generic_type_var_ids.is_superset(&base_type_var_ids) {
-                        // TODO: this base confirmed
-                        // in what order to push all the ancestors?
-                        // class_ancestors.push(base_ty);
-                    } else {
-                        return Err("base class generic type parameter must be declared".into());
-                    }
+                if let TypeAnnotation::CustomClassKind { .. } = &base_ty {
+                    class_ancestors.push(base_ty);
                 } else {
                     return Err("class base declaration can only be custom class".into());
                 }
@@ -481,8 +456,57 @@ impl TopLevelComposer {
 
             // TODO: ancestors should include all bases, need to rewrite
             // push self to the ancestors
-            class_ancestors.push(make_self_type_annotation(&temp_def_list, class_id)?)
+            // class_ancestors.push(make_self_type_annotation(&temp_def_list, class_id)?)
         }
+
+        // second get all ancestors
+        let mut ancestors_store: HashMap<DefinitionId, Vec<TypeAnnotation>> = Default::default();
+        for (class_def, class_ast) in self.definition_ast_list.iter_mut() {
+            let mut class_def = class_def.write();
+            let (class_ancestors, class_id) = {
+                if let TopLevelDef::Class { ancestors, object_id, .. } = class_def.deref_mut() {
+                    if let Some(ast::Located { node: ast::StmtKind::ClassDef { .. }, .. }) =
+                        class_ast
+                    {
+                        (ancestors, *object_id)
+                    } else {
+                        unreachable!("must be both class")
+                    }
+                } else {
+                    continue;
+                }
+            };
+            ancestors_store.insert(
+                class_id,
+                Self::get_all_ancestors_helper(&class_ancestors[0], temp_def_list.as_slice()),
+            );
+        }
+
+        // insert the ancestors to the def list
+        for (class_def, class_ast) in self.definition_ast_list.iter_mut() {
+            let mut class_def = class_def.write();
+            let (class_ancestors, class_id) = {
+                if let TopLevelDef::Class { ancestors, object_id, .. } = class_def.deref_mut() {
+                    if let Some(ast::Located { node: ast::StmtKind::ClassDef { .. }, .. }) =
+                        class_ast
+                    {
+                        (ancestors, *object_id)
+                    } else {
+                        unreachable!("must be both class")
+                    }
+                } else {
+                    continue;
+                }
+            };
+
+            let ans = ancestors_store.get_mut(&class_id).unwrap();
+            class_ancestors.append(ans);
+
+            // insert self type annotation
+            class_ancestors
+                .insert(0, make_self_type_annotation(temp_def_list.as_slice(), class_id)?);
+        }
+
         Ok(())
     }
 
