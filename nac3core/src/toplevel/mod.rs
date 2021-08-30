@@ -99,7 +99,6 @@ impl Default for TopLevelComposer {
 impl TopLevelComposer {
     /// return a composer and things to make a "primitive" symbol resolver, so that the symbol
     /// resolver can later figure out primitive type definitions when passed a primitive type name
-    // TODO: add list and tuples?
     pub fn new() -> Self {
         let primitives = Self::make_primitives();
 
@@ -397,15 +396,13 @@ impl TopLevelComposer {
         // first, only push direct parent into the list
         for (class_def, class_ast) in self.definition_ast_list.iter_mut() {
             let mut class_def = class_def.write();
-            let (class_bases, class_ancestors, class_resolver, class_id, class_type_vars) = {
-                if let TopLevelDef::Class { ancestors, resolver, object_id, type_vars, .. } =
-                    class_def.deref_mut()
-                {
+            let (class_bases, class_ancestors, class_resolver) = {
+                if let TopLevelDef::Class { ancestors, resolver, .. } = class_def.deref_mut() {
                     if let Some(ast::Located {
                         node: ast::StmtKind::ClassDef { bases, .. }, ..
                     }) = class_ast
                     {
-                        (bases, ancestors, resolver, *object_id, type_vars)
+                        (bases, ancestors, resolver)
                     } else {
                         unreachable!("must be both class")
                     }
@@ -453,10 +450,6 @@ impl TopLevelComposer {
                     return Err("class base declaration can only be custom class".into());
                 }
             }
-
-            // TODO: ancestors should include all bases, need to rewrite
-            // push self to the ancestors
-            // class_ancestors.push(make_self_type_annotation(&temp_def_list, class_id)?)
         }
 
         // second get all ancestors
@@ -530,9 +523,6 @@ impl TopLevelComposer {
                 &self.keyword_list,
             )?
         }
-
-        // base class methods add and check
-        // TODO:
 
         // unification of previously assigned typevar
         for (ty, def) in type_var_to_concrete_def {
@@ -629,7 +619,6 @@ impl TopLevelComposer {
                                     &type_annotation,
                                 )?;
 
-                                // TODO: default value?
                                 Ok(FuncArg {
                                     name: x.node.arg.clone(),
                                     ty,
@@ -867,14 +856,10 @@ impl TopLevelComposer {
                         // handle the class type var and the method type var
                         for type_var_within in type_vars_within {
                             if let TypeAnnotation::TypeVarKind(ty) = type_var_within {
-                                if let TypeAnnotation::TypeVarKind(ty) = type_var_within {
-                                    let id = get_var_id(ty, unifier)?;
-                                    if let Some(prev_ty) = method_var_map.insert(id, ty) {
-                                        // if already in the list, make sure they are the same?
-                                        assert_eq!(prev_ty, ty);
-                                    }
-                                } else {
-                                    unreachable!("must be type var annotation");
+                                let id = get_var_id(ty, unifier)?;
+                                if let Some(prev_ty) = method_var_map.insert(id, ty) {
+                                    // if already in the list, make sure they are the same?
+                                    assert_eq!(prev_ty, ty);
                                 }
                             } else {
                                 unreachable!("must be type var annotation");

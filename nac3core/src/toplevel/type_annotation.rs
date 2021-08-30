@@ -12,6 +12,8 @@ pub enum TypeAnnotation {
     // can only be CustomClassKind
     VirtualKind(Box<TypeAnnotation>),
     TypeVarKind(Type),
+    ListKind(Box<TypeAnnotation>),
+    TupleKind(Vec<TypeAnnotation>),
 }
 
 pub fn parse_ast_to_type_annotation_kinds<T>(
@@ -55,7 +57,7 @@ pub fn parse_ast_to_type_annotation_kinds<T>(
             }
         },
 
-        // TODO: subscript or call for virtual?
+        // virtual
         ast::ExprKind::Subscript { value, slice, .. }
             if { matches!(&value.node, ast::ExprKind::Name { id, .. } if id == "virtual") } =>
         {
@@ -72,9 +74,47 @@ pub fn parse_ast_to_type_annotation_kinds<T>(
             Ok(TypeAnnotation::VirtualKind(def.into()))
         }
 
+        // list
+        ast::ExprKind::Subscript { value, slice, .. }
+            if { matches!(&value.node, ast::ExprKind::Name { id, .. } if id == "list") } =>
+        {
+            let def_ann = parse_ast_to_type_annotation_kinds(
+                resolver,
+                top_level_defs,
+                unifier,
+                primitives,
+                slice.as_ref(),
+            )?;
+            Ok(TypeAnnotation::ListKind(def_ann.into()))
+        }
+
+        // tuple
+        ast::ExprKind::Subscript { value, slice, .. }
+            if { matches!(&value.node, ast::ExprKind::Name { id, .. } if id == "tuple") } =>
+        {
+            if let ast::ExprKind::Tuple { elts, .. } = &slice.node {
+                let type_annotations = elts
+                    .iter()
+                    .map(|e| {
+                        parse_ast_to_type_annotation_kinds(
+                            resolver,
+                            top_level_defs,
+                            unifier,
+                            primitives,
+                            e,
+                        )
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                Ok(TypeAnnotation::TupleKind(type_annotations))
+            } else {
+                Err("Expect multiple elements for tuple".into())
+            }
+        }
+
+        // custom class
         ast::ExprKind::Subscript { value, slice, .. } => {
             if let ast::ExprKind::Name { id, .. } = &value.node {
-                if vec!["virtual", "Generic"].contains(&id.as_str()) {
+                if vec!["virtual", "Generic", "list", "tuple"].contains(&id.as_str()) {
                     return Err("keywords cannot be class name".into());
                 }
                 let obj_id = resolver
@@ -205,6 +245,24 @@ pub fn get_type_from_type_annotation_kinds(
                 ty.as_ref(),
             )?;
             Ok(unifier.add_ty(TypeEnum::TVirtual { ty }))
+        }
+        TypeAnnotation::ListKind(ty) => {
+            let ty = get_type_from_type_annotation_kinds(
+                top_level_defs,
+                unifier,
+                primitives,
+                ty.as_ref(),
+            )?;
+            Ok(unifier.add_ty(TypeEnum::TList { ty }))
+        }
+        TypeAnnotation::TupleKind(tys) => {
+            let tys = tys
+                .iter()
+                .map(|x| {
+                    get_type_from_type_annotation_kinds(top_level_defs, unifier, primitives, x)
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(unifier.add_ty(TypeEnum::TTuple { ty: tys }))
         }
     }
 }
