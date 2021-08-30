@@ -452,7 +452,7 @@ impl TopLevelComposer {
             }
         }
 
-        // second get all ancestors
+        // second, get all ancestors
         let mut ancestors_store: HashMap<DefinitionId, Vec<TypeAnnotation>> = Default::default();
         for (class_def, class_ast) in self.definition_ast_list.iter_mut() {
             let mut class_def = class_def.write();
@@ -513,7 +513,7 @@ impl TopLevelComposer {
         let mut type_var_to_concrete_def: HashMap<Type, TypeAnnotation> = HashMap::new();
 
         for (class_def, class_ast) in def_ast_list {
-            Self::analyze_single_class(
+            Self::analyze_single_class_methods_fields(
                 class_def.clone(),
                 &class_ast.as_ref().unwrap().node,
                 &temp_def_list,
@@ -531,10 +531,20 @@ impl TopLevelComposer {
             unifier.unify(ty, target_ty)?;
         }
 
+        // handle the inheritanced methods and fields
+        for (class_def, _) in def_ast_list {
+            Self::analyze_single_class_ancestors(
+                class_def.clone(),
+                &temp_def_list,
+                unifier,
+                primitives,
+            )?;
+        }
+
         Ok(())
     }
 
-    /// step 4, after class methods are done
+    /// step 4, after class methods are done, top level functions have nothing unknown
     fn analyze_top_level_function(&mut self) -> Result<(), String> {
         let def_list = &self.definition_ast_list;
         let keyword_list = &self.keyword_list;
@@ -682,13 +692,7 @@ impl TopLevelComposer {
         Ok(())
     }
 
-    /// step 5, field instantiation?
-    fn analyze_top_level_field_instantiation(&mut self) -> Result<(), String> {
-        // TODO:
-        unimplemented!()
-    }
-
-    fn analyze_single_class(
+    fn analyze_single_class_methods_fields(
         class_def: Arc<RwLock<TopLevelDef>>,
         class_ast: &ast::StmtKind<()>,
         temp_def_list: &[Arc<RwLock<TopLevelDef>>],
@@ -720,7 +724,7 @@ impl TopLevelComposer {
         {
             if let ast::StmtKind::ClassDef { name, bases, body, .. } = &class_ast {
                 (
-                    object_id,
+                    *object_id,
                     name.clone(),
                     bases,
                     body,
@@ -828,7 +832,7 @@ impl TopLevelComposer {
                             };
                             type_var_to_concrete_def.insert(
                                 dummy_func_arg.ty,
-                                make_self_type_annotation(temp_def_list, *class_id)?,
+                                make_self_type_annotation(temp_def_list, class_id)?,
                             );
                             result.push(dummy_func_arg);
                         }
@@ -874,7 +878,7 @@ impl TopLevelComposer {
                         let dummy_return_type = unifier.get_fresh_var().0;
                         type_var_to_concrete_def.insert(
                             dummy_return_type,
-                            make_self_type_annotation(temp_def_list, *class_id)?,
+                            make_self_type_annotation(temp_def_list, class_id)?,
                         );
                         dummy_return_type
                     }
@@ -939,6 +943,124 @@ impl TopLevelComposer {
                 }
             } else {
                 continue;
+            }
+        }
+        Ok(())
+    }
+
+    fn analyze_single_class_ancestors(
+        class_def: Arc<RwLock<TopLevelDef>>,
+        temp_def_list: &[Arc<RwLock<TopLevelDef>>],
+        unifier: &mut Unifier,
+        primitives: &PrimitiveStore,
+    ) -> Result<(), String> {
+        let mut class_def = class_def.write();
+        let (
+            _class_id,
+            class_ancestor_def,
+            _class_fields_def,
+            class_methods_def,
+            _class_type_vars_def,
+            _class_resolver,
+        ) = if let TopLevelDef::Class {
+            object_id,
+            ancestors,
+            fields,
+            methods,
+            resolver,
+            type_vars,
+            ..
+        } = class_def.deref_mut()
+        {
+            (*object_id, ancestors, fields, methods, type_vars, resolver)
+        } else {
+            unreachable!("here must be class def ast");
+        };
+
+        for (method_name, method_ty, ..) in class_methods_def {
+            if method_name == "__init__" {
+                continue;
+            }
+            // search the ancestors from the nearest to the deepest to find overload and check
+            'search_for_overload: for anc in class_ancestor_def.iter().skip(1) {
+                if let TypeAnnotation::CustomClassKind { id, params } = anc {
+                    let anc_class_def = temp_def_list.get(id.0).unwrap().read();
+                    let anc_class_def = anc_class_def.deref();
+
+                    if let TopLevelDef::Class { methods, type_vars, .. } = anc_class_def {
+                        for (anc_method_name, anc_method_ty, ..) in methods {
+                            // if same name, then is overload, needs check
+                            if anc_method_name == method_name {
+                                let param_ty = params
+                                    .iter()
+                                    .map(|x| {
+                                        get_type_from_type_annotation_kinds(
+                                            temp_def_list,
+                                            unifier,
+                                            primitives,
+                                            x,
+                                        )
+                                    })
+                                    .collect::<Result<Vec<_>, _>>()?;
+
+                                let subst = type_vars
+                                    .iter()
+                                    .map(|x| {
+                                        if let TypeEnum::TVar { id, .. } =
+                                            unifier.get_ty(*x).as_ref()
+                                        {
+                                            *id
+                                        } else {
+                                            unreachable!()
+                                        }
+                                    })
+                                    .zip(param_ty.into_iter())
+                                    .collect::<HashMap<u32, Type>>();
+
+                                let anc_method_ty = unifier.subst(*anc_method_ty, &subst).unwrap();
+
+                                if let (
+                                    TypeEnum::TFunc(child_method_sig),
+                                    TypeEnum::TFunc(parent_method_sig),
+                                ) = (
+                                    unifier.get_ty(*method_ty).as_ref(),
+                                    unifier.get_ty(anc_method_ty).as_ref(),
+                                ) {
+                                    let (
+                                        FunSignature { args: c_as, ret: c_r, .. },
+                                        FunSignature { args: p_as, ret: p_r, .. },
+                                    ) = (&*child_method_sig.borrow(), &*parent_method_sig.borrow());
+
+                                    // arguments
+                                    for (
+                                        FuncArg { name: c_name, ty: c_ty, .. },
+                                        FuncArg { name: p_name, ty: p_ty, .. },
+                                    ) in c_as.iter().zip(p_as)
+                                    {
+                                        if c_name == "self" {
+                                            continue;
+                                        }
+                                        if c_name != p_name
+                                            || !Self::check_overload_type_compatible(
+                                                unifier, *c_ty, *p_ty,
+                                            )
+                                        {
+                                            return Err("incompatible parameter".into());
+                                        }
+                                    }
+
+                                    // check the compatibility of c_r and p_r
+                                    if !Self::check_overload_type_compatible(unifier, *c_r, *p_r) {
+                                        return Err("incompatible parameter".into());
+                                    }
+                                } else {
+                                    unreachable!("must be function type")
+                                }
+                                break 'search_for_overload;
+                            }
+                        }
+                    }
+                }
             }
         }
         Ok(())

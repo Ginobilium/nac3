@@ -1,4 +1,5 @@
 use super::*;
+use crate::typecheck::typedef::TypeVarMeta;
 
 impl TopLevelComposer {
     pub fn make_primitives() -> (PrimitiveStore, Unifier) {
@@ -114,6 +115,51 @@ impl TopLevelComposer {
             Some(ancestors[0].clone())
         } else {
             None
+        }
+    }
+
+    pub fn check_overload_type_compatible(unifier: &mut Unifier, ty: Type, other: Type) -> bool {
+        let ty = unifier.get_ty(ty);
+        let ty = ty.as_ref();
+        let other = unifier.get_ty(other);
+        let other = other.as_ref();
+
+        match (ty, other) {
+            (TypeEnum::TList { ty }, TypeEnum::TList { ty: other })
+            | (TypeEnum::TVirtual { ty }, TypeEnum::TVirtual { ty: other }) => {
+                Self::check_overload_type_compatible(unifier, *ty, *other)
+            }
+
+            (TypeEnum::TTuple { ty }, TypeEnum::TTuple { ty: other }) => ty
+                .iter()
+                .zip(other)
+                .all(|(ty, other)| Self::check_overload_type_compatible(unifier, *ty, *other)),
+
+            (
+                TypeEnum::TObj { obj_id, params, .. },
+                TypeEnum::TObj { obj_id: other_obj_id, params: other_params, .. },
+            ) => {
+                let params = &*params.borrow();
+                let other_params = &*other_params.borrow();
+                obj_id.0 == other_obj_id.0
+                    && (params.iter().all(|(var_id, ty)| {
+                        if let Some(other_ty) = other_params.get(var_id) {
+                            Self::check_overload_type_compatible(unifier, *ty, *other_ty)
+                        } else {
+                            false
+                        }
+                    }))
+            }
+
+            (
+                TypeEnum::TVar { id, meta: TypeVarMeta::Generic, .. },
+                TypeEnum::TVar { id: other_id, meta: TypeVarMeta::Generic, .. },
+            ) => {
+                // NOTE: directly compare var_id?
+                *id == *other_id
+            }
+
+            _ => false,
         }
     }
 }

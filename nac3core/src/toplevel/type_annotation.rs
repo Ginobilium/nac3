@@ -156,7 +156,7 @@ pub fn parse_ast_to_type_annotation_kinds<T>(
                             result
                         } else {
                             return Err("application of type vars to generic class \
-                            not currently supported"
+                            is not currently supported"
                                 .into());
                         }
                     };
