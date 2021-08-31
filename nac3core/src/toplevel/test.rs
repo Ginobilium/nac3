@@ -56,6 +56,10 @@ impl SymbolResolver for Resolver {
                 
                 def fun(self):
                     self.b = self.b + 3.0
+        "},
+        indoc! {"
+            def foo(a: float):
+                a + 1.0
         "}
     ]
 )]
