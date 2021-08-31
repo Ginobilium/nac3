@@ -8,8 +8,12 @@ use crate::{
     },
 };
 use indoc::indoc;
+use parking_lot::RwLock;
 use rustpython_parser::{ast::fold::Fold, parser::parse_program};
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 use test_case::test_case;
 
 use super::TopLevelComposer;
@@ -18,6 +22,12 @@ struct Resolver {
     id_to_type: HashMap<String, Type>,
     id_to_def: HashMap<String, DefinitionId>,
     class_names: HashMap<String, Type>,
+}
+
+impl Resolver {
+    pub fn add_id_def(&mut self, id: String, def: DefinitionId) {
+        self.id_to_def.insert(id, def);
+    }
 }
 
 impl SymbolResolver for Resolver {
@@ -60,6 +70,12 @@ impl SymbolResolver for Resolver {
         indoc! {"
             def foo(a: float):
                 a + 1.0
+        "},
+        indoc! {"
+            class C(B):
+                def __init__(self):
+                    self.c: int = 4
+                    self.a: bool = True
         "}
     ]
 )]
