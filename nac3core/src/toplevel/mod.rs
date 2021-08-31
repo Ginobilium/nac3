@@ -22,6 +22,8 @@ pub struct DefinitionId(pub usize);
 mod type_annotation;
 use type_annotation::*;
 mod helper;
+#[cfg(test)]
+mod test;
 
 #[derive(Clone)]
 pub struct FunInstance {
@@ -88,6 +90,10 @@ pub struct TopLevelComposer {
     pub primitives_ty: PrimitiveStore,
     // keyword list to prevent same user-defined name
     pub keyword_list: HashSet<String>,
+    // to prevent duplicate definition
+    pub defined_class_name: HashSet<String>,
+    pub defined_class_method_name: HashSet<String>,
+    pub defined_function_name: HashSet<String>,
 }
 
 impl Default for TopLevelComposer {
@@ -130,13 +136,16 @@ impl TopLevelComposer {
                 "none".into(),
                 "None".into(),
             ]),
+            defined_class_method_name: Default::default(),
+            defined_class_name: Default::default(),
+            defined_function_name: Default::default(),
         }
     }
 
     pub fn make_top_level_context(self) -> TopLevelContext {
         TopLevelContext {
             definitions: RwLock::new(
-                self.definition_ast_list.into_iter().map(|(x, ..)| x).collect::<Vec<_>>(),
+                self.definition_ast_list.into_iter().map(|(x, ..)| x).collect_vec(),
             )
             .into(),
             // FIXME: all the big unifier or?
@@ -148,16 +157,16 @@ impl TopLevelComposer {
         self.definition_ast_list.iter().map(|(def, ..)| def.clone()).collect_vec()
     }
 
-    /// step 0, register, just remeber the names of top level classes/function
+    /// register, just remeber the names of top level classes/function
     /// and check duplicate class/method/function definition
     pub fn register_top_level(
         &mut self,
         ast: ast::Stmt<()>,
         resolver: Option<Arc<Box<dyn SymbolResolver + Send + Sync>>>,
     ) -> Result<(String, DefinitionId), String> {
-        let mut defined_class_name: HashSet<String> = HashSet::new();
-        let mut defined_class_method_name: HashSet<String> = HashSet::new();
-        let mut defined_function_name: HashSet<String> = HashSet::new();
+        let defined_class_name = &mut self.defined_class_name;
+        let defined_class_method_name = &mut self.defined_class_method_name;
+        let defined_function_name = &mut self.defined_function_name;
         match &ast.node {
             ast::StmtKind::ClassDef { name, body, .. } => {
                 if self.keyword_list.contains(name) {
@@ -292,6 +301,14 @@ impl TopLevelComposer {
 
             _ => Err("only registrations of top level classes/functions are supprted".into()),
         }
+    }
+
+    pub fn start_analysis(&mut self) -> Result<(), String> {
+        self.analyze_top_level_class_type_var()?;
+        self.analyze_top_level_class_bases()?;
+        self.analyze_top_level_class_fields_methods()?;
+        self.analyze_top_level_function()?;
+        Ok(())
     }
 
     /// step 1, analyze the type vars associated with top level class
