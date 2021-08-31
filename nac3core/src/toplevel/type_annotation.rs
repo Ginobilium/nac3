@@ -1,3 +1,5 @@
+use crate::typecheck::typedef::TypeVarMeta;
+
 use super::*;
 
 #[derive(Clone)]
@@ -322,4 +324,57 @@ pub fn get_type_var_contained_in_type_annotation(ann: &TypeAnnotation) -> Vec<Ty
         _ => {}
     }
     result
+}
+
+/// check the type compatibility for overload
+pub fn check_overload_type_annotation_compatible(
+    this: &TypeAnnotation,
+    other: &TypeAnnotation,
+    unifier: &mut Unifier,
+) -> bool {
+    match (this, other) {
+        (TypeAnnotation::PrimitiveKind(a), TypeAnnotation::PrimitiveKind(b)) => a == b,
+        (TypeAnnotation::TypeVarKind(a), TypeAnnotation::TypeVarKind(b)) => {
+            let a = unifier.get_ty(*a);
+            let a = a.deref();
+            let b = unifier.get_ty(*b);
+            let b = b.deref();
+            if let (
+                TypeEnum::TVar { id: a, meta: TypeVarMeta::Generic, .. },
+                TypeEnum::TVar { id: b, meta: TypeVarMeta::Generic, .. },
+            ) = (a, b)
+            {
+                a == b
+            } else {
+                unreachable!("must be type var")
+            }
+        }
+        (TypeAnnotation::VirtualKind(a), TypeAnnotation::VirtualKind(b))
+        | (TypeAnnotation::ListKind(a), TypeAnnotation::ListKind(b)) => {
+            check_overload_type_annotation_compatible(a.as_ref(), b.as_ref(), unifier)
+        }
+
+        (TypeAnnotation::TupleKind(a), TypeAnnotation::TupleKind(b)) => {
+            a.len() == b.len() && {
+                a.iter()
+                    .zip(b)
+                    .all(|(a, b)| check_overload_type_annotation_compatible(a, b, unifier))
+            }
+        }
+
+        (
+            TypeAnnotation::CustomClassKind { id: a, params: a_p },
+            TypeAnnotation::CustomClassKind { id: b, params: b_p },
+        ) => {
+            a.0 == b.0 && {
+                a_p.len() == b_p.len() && {
+                    a_p.iter()
+                        .zip(b_p)
+                        .all(|(a, b)| check_overload_type_annotation_compatible(a, b, unifier))
+                }
+            }
+        }
+
+        _ => false,
+    }
 }

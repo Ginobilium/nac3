@@ -1,5 +1,4 @@
 use super::*;
-use crate::typecheck::typedef::TypeVarMeta;
 
 impl TopLevelComposer {
     pub fn make_primitives() -> (PrimitiveStore, Unifier) {
@@ -93,14 +92,31 @@ impl TopLevelComposer {
     pub fn get_all_ancestors_helper(
         child: &TypeAnnotation,
         temp_def_list: &[Arc<RwLock<TopLevelDef>>],
-    ) -> Vec<TypeAnnotation> {
+    ) -> Result<Vec<TypeAnnotation>, String> {
         let mut result: Vec<TypeAnnotation> = Vec::new();
         let mut parent = Self::get_parent(child, temp_def_list);
         while let Some(p) = parent {
             parent = Self::get_parent(&p, temp_def_list);
-            result.push(p);
+            let p_id = if let TypeAnnotation::CustomClassKind { id, .. } = &p {
+                *id
+            } else {
+                unreachable!("must be class kind annotation")
+            };
+            // check cycle
+            let no_cycle = result.iter().all(|x| {
+                if let TypeAnnotation::CustomClassKind { id, .. } = x {
+                    id.0 != p_id.0
+                } else {
+                    unreachable!("must be class kind annotation")
+                }
+            });
+            if no_cycle {
+                result.push(p);
+            } else {
+                return Err("cyclic inheritance detected".into());
+            }
         }
-        result
+        Ok(result)
     }
 
     /// should only be called when finding all ancestors, so panic when wrong
@@ -126,51 +142,6 @@ impl TopLevelComposer {
         }
     }
 
-    pub fn check_overload_type_compatible(unifier: &mut Unifier, ty: Type, other: Type) -> bool {
-        let ty = unifier.get_ty(ty);
-        let ty = ty.as_ref();
-        let other = unifier.get_ty(other);
-        let other = other.as_ref();
-
-        match (ty, other) {
-            (TypeEnum::TList { ty }, TypeEnum::TList { ty: other })
-            | (TypeEnum::TVirtual { ty }, TypeEnum::TVirtual { ty: other }) => {
-                Self::check_overload_type_compatible(unifier, *ty, *other)
-            }
-
-            (TypeEnum::TTuple { ty }, TypeEnum::TTuple { ty: other }) => ty
-                .iter()
-                .zip(other)
-                .all(|(ty, other)| Self::check_overload_type_compatible(unifier, *ty, *other)),
-
-            (
-                TypeEnum::TObj { obj_id, params, .. },
-                TypeEnum::TObj { obj_id: other_obj_id, params: other_params, .. },
-            ) => {
-                let params = &*params.borrow();
-                let other_params = &*other_params.borrow();
-                obj_id.0 == other_obj_id.0
-                    && (params.iter().all(|(var_id, ty)| {
-                        if let Some(other_ty) = other_params.get(var_id) {
-                            Self::check_overload_type_compatible(unifier, *ty, *other_ty)
-                        } else {
-                            false
-                        }
-                    }))
-            }
-
-            (
-                TypeEnum::TVar { id, meta: TypeVarMeta::Generic, .. },
-                TypeEnum::TVar { id: other_id, meta: TypeVarMeta::Generic, .. },
-            ) => {
-                // NOTE: directly compare var_id?
-                *id == *other_id
-            }
-
-            _ => false,
-        }
-    }
-
     /// get the var_id of a given TVar type
     pub fn get_var_id(var_ty: Type, unifier: &mut Unifier) -> Result<u32, String> {
         if let TypeEnum::TVar { id, .. } = unifier.get_ty(var_ty).as_ref() {
@@ -178,5 +149,64 @@ impl TopLevelComposer {
         } else {
             Err("not type var".to_string())
         }
+    }
+
+    pub fn check_overload_function_type(
+        this: Type,
+        other: Type,
+        unifier: &mut Unifier,
+        type_var_to_concrete_def: &HashMap<Type, TypeAnnotation>,
+    ) -> bool {
+        let this = unifier.get_ty(this);
+        let this = this.as_ref();
+        let other = unifier.get_ty(other);
+        let other = other.as_ref();
+        if let (TypeEnum::TFunc(this_sig), TypeEnum::TFunc(other_sig)) = (this, other) {
+            let (this_sig, other_sig) = (&*this_sig.borrow(), &*other_sig.borrow());
+            let (
+                FunSignature { args: this_args, ret: this_ret, vars: _this_vars },
+                FunSignature { args: other_args, ret: other_ret, vars: _other_vars },
+            ) = (this_sig, other_sig);
+            // check args
+            let args_ok = this_args
+                .iter()
+                .map(|FuncArg { name, ty, .. }| (name, type_var_to_concrete_def.get(ty).unwrap()))
+                .zip(other_args.iter().map(|FuncArg { name, ty, .. }| {
+                    (name, type_var_to_concrete_def.get(ty).unwrap())
+                }))
+                .all(|(this, other)| {
+                    if this.0 == "self" && this.0 == other.0 {
+                        true
+                    } else {
+                        this.0 == other.0
+                            && check_overload_type_annotation_compatible(this.1, other.1, unifier)
+                    }
+                });
+
+            // check rets
+            let ret_ok = check_overload_type_annotation_compatible(
+                type_var_to_concrete_def.get(this_ret).unwrap(),
+                type_var_to_concrete_def.get(other_ret).unwrap(),
+                unifier,
+            );
+
+            // return
+            args_ok && ret_ok
+        } else {
+            unreachable!("this function must be called with function type")
+        }
+    }
+
+    pub fn check_overload_field_type(
+        this: Type,
+        other: Type,
+        unifier: &mut Unifier,
+        type_var_to_concrete_def: &HashMap<Type, TypeAnnotation>,
+    ) -> bool {
+        check_overload_type_annotation_compatible(
+            type_var_to_concrete_def.get(&this).unwrap(),
+            type_var_to_concrete_def.get(&other).unwrap(),
+            unifier,
+        )
     }
 }
