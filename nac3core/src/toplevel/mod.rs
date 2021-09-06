@@ -1,10 +1,4 @@
-use std::{
-    borrow::BorrowMut,
-    collections::{HashMap, HashSet},
-    iter::FromIterator,
-    ops::{Deref, DerefMut},
-    sync::Arc,
-};
+use std::{borrow::{Borrow, BorrowMut}, collections::{HashMap, HashSet}, iter::FromIterator, ops::{Deref, DerefMut}, sync::Arc};
 
 use super::typecheck::type_inferencer::PrimitiveStore;
 use super::typecheck::typedef::{FunSignature, FuncArg, SharedUnifier, Type, TypeEnum, Unifier};
@@ -13,7 +7,7 @@ use crate::{
     typecheck::{type_inferencer::CodeLocation, typedef::CallId},
 };
 use itertools::{izip, Itertools};
-use parking_lot::RwLock;
+use parking_lot::{Mutex, RwLock};
 use rustpython_parser::ast::{self, Stmt};
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Hash)]
@@ -48,7 +42,7 @@ pub enum TopLevelDef {
         // ancestor classes, including itself.
         ancestors: Vec<TypeAnnotation>,
         // symbol resolver of the module defined the class, none if it is built-in type
-        resolver: Option<Arc<Box<dyn SymbolResolver + Send + Sync>>>,
+        resolver: Option<Arc<Mutex<Box<dyn SymbolResolver + Send + Sync>>>>,
     },
     Function {
         // prefix for symbol, should be unique globally, and not ending with numbers
@@ -69,7 +63,7 @@ pub enum TopLevelDef {
         /// rigid type variables that would be substituted when the function is instantiated.
         instance_to_stmt: HashMap<String, FunInstance>,
         // symbol resolver of the module defined the class
-        resolver: Option<Arc<Box<dyn SymbolResolver + Send + Sync>>>,
+        resolver: Option<Arc<Mutex<Box<dyn SymbolResolver + Send + Sync>>>>,
     },
     Initializer {
         class_id: DefinitionId,
@@ -108,18 +102,8 @@ impl TopLevelComposer {
     pub fn new() -> Self {
         let primitives = Self::make_primitives();
 
-        let top_level_def_list = vec![
-            Arc::new(RwLock::new(Self::make_top_level_class_def(0, None, "int32"))),
-            Arc::new(RwLock::new(Self::make_top_level_class_def(1, None, "int64"))),
-            Arc::new(RwLock::new(Self::make_top_level_class_def(2, None, "float"))),
-            Arc::new(RwLock::new(Self::make_top_level_class_def(3, None, "bool"))),
-            Arc::new(RwLock::new(Self::make_top_level_class_def(4, None, "none"))),
-        ];
-
-        let ast_list: Vec<Option<ast::Stmt<()>>> = vec![None, None, None, None, None];
-
         TopLevelComposer {
-            definition_ast_list: izip!(top_level_def_list, ast_list).collect_vec(),
+            definition_ast_list: Default::default(),
             primitives_ty: primitives.0,
             unifier: primitives.1,
             // class_method_to_def_id: Default::default(),
@@ -162,7 +146,7 @@ impl TopLevelComposer {
     pub fn register_top_level(
         &mut self,
         ast: ast::Stmt<()>,
-        resolver: Option<Arc<Box<dyn SymbolResolver + Send + Sync>>>,
+        resolver: Option<Arc<Mutex<Box<dyn SymbolResolver + Send + Sync>>>>,
     ) -> Result<(String, DefinitionId), String> {
         let defined_class_name = &mut self.defined_class_name;
         let defined_class_method_name = &mut self.defined_class_method_name;
@@ -373,7 +357,7 @@ impl TopLevelComposer {
                         let type_vars = type_var_list
                             .into_iter()
                             .map(|e| {
-                                class_resolver.parse_type_annotation(
+                                class_resolver.lock().parse_type_annotation(
                                     &temp_def_list,
                                     unifier,
                                     primitives_store,
@@ -530,15 +514,17 @@ impl TopLevelComposer {
         let mut type_var_to_concrete_def: HashMap<Type, TypeAnnotation> = HashMap::new();
 
         for (class_def, class_ast) in def_ast_list {
-            Self::analyze_single_class_methods_fields(
-                class_def.clone(),
-                &class_ast.as_ref().unwrap().node,
-                &temp_def_list,
-                unifier,
-                primitives,
-                &mut type_var_to_concrete_def,
-                &self.keyword_list,
-            )?
+            if matches!(&*class_def.read(), TopLevelDef::Class { .. }) {
+                Self::analyze_single_class_methods_fields(
+                    class_def.clone(),
+                    &class_ast.as_ref().unwrap().node,
+                    &temp_def_list,
+                    unifier,
+                    primitives,
+                    &mut type_var_to_concrete_def,
+                    &self.keyword_list,
+                )?
+            }
         }
 
         // handle the inheritanced methods and fields
@@ -615,7 +601,7 @@ impl TopLevelComposer {
                         let mut defined_paramter_name: HashSet<String> = HashSet::new();
                         let have_unique_fuction_parameter_name = args.args.iter().all(|x| {
                             defined_paramter_name.insert(x.node.arg.clone())
-                                && keyword_list.contains(&x.node.arg)
+                                && !keyword_list.contains(&x.node.arg)
                                 && "self" != x.node.arg
                         });
                         if !have_unique_fuction_parameter_name {
@@ -643,7 +629,7 @@ impl TopLevelComposer {
                                     primitives_store,
                                     annotation,
                                 )?;
-
+                                
                                 let type_vars_within =
                                     get_type_var_contained_in_type_annotation(&type_annotation)
                                         .into_iter()

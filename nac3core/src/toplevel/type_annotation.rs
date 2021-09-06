@@ -19,7 +19,7 @@ pub enum TypeAnnotation {
 }
 
 pub fn parse_ast_to_type_annotation_kinds<T>(
-    resolver: &Box<dyn SymbolResolver + Send + Sync>,
+    resolver: &Mutex<Box<dyn SymbolResolver + Send + Sync>>,
     top_level_defs: &[Arc<RwLock<TopLevelDef>>],
     unifier: &mut Unifier,
     primitives: &PrimitiveStore,
@@ -33,7 +33,7 @@ pub fn parse_ast_to_type_annotation_kinds<T>(
             "bool" => Ok(TypeAnnotation::PrimitiveKind(primitives.bool)),
             "None" => Ok(TypeAnnotation::PrimitiveKind(primitives.none)),
             x => {
-                if let Some(obj_id) = resolver.get_identifier_def(x) {
+                if let Some(obj_id) = resolver.lock().get_identifier_def(x) {
                     let def = top_level_defs[obj_id.0].read();
                     if let TopLevelDef::Class { type_vars, .. } = &*def {
                         // also check param number here
@@ -47,7 +47,7 @@ pub fn parse_ast_to_type_annotation_kinds<T>(
                     } else {
                         Err("function cannot be used as a type".into())
                     }
-                } else if let Some(ty) = resolver.get_symbol_type(unifier, primitives, id) {
+                } else if let Some(ty) = resolver.lock().get_symbol_type(unifier, primitives, id) {
                     if let TypeEnum::TVar { .. } = unifier.get_ty(ty).as_ref() {
                         Ok(TypeAnnotation::TypeVarKind(ty))
                     } else {
@@ -120,6 +120,7 @@ pub fn parse_ast_to_type_annotation_kinds<T>(
                     return Err("keywords cannot be class name".into());
                 }
                 let obj_id = resolver
+                    .lock()
                     .get_identifier_def(id)
                     .ok_or_else(|| "unknown class name".to_string())?;
                 let def = top_level_defs[obj_id.0].read();

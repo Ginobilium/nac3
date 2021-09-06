@@ -7,6 +7,7 @@ use super::typedef::{Call, FunSignature, FuncArg, Type, TypeEnum, Unifier};
 use super::{magic_methods::*, typedef::CallId};
 use crate::{symbol_resolver::SymbolResolver, toplevel::TopLevelContext};
 use itertools::izip;
+use parking_lot::Mutex;
 use rustpython_parser::ast::{
     self,
     fold::{self, Fold},
@@ -38,7 +39,7 @@ pub struct PrimitiveStore {
 }
 
 pub struct FunctionData {
-    pub resolver: Arc<Box<dyn SymbolResolver + Send + Sync>>,
+    pub resolver: Arc<Mutex<Box<dyn SymbolResolver + Send + Sync>>>,
     pub return_type: Option<Type>,
     pub bound_variables: Vec<Type>,
 }
@@ -85,7 +86,7 @@ impl<'a> fold::Fold<()> for Inferencer<'a> {
                     return Err(format!("declaration without definition is not yet supported, at {}", node.location))
                 };
                 let top_level_defs = self.top_level.definitions.read();
-                let annotation_type = self.function_data.resolver.parse_type_annotation(
+                let annotation_type = self.function_data.resolver.lock().parse_type_annotation(
                     top_level_defs.as_slice(),
                     self.unifier,
                     &self.primitives,
@@ -160,7 +161,7 @@ impl<'a> fold::Fold<()> for Inferencer<'a> {
             ast::ExprKind::Constant { value, .. } => Some(self.infer_constant(value)?),
             ast::ExprKind::Name { id, .. } => {
                 if !self.defined_identifiers.contains(id) {
-                    if self.function_data.resolver.get_identifier_def(id.as_str()).is_some() {
+                    if self.function_data.resolver.lock().get_identifier_def(id.as_str()).is_some() {
                         self.defined_identifiers.insert(id.clone());
                     } else {
                         return Err(format!(
@@ -400,7 +401,7 @@ impl<'a> Inferencer<'a> {
                     let arg0 = self.fold_expr(args.remove(0))?;
                     let ty = if let Some(arg) = args.pop() {
                         let top_level_defs = self.top_level.definitions.read();
-                        self.function_data.resolver.parse_type_annotation(
+                        self.function_data.resolver.lock().parse_type_annotation(
                             top_level_defs.as_slice(),
                             self.unifier,
                             self.primitives,
@@ -478,13 +479,14 @@ impl<'a> Inferencer<'a> {
         if let Some(ty) = self.variable_mapping.get(id) {
             Ok(*ty)
         } else {
-            Ok(self
-                .function_data
-                .resolver
-                .get_symbol_type(self.unifier, self.primitives, id)
+            let resolver = self.function_data.resolver.lock();
+            let variable_mapping = &mut self.variable_mapping;
+            let unifier = &mut self.unifier;
+            Ok(resolver
+                .get_symbol_type(unifier, self.primitives, id)
                 .unwrap_or_else(|| {
-                    let ty = self.unifier.get_fresh_var().0;
-                    self.variable_mapping.insert(id.to_string(), ty);
+                    let ty = unifier.get_fresh_var().0;
+                    variable_mapping.insert(id.to_string(), ty);
                     ty
                 }))
         }

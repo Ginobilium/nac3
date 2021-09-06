@@ -57,7 +57,7 @@ impl<'a> Inferencer<'a> {
         match &expr.node {
             ExprKind::Name { id, .. } => {
                 if !defined_identifiers.contains(id) {
-                    if self.function_data.resolver.get_identifier_def(id).is_some() {
+                    if self.function_data.resolver.lock().get_identifier_def(id).is_some() {
                         defined_identifiers.insert(id.clone());
                     } else {
                         return Err(format!(

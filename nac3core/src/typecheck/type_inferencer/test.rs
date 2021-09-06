@@ -33,6 +33,10 @@ impl SymbolResolver for Resolver {
     fn get_identifier_def(&self, id: &str) -> Option<DefinitionId> {
         self.id_to_def.get(id).cloned()
     }
+
+    fn add_id_def(&mut self, _: String, _: DefinitionId) {
+        unimplemented!()
+    }
 }
 
 struct TestEnvironment {
@@ -92,11 +96,11 @@ impl TestEnvironment {
         let mut identifier_mapping = HashMap::new();
         identifier_mapping.insert("None".into(), none);
 
-        let resolver = Arc::new(Box::new(Resolver {
+        let resolver = Arc::new(Mutex::new(Box::new(Resolver {
             id_to_type: identifier_mapping.clone(),
             id_to_def: Default::default(),
             class_names: Default::default(),
-        }) as Box<dyn SymbolResolver + Send + Sync>);
+        }) as Box<dyn SymbolResolver + Send + Sync>));
 
         TestEnvironment {
             top_level: TopLevelContext {
@@ -275,7 +279,7 @@ impl TestEnvironment {
             unifiers: Default::default(),
         };
 
-        let resolver = Arc::new(Box::new(Resolver {
+        let resolver = Arc::new(Mutex::new(Box::new(Resolver {
             id_to_type: identifier_mapping.clone(),
             id_to_def: [
                 ("Foo".into(), DefinitionId(5)),
@@ -286,7 +290,7 @@ impl TestEnvironment {
             .cloned()
             .collect(),
             class_names,
-        }) as Box<dyn SymbolResolver + Send + Sync>);
+        }) as Box<dyn SymbolResolver + Send + Sync>));
 
         TestEnvironment {
             unifier,

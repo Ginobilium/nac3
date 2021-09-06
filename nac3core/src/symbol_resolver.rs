@@ -34,6 +34,7 @@ pub trait SymbolResolver {
     fn get_identifier_def(&self, str: &str) -> Option<DefinitionId>;
     fn get_symbol_value(&self, str: &str) -> Option<SymbolValue>;
     fn get_symbol_location(&self, str: &str) -> Option<Location>;
+    fn add_id_def(&mut self, id: String, def_id: DefinitionId);
     // handle function call etc.
 }
 

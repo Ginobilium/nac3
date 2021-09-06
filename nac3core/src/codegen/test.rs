@@ -9,7 +9,7 @@ use crate::{
     },
 };
 use indoc::indoc;
-use parking_lot::RwLock;
+use parking_lot::{Mutex, RwLock};
 use rustpython_parser::{ast::fold::Fold, parser::parse_program};
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
@@ -43,6 +43,10 @@ impl SymbolResolver for Resolver {
     fn get_identifier_def(&self, id: &str) -> Option<DefinitionId> {
         self.id_to_def.read().get(id).cloned()
     }
+
+    fn add_id_def(&mut self, _: String, _: DefinitionId) {
+        unimplemented!()
+    }
 }
 
 #[test]
@@ -60,11 +64,17 @@ fn test_primitives() {
     let top_level = Arc::new(composer.make_top_level_context());
     unifier.top_level = Some(top_level.clone());
 
-    let resolver = Arc::new(Box::new(Resolver {
+    // let resolver = Arc::new(Mutex::new(Resolver {
+    //     id_to_type: HashMap::new(),
+    //     id_to_def: RwLock::new(HashMap::new()),
+    //     class_names: Default::default(),
+    // }) as Mutex<dyn SymbolResolver + Send + Sync>);
+
+    let resolver = Arc::new(Mutex::new(Box::new(Resolver {
         id_to_type: HashMap::new(),
         id_to_def: RwLock::new(HashMap::new()),
         class_names: Default::default(),
-    }) as Box<dyn SymbolResolver + Send + Sync>);
+    }) as Box<dyn SymbolResolver + Send + Sync>));
 
     let threads = ["test"];
     let signature = FunSignature {
@@ -226,7 +236,7 @@ fn test_simple_call() {
         class_names: Default::default(),
     });
     resolver.add_id_def("foo".to_string(), DefinitionId(foo_id));
-    let resolver = Arc::new(resolver as Box<dyn SymbolResolver + Send + Sync>);
+    let resolver = Arc::new(Mutex::new(resolver as Box<dyn SymbolResolver + Send + Sync>));
 
     if let TopLevelDef::Function { resolver: r, .. } =
         &mut *top_level.definitions.read()[foo_id].write()

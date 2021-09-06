@@ -38,7 +38,7 @@ pub struct CodeGenContext<'ctx, 'a> {
     pub module: Module<'ctx>,
     pub top_level: &'a TopLevelContext,
     pub unifier: Unifier,
-    pub resolver: Arc<Box<dyn SymbolResolver + Send + Sync>>,
+    pub resolver: Arc<Mutex<Box<dyn SymbolResolver + Send + Sync>>>,
     pub var_assignment: HashMap<String, PointerValue<'ctx>>,
     pub type_cache: HashMap<Type, BasicTypeEnum<'ctx>>,
     pub primitives: PrimitiveStore,
@@ -190,7 +190,7 @@ pub struct CodeGenTask {
     pub body: Vec<Stmt<Option<Type>>>,
     pub calls: HashMap<CodeLocation, CallId>,
     pub unifier: (SharedUnifier, PrimitiveStore),
-    pub resolver: Arc<Box<dyn SymbolResolver + Send + Sync>>,
+    pub resolver: Arc<Mutex<Box<dyn SymbolResolver + Send + Sync>>>,
 }
 
 fn get_llvm_type<'ctx>(
