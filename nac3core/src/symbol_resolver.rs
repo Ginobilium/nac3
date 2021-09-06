@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::fmt::Debug;
 use std::{cell::RefCell, sync::Arc};
 
 use crate::toplevel::{DefinitionId, TopLevelDef};
@@ -217,5 +218,11 @@ impl dyn SymbolResolver + Send + Sync {
         expr: &Expr<T>,
     ) -> Result<Type, String> {
         parse_type_annotation(self, top_level_defs, unifier, primitives, expr)
+    }
+}
+
+impl Debug for dyn SymbolResolver + Send + Sync {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "")
     }
 }

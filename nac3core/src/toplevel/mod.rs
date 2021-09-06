@@ -1,4 +1,4 @@
-use std::{borrow::{Borrow, BorrowMut}, collections::{HashMap, HashSet}, iter::FromIterator, ops::{Deref, DerefMut}, sync::Arc};
+use std::{borrow::BorrowMut, collections::{HashMap, HashSet}, iter::FromIterator, ops::{Deref, DerefMut}, sync::Arc};
 
 use super::typecheck::type_inferencer::PrimitiveStore;
 use super::typecheck::typedef::{FunSignature, FuncArg, SharedUnifier, Type, TypeEnum, Unifier};
@@ -6,11 +6,11 @@ use crate::{
     symbol_resolver::SymbolResolver,
     typecheck::{type_inferencer::CodeLocation, typedef::CallId},
 };
-use itertools::{izip, Itertools};
+use itertools::Itertools;
 use parking_lot::{Mutex, RwLock};
 use rustpython_parser::ast::{self, Stmt};
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Hash)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Hash, Debug)]
 pub struct DefinitionId(pub usize);
 
 mod type_annotation;
@@ -19,7 +19,7 @@ mod helper;
 #[cfg(test)]
 mod test;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct FunInstance {
     pub body: Vec<Stmt<Option<Type>>>,
     pub calls: HashMap<CodeLocation, CallId>,
@@ -27,6 +27,7 @@ pub struct FunInstance {
     pub unifier_id: usize,
 }
 
+#[derive(Debug)]
 pub enum TopLevelDef {
     Class {
         // name for error messages and symbols

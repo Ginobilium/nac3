@@ -2,7 +2,7 @@ use crate::typecheck::typedef::TypeVarMeta;
 
 use super::*;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum TypeAnnotation {
     PrimitiveKind(Type),
     // we use type vars kind at params to represent self type
@@ -33,7 +33,12 @@ pub fn parse_ast_to_type_annotation_kinds<T>(
             "bool" => Ok(TypeAnnotation::PrimitiveKind(primitives.bool)),
             "None" => Ok(TypeAnnotation::PrimitiveKind(primitives.none)),
             x => {
-                if let Some(obj_id) = resolver.lock().get_identifier_def(x) {
+                if let Some(obj_id) = {
+                    // write this way because the lock in the if/let construct lives
+                    // for the whole if let construct
+                    let id = resolver.lock().get_identifier_def(x);
+                    id
+                } {
                     let def = top_level_defs[obj_id.0].read();
                     if let TopLevelDef::Class { type_vars, .. } = &*def {
                         // also check param number here
@@ -47,7 +52,10 @@ pub fn parse_ast_to_type_annotation_kinds<T>(
                     } else {
                         Err("function cannot be used as a type".into())
                     }
-                } else if let Some(ty) = resolver.lock().get_symbol_type(unifier, primitives, id) {
+                } else if let Some(ty) = {
+                    let ty = resolver.lock().get_symbol_type(unifier, primitives, id);
+                    ty
+                } {
                     if let TypeEnum::TVar { .. } = unifier.get_ty(ty).as_ref() {
                         Ok(TypeAnnotation::TypeVarKind(ty))
                     } else {

@@ -16,7 +16,7 @@ mod test;
 /// Handle for a type, implementated as a key in the unification table.
 pub type Type = UnificationKey;
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct CallId(usize);
 
 pub type Mapping<K, V = Type> = HashMap<K, V>;
