@@ -1,4 +1,4 @@
-use std::{borrow::BorrowMut, collections::{HashMap, HashSet}, iter::FromIterator, ops::{Deref, DerefMut}, sync::Arc};
+use std::{borrow::BorrowMut, collections::{HashMap, HashSet}, fmt::Debug, iter::FromIterator, ops::{Deref, DerefMut}, sync::Arc};
 
 use super::typecheck::type_inferencer::PrimitiveStore;
 use super::typecheck::typedef::{FunSignature, FuncArg, SharedUnifier, Type, TypeEnum, Unifier};
@@ -6,7 +6,7 @@ use crate::{
     symbol_resolver::SymbolResolver,
     typecheck::{type_inferencer::CodeLocation, typedef::CallId},
 };
-use itertools::Itertools;
+use itertools::{Itertools, izip};
 use parking_lot::{Mutex, RwLock};
 use rustpython_parser::ast::{self, Stmt};
 
@@ -104,11 +104,19 @@ impl TopLevelComposer {
         let primitives = Self::make_primitives();
 
         TopLevelComposer {
-            definition_ast_list: Default::default(),
+            definition_ast_list: {
+                let top_level_def_list = vec![
+                    Arc::new(RwLock::new(Self::make_top_level_class_def(0, None, "int32"))),
+                    Arc::new(RwLock::new(Self::make_top_level_class_def(1, None, "int64"))),
+                    Arc::new(RwLock::new(Self::make_top_level_class_def(2, None, "float"))),
+                    Arc::new(RwLock::new(Self::make_top_level_class_def(3, None, "bool"))),
+                    Arc::new(RwLock::new(Self::make_top_level_class_def(4, None, "none"))),
+                ];
+                let ast_list: Vec<Option<ast::Stmt<()>>> = vec![None, None, None, None, None];
+                izip!(top_level_def_list, ast_list).collect_vec()
+            },
             primitives_ty: primitives.0,
             unifier: primitives.1,
-            // class_method_to_def_id: Default::default(),
-            // to_be_analyzed_class: Default::default(),
             keyword_list: HashSet::from_iter(vec![
                 "Generic".into(),
                 "virtual".into(),
@@ -303,7 +311,8 @@ impl TopLevelComposer {
         let unifier = self.unifier.borrow_mut();
         let primitives_store = &self.primitives_ty;
 
-        for (class_def, class_ast) in def_list {
+        // skip 5 to skip analyzing the primitives
+        for (class_def, class_ast) in def_list.iter().skip(5) {
             // only deal with class def here
             let mut class_def = class_def.write();
             let (class_bases_ast, class_def_type_vars, class_resolver) = {
@@ -403,7 +412,8 @@ impl TopLevelComposer {
         let unifier = self.unifier.borrow_mut();
 
         // first, only push direct parent into the list
-        for (class_def, class_ast) in self.definition_ast_list.iter_mut() {
+        // skip 5 to skip analyzing the primitives
+        for (class_def, class_ast) in self.definition_ast_list.iter_mut().skip(5) {
             let mut class_def = class_def.write();
             let (class_bases, class_ancestors, class_resolver) = {
                 if let TopLevelDef::Class { ancestors, resolver, .. } = class_def.deref_mut() {
@@ -463,10 +473,11 @@ impl TopLevelComposer {
 
         // second, get all ancestors
         let mut ancestors_store: HashMap<DefinitionId, Vec<TypeAnnotation>> = Default::default();
-        for (class_def, _) in self.definition_ast_list.iter_mut() {
-            let mut class_def = class_def.write();
+        // skip 5 to skip analyzing the primitives
+        for (class_def, _) in self.definition_ast_list.iter().skip(5) {
+            let class_def = class_def.read();
             let (class_ancestors, class_id) = {
-                if let TopLevelDef::Class { ancestors, object_id, .. } = class_def.deref_mut() {
+                if let TopLevelDef::Class { ancestors, object_id, .. } = class_def.deref() {
                     (ancestors, *object_id)
                 } else {
                     continue;
@@ -484,7 +495,8 @@ impl TopLevelComposer {
         }
 
         // insert the ancestors to the def list
-        for (class_def, _) in self.definition_ast_list.iter_mut() {
+        // skip 5 to skip analyzing the primitives
+        for (class_def, _) in self.definition_ast_list.iter_mut().skip(5) {
             let mut class_def = class_def.write();
             let (class_ancestors, class_id, class_type_vars) = {
                 if let TopLevelDef::Class { ancestors, object_id, type_vars, .. } = class_def.deref_mut() {
@@ -514,7 +526,8 @@ impl TopLevelComposer {
 
         let mut type_var_to_concrete_def: HashMap<Type, TypeAnnotation> = HashMap::new();
 
-        for (class_def, class_ast) in def_ast_list {
+        // skip 5 to skip analyzing the primitives
+        for (class_def, class_ast) in def_ast_list.iter().skip(5) {
             if matches!(&*class_def.read(), TopLevelDef::Class { .. }) {
                 Self::analyze_single_class_methods_fields(
                     class_def.clone(),
@@ -533,7 +546,7 @@ impl TopLevelComposer {
         loop {
             let mut finished = true;
 
-            for (class_def, _) in def_ast_list {
+            for (class_def, _) in def_ast_list.iter().skip(5) {
                 let mut class_def = class_def.write();
                 if let TopLevelDef::Class { ancestors, .. } = class_def.deref() {
                     // if the length of the ancestor is equal to the current depth
@@ -580,7 +593,8 @@ impl TopLevelComposer {
         let unifier = self.unifier.borrow_mut();
         let primitives_store = &self.primitives_ty;
 
-        for (function_def, function_ast) in def_list {
+        // skip 5 to skip analyzing the primitives
+        for (function_def, function_ast) in def_list.iter().skip(5) {
             let function_def = function_def.read();
             let function_def = function_def.deref();
             let function_ast = if let Some(function_ast) = function_ast {
@@ -801,6 +815,9 @@ impl TopLevelComposer {
                         return Err("class method must have unique parameter names \
                         and names thould not be the same as the keywords"
                             .into());
+                    }
+                    if name == "__init__" && !defined_paramter_name.contains("self") {
+                        return Err("class __init__ function must contain the `self` parameter".into());
                     }
 
                     let mut result = Vec::new();

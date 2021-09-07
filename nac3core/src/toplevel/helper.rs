@@ -1,5 +1,55 @@
 use super::*;
 
+impl TopLevelDef {
+    pub fn to_string<F, G>(&self, unifier: &mut Unifier, obj_to_name: &mut F, var_to_name: &mut G) -> String
+    where
+        F: FnMut(usize) -> String,
+        G: FnMut(u32) -> String,
+    {
+        match self {
+            TopLevelDef::Class {
+                name,
+                ancestors,
+                fields,
+                methods,
+                object_id,
+                type_vars,
+                ..
+            } =>{
+                let fields_str = fields
+                    .iter()
+                    .map(|(n, ty)| (n.to_string(), unifier.stringify(*ty, obj_to_name, var_to_name)))
+                    .collect_vec();
+                
+                let methods_str = methods
+                    .iter()
+                    .map(|(n, ty, id)|
+                        (n.to_string(), unifier.stringify(*ty, obj_to_name, var_to_name), *id)
+                    )
+                    .collect_vec();
+                
+                format!(
+                    "Class {{\nname: {:?},\ndef_id: {:?},\nancestors: {:?},\nfields: {:?},\nmethods: {:?},\ntype_vars: {:?}\n}}",
+                    name,
+                    object_id,
+                    ancestors,
+                    fields_str,
+                    methods_str,
+                    type_vars,
+                )
+            }
+            TopLevelDef::Function { name, signature, var_id, .. } =>
+                format!(
+                    "Function {{\nname: {:?},\nsig: {:?},\nvar_id: {:?}\n}}",
+                    name,
+                    unifier.stringify(*signature, obj_to_name, var_to_name),
+                    var_id
+                ),
+            TopLevelDef::Initializer { class_id } => format!("Initializer {{ {:?} }}", class_id)
+        }
+    }
+}
+
 impl TopLevelComposer {
     pub fn make_primitives() -> (PrimitiveStore, Unifier) {
         let mut unifier = Unifier::new();
