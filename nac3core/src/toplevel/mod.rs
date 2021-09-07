@@ -486,9 +486,9 @@ impl TopLevelComposer {
         // insert the ancestors to the def list
         for (class_def, _) in self.definition_ast_list.iter_mut() {
             let mut class_def = class_def.write();
-            let (class_ancestors, class_id) = {
-                if let TopLevelDef::Class { ancestors, object_id, .. } = class_def.deref_mut() {
-                    (ancestors, *object_id)
+            let (class_ancestors, class_id, class_type_vars) = {
+                if let TopLevelDef::Class { ancestors, object_id, type_vars, .. } = class_def.deref_mut() {
+                    (ancestors, *object_id, type_vars)
                 } else {
                     continue;
                 }
@@ -499,7 +499,7 @@ impl TopLevelComposer {
 
             // insert self type annotation to the front of the vector to maintain the order
             class_ancestors
-                .insert(0, make_self_type_annotation(temp_def_list.as_slice(), class_id)?);
+                .insert(0, make_self_type_annotation(class_type_vars.as_slice(), class_id));
         }
 
         Ok(())
@@ -862,7 +862,7 @@ impl TopLevelComposer {
                             };
                             type_var_to_concrete_def.insert(
                                 dummy_func_arg.ty,
-                                make_self_type_annotation(temp_def_list, class_id)?,
+                                make_self_type_annotation(class_type_vars_def.as_slice(), class_id),
                             );
                             result.push(dummy_func_arg);
                         }
@@ -916,7 +916,7 @@ impl TopLevelComposer {
                         let dummy_return_type = unifier.get_fresh_var().0;
                         type_var_to_concrete_def.insert(
                             dummy_return_type,
-                            make_self_type_annotation(temp_def_list, class_id)?,
+                            make_self_type_annotation(class_type_vars_def.as_slice(), class_id),
                         );
                         dummy_return_type
                     }
@@ -1035,8 +1035,9 @@ impl TopLevelComposer {
                     {
                         if class_method_name == anc_method_name {
                             // ignore and handle self
+                            // if is __init__ method, no need to check return type
                             let ok = class_method_name == "__init__"
-                                && Self::check_overload_function_type(
+                                || Self::check_overload_function_type(
                                     *class_method_ty,
                                     *anc_method_ty,
                                     unifier,

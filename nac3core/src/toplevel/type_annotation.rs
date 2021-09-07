@@ -296,22 +296,10 @@ pub fn get_type_from_type_annotation_kinds(
 /// but equivalent to seeing `A[T, V]` inside the class def body ast, where although we
 /// create copies of `T` and `V`, we will find them out as occured type vars in the analyze_class()
 /// and unify them with the class generic `T`, `V`
-pub fn make_self_type_annotation(
-    top_level_defs: &[Arc<RwLock<TopLevelDef>>],
-    def_id: DefinitionId,
-) -> Result<TypeAnnotation, String> {
-    let obj_def =
-        top_level_defs.get(def_id.0).ok_or_else(|| "invalid definition id".to_string())?;
-    let obj_def = obj_def.read();
-    let obj_def = obj_def.deref();
-
-    if let TopLevelDef::Class { type_vars, .. } = obj_def {
-        Ok(TypeAnnotation::CustomClassKind {
-            id: def_id,
-            params: type_vars.iter().map(|ty| TypeAnnotation::TypeVarKind(*ty)).collect_vec(),
-        })
-    } else {
-        unreachable!("must be top level class def here")
+pub fn make_self_type_annotation(type_vars: &[Type], object_id: DefinitionId) -> TypeAnnotation {
+    TypeAnnotation::CustomClassKind {
+        id: object_id,
+        params: type_vars.iter().map(|ty| TypeAnnotation::TypeVarKind(*ty)).collect_vec(),
     }
 }
 

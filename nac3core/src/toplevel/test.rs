@@ -141,3 +141,55 @@ fn test_simple_function_analyze(source: Vec<&str>, tys: Vec<&str>, names: Vec<&s
         }
     }
 }
+
+#[test_case(
+    vec![
+        indoc! {"
+            class A:
+                def __init__():
+                    pass
+        "},
+        indoc! {"
+            class B(C):
+                def __init__():
+                    pass
+        "},
+        indoc! {"
+            class C(A):
+                def __init__():
+                    pass
+        "},
+        indoc! {"
+            def foo(a: A):
+                pass
+        "},
+    ]
+)]
+fn test_simple_class_analyze(source: Vec<&str>) {
+    let mut composer = TopLevelComposer::new();
+    
+    let resolver = Arc::new(Mutex::new(Box::new(Resolver {
+        id_to_def: Default::default(),
+        id_to_type: Default::default(),
+        class_names: Default::default(),
+    }) as Box<dyn SymbolResolver + Send + Sync>));
+
+    for s in source {
+        let ast = parse_program(s).unwrap();
+        let ast = ast[0].clone();
+
+        let (id, def_id) = composer.register_top_level(ast, Some(resolver.clone())).unwrap();
+        resolver.lock().add_id_def(id, def_id);
+    }
+
+    composer.start_analysis().unwrap();
+    
+    // for (i, (def, _)) in composer.definition_ast_list.into_iter().enumerate() {
+    //     let def = &*def.read();
+    //     if let TopLevelDef::Function { signature, name, .. } = def {
+    //         let ty_str = composer.unifier.stringify(*signature, &mut |id| id.to_string(), &mut |id| id.to_string());
+    //         assert_eq!(ty_str, tys[i]);
+    //         assert_eq!(name, names[i]);
+    //     }
+    // }
+}
