@@ -317,7 +317,7 @@ impl TestEnvironment {
             primitives: &mut self.primitives,
             virtual_checks: &mut self.virtual_checks,
             calls: &mut self.calls,
-            defined_identifiers: Default::default()
+            defined_identifiers: Default::default(),
         }
     }
 }

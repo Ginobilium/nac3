@@ -83,7 +83,10 @@ impl<'a> fold::Fold<()> for Inferencer<'a> {
                     self.unify(target.custom.unwrap(), ty.custom.unwrap(), &node.location)?;
                     Some(ty)
                 } else {
-                    return Err(format!("declaration without definition is not yet supported, at {}", node.location))
+                    return Err(format!(
+                        "declaration without definition is not yet supported, at {}",
+                        node.location
+                    ));
                 };
                 let top_level_defs = self.top_level.definitions.read();
                 let annotation_type = self.function_data.resolver.lock().parse_type_annotation(
@@ -161,7 +164,8 @@ impl<'a> fold::Fold<()> for Inferencer<'a> {
             ast::ExprKind::Constant { value, .. } => Some(self.infer_constant(value)?),
             ast::ExprKind::Name { id, .. } => {
                 if !self.defined_identifiers.contains(id) {
-                    if self.function_data.resolver.lock().get_identifier_def(id.as_str()).is_some() {
+                    if self.function_data.resolver.lock().get_identifier_def(id.as_str()).is_some()
+                    {
                         self.defined_identifiers.insert(id.clone());
                     } else {
                         return Err(format!(
@@ -482,13 +486,11 @@ impl<'a> Inferencer<'a> {
             let resolver = self.function_data.resolver.lock();
             let variable_mapping = &mut self.variable_mapping;
             let unifier = &mut self.unifier;
-            Ok(resolver
-                .get_symbol_type(unifier, self.primitives, id)
-                .unwrap_or_else(|| {
-                    let ty = unifier.get_fresh_var().0;
-                    variable_mapping.insert(id.to_string(), ty);
-                    ty
-                }))
+            Ok(resolver.get_symbol_type(unifier, self.primitives, id).unwrap_or_else(|| {
+                let ty = unifier.get_fresh_var().0;
+                variable_mapping.insert(id.to_string(), ty);
+                ty
+            }))
         }
     }
 

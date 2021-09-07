@@ -1,4 +1,11 @@
-use std::{borrow::BorrowMut, collections::{HashMap, HashSet}, fmt::Debug, iter::FromIterator, ops::{Deref, DerefMut}, sync::Arc};
+use std::{
+    borrow::BorrowMut,
+    collections::{HashMap, HashSet},
+    fmt::Debug,
+    iter::FromIterator,
+    ops::{Deref, DerefMut},
+    sync::Arc,
+};
 
 use super::typecheck::type_inferencer::PrimitiveStore;
 use super::typecheck::typedef::{FunSignature, FuncArg, SharedUnifier, Type, TypeEnum, Unifier};
@@ -6,7 +13,7 @@ use crate::{
     symbol_resolver::SymbolResolver,
     typecheck::{type_inferencer::CodeLocation, typedef::CallId},
 };
-use itertools::{Itertools, izip};
+use itertools::{izip, Itertools};
 use parking_lot::{Mutex, RwLock};
 use rustpython_parser::ast::{self, Stmt};
 
@@ -499,7 +506,9 @@ impl TopLevelComposer {
         for (class_def, _) in self.definition_ast_list.iter_mut().skip(5) {
             let mut class_def = class_def.write();
             let (class_ancestors, class_id, class_type_vars) = {
-                if let TopLevelDef::Class { ancestors, object_id, type_vars, .. } = class_def.deref_mut() {
+                if let TopLevelDef::Class { ancestors, object_id, type_vars, .. } =
+                    class_def.deref_mut()
+                {
                     (ancestors, *object_id, type_vars)
                 } else {
                     continue;
@@ -595,8 +604,8 @@ impl TopLevelComposer {
 
         // skip 5 to skip analyzing the primitives
         for (function_def, function_ast) in def_list.iter().skip(5) {
-            let function_def = function_def.read();
-            let function_def = function_def.deref();
+            let mut function_def = function_def.write();
+            let function_def = function_def.deref_mut();
             let function_ast = if let Some(function_ast) = function_ast {
                 function_ast
             } else {
@@ -604,7 +613,9 @@ impl TopLevelComposer {
                 continue;
             };
 
-            if let TopLevelDef::Function { signature: dummy_ty, resolver, .. } = function_def {
+            if let TopLevelDef::Function { signature: dummy_ty, resolver, var_id, .. } =
+                function_def
+            {
                 if let ast::StmtKind::FunctionDef { args, returns, .. } = &function_ast.node {
                     let resolver = resolver.as_ref();
                     let resolver = resolver.unwrap();
@@ -644,7 +655,7 @@ impl TopLevelComposer {
                                     primitives_store,
                                     annotation,
                                 )?;
-                                
+
                                 let type_vars_within =
                                     get_type_var_contained_in_type_annotation(&type_annotation)
                                         .into_iter()
@@ -720,6 +731,9 @@ impl TopLevelComposer {
                             primitives_store.none
                         }
                     };
+                    var_id.extend_from_slice(
+                        function_var_map.keys().into_iter().copied().collect_vec().as_slice(),
+                    );
                     let function_ty = unifier.add_ty(TypeEnum::TFunc(
                         FunSignature { args: arg_types, ret: return_ty, vars: function_var_map }
                             .into(),
@@ -789,7 +803,7 @@ impl TopLevelComposer {
 
         for b in class_body_ast {
             if let ast::StmtKind::FunctionDef { args, returns, name, body, .. } = &b.node {
-                let (method_dummy_ty, ..) =
+                let (method_dummy_ty, method_id) =
                     Self::get_class_method_def_info(class_methods_def, name)?;
 
                 // the method var map can surely include the class's generic parameters
@@ -817,7 +831,9 @@ impl TopLevelComposer {
                             .into());
                     }
                     if name == "__init__" && !defined_paramter_name.contains("self") {
-                        return Err("class __init__ function must contain the `self` parameter".into());
+                        return Err(
+                            "class __init__ function must contain the `self` parameter".into()
+                        );
                     }
 
                     let mut result = Vec::new();
@@ -939,9 +955,17 @@ impl TopLevelComposer {
                     }
                 };
 
+                if let TopLevelDef::Function { var_id, .. } =
+                    temp_def_list.get(method_id.0).unwrap().write().deref_mut()
+                {
+                    var_id.extend_from_slice(
+                        method_var_map.keys().into_iter().copied().collect_vec().as_slice(),
+                    );
+                }
                 let method_type = unifier.add_ty(TypeEnum::TFunc(
                     FunSignature { args: arg_types, ret: ret_type, vars: method_var_map }.into(),
                 ));
+
                 // NOTE: unify now since function type is not in type annotation define
                 // which is fine since type within method_type will be subst later
                 unifier.unify(method_dummy_ty, method_type)?;
