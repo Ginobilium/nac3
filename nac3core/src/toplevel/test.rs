@@ -45,7 +45,6 @@ impl SymbolResolver for Resolver {
     fn get_identifier_def(&self, id: &str) -> Option<DefinitionId> {
         self.0.id_to_def.lock().get(id).cloned()
     }
-
 }
 
 #[test_case(
@@ -126,7 +125,9 @@ fn test_simple_function_analyze(source: Vec<&str>, tys: Vec<&str>, names: Vec<&s
         id_to_type: Default::default(),
         class_names: Default::default(),
     });
-    let resolver = Arc::new(Box::new(Resolver(internal_resolver.clone())) as Box<dyn SymbolResolver + Send + Sync>);
+    let resolver = Arc::new(
+        Box::new(Resolver(internal_resolver.clone())) as Box<dyn SymbolResolver + Send + Sync>
+    );
 
     for s in source {
         let ast = parse_program(s).unwrap();
@@ -279,12 +280,14 @@ fn test_simple_class_analyze(source: Vec<&str>, res: Vec<&str>) {
 
     let internal_resolver = Arc::new(ResolverInternal {
         id_to_def: Default::default(),
-        id_to_type: Mutex::new(vec![("T".to_string(), tvar_t.0), ("V".to_string(), tvar_v.0)]
-        .into_iter()
-        .collect()),
+        id_to_type: Mutex::new(
+            vec![("T".to_string(), tvar_t.0), ("V".to_string(), tvar_v.0)].into_iter().collect(),
+        ),
         class_names: Default::default(),
     });
-    let resolver = Arc::new(Box::new(Resolver(internal_resolver.clone())) as Box<dyn SymbolResolver + Send + Sync>);
+    let resolver = Arc::new(
+        Box::new(Resolver(internal_resolver.clone())) as Box<dyn SymbolResolver + Send + Sync>
+    );
 
     for s in source {
         let ast = parse_program(s).unwrap();

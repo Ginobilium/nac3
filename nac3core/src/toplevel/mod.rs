@@ -1,4 +1,11 @@
-use std::{borrow::BorrowMut, collections::{HashMap, HashSet}, fmt::Debug, iter::FromIterator, ops::{Deref, DerefMut}, sync::Arc};
+use std::{
+    borrow::BorrowMut,
+    collections::{HashMap, HashSet},
+    fmt::Debug,
+    iter::FromIterator,
+    ops::{Deref, DerefMut},
+    sync::Arc,
+};
 
 use super::typecheck::type_inferencer::PrimitiveStore;
 use super::typecheck::typedef::{FunSignature, FuncArg, SharedUnifier, Type, TypeEnum, Unifier};
@@ -7,7 +14,7 @@ use crate::{
     typecheck::{type_inferencer::CodeLocation, typedef::CallId},
 };
 use itertools::{izip, Itertools};
-use parking_lot::{Mutex, RwLock};
+use parking_lot::RwLock;
 use rustpython_parser::ast::{self, Stmt};
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Hash, Debug)]
@@ -588,7 +595,7 @@ impl TopLevelComposer {
             println!(
                 "{:?}_{} -> {:?}\n",
                 ty,
-                unifier.stringify(ty, 
+                unifier.stringify(ty,
                     &mut |id| format!("class{}", id),
                     &mut |id| format!("tvar{}", id)
                 ),
@@ -599,17 +606,17 @@ impl TopLevelComposer {
             unifier.unify(ty, target_ty)?;
             ddddd.push((ty, target_ty));
         }
-        
+
         for (ty, tar_ty) in ddddd {
             println!(
                 "{:?}_{} -> {:?}_{}",
                 ty,
-                unifier.stringify(ty, 
+                unifier.stringify(ty,
                     &mut |id| format!("class{}", id),
                     &mut |id| format!("tvar{}", id)
                 ),
                 tar_ty,
-                unifier.stringify(tar_ty, 
+                unifier.stringify(tar_ty,
                     &mut |id| format!("class{}", id),
                     &mut |id| format!("tvar{}", id)
                 ),

@@ -35,12 +35,7 @@ pub fn parse_ast_to_type_annotation_kinds<T>(
             "bool" => Ok(TypeAnnotation::PrimitiveKind(primitives.bool)),
             "None" => Ok(TypeAnnotation::PrimitiveKind(primitives.none)),
             x => {
-                if let Some(obj_id) = {
-                    // write this way because the lock in the if/let construct lives
-                    // for the whole if let construct
-                    let id = resolver.get_identifier_def(x);
-                    id
-                } {
+                if let Some(obj_id) = resolver.get_identifier_def(x) {
                     let def = top_level_defs[obj_id.0].read();
                     if let TopLevelDef::Class { type_vars, .. } = &*def {
                         // also check param number here
@@ -54,10 +49,7 @@ pub fn parse_ast_to_type_annotation_kinds<T>(
                     } else {
                         Err("function cannot be used as a type".into())
                     }
-                } else if let Some(ty) = {
-                    let ty = resolver.get_symbol_type(unifier, primitives, id);
-                    ty
-                } {
+                } else if let Some(ty) = resolver.get_symbol_type(unifier, primitives, id) {
                     if let TypeEnum::TVar { .. } = unifier.get_ty(ty).as_ref() {
                         Ok(TypeAnnotation::TypeVarKind(ty))
                     } else {
@@ -240,15 +232,16 @@ pub fn get_type_from_type_annotation_kinds(
                     }));
 
                     println!("tobj_fields: {:?}", tobj_fields);
-                    println!("{:?}: {}\n", 
+                    println!(
+                        "{:?}: {}\n",
                         tobj_fields.get("__init__").unwrap(),
                         unifier.stringify(
-                            *tobj_fields.get("__init__").unwrap(), 
+                            *tobj_fields.get("__init__").unwrap(),
                             &mut |id| format!("class{}", id),
                             &mut |id| format!("tvar{}", id)
                         )
                     );
-                    
+
                     Ok(unifier.add_ty(TypeEnum::TObj {
                         obj_id: *id,
                         //fields: RefCell::new(tobj_fields),

@@ -9,7 +9,7 @@ use crate::{
     },
 };
 use indoc::indoc;
-use parking_lot::{Mutex, RwLock};
+use parking_lot::RwLock;
 use rustpython_parser::{ast::fold::Fold, parser::parse_program};
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};

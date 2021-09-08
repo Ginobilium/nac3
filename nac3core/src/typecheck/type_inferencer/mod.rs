@@ -7,7 +7,6 @@ use super::typedef::{Call, FunSignature, FuncArg, Type, TypeEnum, Unifier};
 use super::{magic_methods::*, typedef::CallId};
 use crate::{symbol_resolver::SymbolResolver, toplevel::TopLevelContext};
 use itertools::izip;
-use parking_lot::Mutex;
 use rustpython_parser::ast::{
     self,
     fold::{self, Fold},
@@ -164,8 +163,7 @@ impl<'a> fold::Fold<()> for Inferencer<'a> {
             ast::ExprKind::Constant { value, .. } => Some(self.infer_constant(value)?),
             ast::ExprKind::Name { id, .. } => {
                 if !self.defined_identifiers.contains(id) {
-                    if self.function_data.resolver.get_identifier_def(id.as_str()).is_some()
-                    {
+                    if self.function_data.resolver.get_identifier_def(id.as_str()).is_some() {
                         self.defined_identifiers.insert(id.clone());
                     } else {
                         return Err(format!(
@@ -485,11 +483,15 @@ impl<'a> Inferencer<'a> {
         } else {
             let variable_mapping = &mut self.variable_mapping;
             let unifier = &mut self.unifier;
-            Ok(self.function_data.resolver.get_symbol_type(unifier, self.primitives, id).unwrap_or_else(|| {
-                let ty = unifier.get_fresh_var().0;
-                variable_mapping.insert(id.to_string(), ty);
-                ty
-            }))
+            Ok(self
+                .function_data
+                .resolver
+                .get_symbol_type(unifier, self.primitives, id)
+                .unwrap_or_else(|| {
+                    let ty = unifier.get_fresh_var().0;
+                    variable_mapping.insert(id.to_string(), ty);
+                    ty
+                }))
         }
     }
 

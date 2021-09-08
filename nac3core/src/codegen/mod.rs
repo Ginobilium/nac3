@@ -305,9 +305,8 @@ pub fn gen_func<'ctx>(
     };
 
     let symbol = &task.symbol_name;
-    let fn_val = module
-        .get_function(symbol)
-        .unwrap_or_else(|| module.add_function(symbol, fn_type, None));
+    let fn_val =
+        module.get_function(symbol).unwrap_or_else(|| module.add_function(symbol, fn_type, None));
 
     let init_bb = context.append_basic_block(fn_val, "init");
     builder.position_at_end(init_bb);
