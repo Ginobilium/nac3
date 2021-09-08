@@ -126,6 +126,7 @@ pub fn parse_ast_to_type_annotation_kinds<T>(
                     .ok_or_else(|| "unknown class name".to_string())?;
                 let def = top_level_defs[obj_id.0].read();
                 if let TopLevelDef::Class { type_vars, .. } = &*def {
+                    // we do not check whether the application of type variables are compatible here
                     let param_type_infos = {
                         let params_ast = if let ast::ExprKind::Tuple { elts, .. } = &slice.node {
                             elts.iter().collect_vec()
@@ -208,17 +209,35 @@ pub fn get_type_from_type_annotation_kinds(
                         })
                         .collect::<Result<Vec<_>, _>>()?;
 
-                    let subst = type_vars
-                        .iter()
-                        .map(|x| {
-                            if let TypeEnum::TVar { id, .. } = unifier.get_ty(*x).as_ref() {
-                                *id
+                    let subst = {
+                        // NOTE: check for compatible range here
+                        let mut result: HashMap<u32, Type> = HashMap::new();
+                        for (tvar, p) in type_vars.iter().zip(param_ty) {
+                            if let TypeEnum::TVar { id, range, meta: TypeVarMeta::Generic } = unifier.get_ty(*tvar).as_ref() {
+                                let ok: bool = {
+                                    // NOTE: create a temp type var and unify to check compatibility
+                                    let temp = unifier.get_fresh_var_with_range(range.borrow().as_slice());
+                                    unifier.unify(temp.0, p).is_ok()
+                                };
+                                if ok {
+                                    result.insert(*id, p);
+                                } else {
+                                    return Err(format!(
+                                        "cannot apply type {} to type variable with id {:?}",
+                                        unifier.stringify(
+                                            p,
+                                            &mut |id| format!("class{}", id),
+                                            &mut |id| format!("tvar{}", id)
+                                        ),
+                                        *id
+                                    ))
+                                }
                             } else {
-                                unreachable!()
+                                unreachable!("must be generic type var")
                             }
-                        })
-                        .zip(param_ty.into_iter())
-                        .collect::<HashMap<u32, Type>>();
+                        }
+                        result
+                    };
                     let mut tobj_fields = methods
                         .iter()
                         .map(|(name, ty, _)| {
@@ -244,9 +263,7 @@ pub fn get_type_from_type_annotation_kinds(
 
                     Ok(unifier.add_ty(TypeEnum::TObj {
                         obj_id: *id,
-                        //fields: RefCell::new(tobj_fields),
-                        fields: RefCell::new(HashMap::new()),
-                        // fields: Default::default(),
+                        fields: RefCell::new(tobj_fields),
                         params: subst.into(),
                     }))
                 }
@@ -325,7 +342,13 @@ pub fn get_type_var_contained_in_type_annotation(ann: &TypeAnnotation) -> Vec<Ty
                 result.extend(get_type_var_contained_in_type_annotation(p));
             }
         }
-        _ => {}
+        TypeAnnotation::ListKind(ann) => result.extend(get_type_var_contained_in_type_annotation(ann.as_ref())),
+        TypeAnnotation::TupleKind(anns) => {
+            for a in anns {
+                result.extend(get_type_var_contained_in_type_annotation(a));
+            }
+        }
+        TypeAnnotation::PrimitiveKind( .. ) => {}
     }
     result
 }

@@ -335,6 +335,85 @@ fn test_simple_function_analyze(source: Vec<&str>, tys: Vec<&str>, names: Vec<&s
     ];
     "generic class"
 )]
+#[test_case(
+    vec![
+        indoc! {"
+            def foo(a: list[int32], b: tuple[T, float]) -> A[B, bool]:
+                pass
+        "},
+        indoc! {"
+            class A(Generic[T, V]):
+                def __init__(v: V):
+                    self.a: T = 1
+                    self.b: V = v
+                def fun(a: T) -> V:
+                    pass
+        "},
+        indoc! {"
+            def gfun(a: A[list[float], int32]):
+                pass
+        "},
+        indoc! {"
+            class B:
+                def __init__():
+                    pass
+        "}
+    ],
+    vec![
+        indoc! {"5: Function {
+        name: \"foo\",
+        sig: \"fn[[a=list[class0], b=tuple[tvar2, class2]], class6[2->class11, 3->class3]]\",
+        var_id: [2]
+        }"},
+
+        indoc! {"6: Class {
+        name: \"A\",
+        def_id: DefinitionId(6),
+        ancestors: [CustomClassKind { id: DefinitionId(6), params: [TypeVarKind(UnificationKey(100)), TypeVarKind(UnificationKey(101))] }],
+        fields: [(\"a\", \"tvar2\"), (\"b\", \"tvar3\")],
+        methods: [(\"__init__\", \"fn[[v=tvar3], class4]\", DefinitionId(7)), (\"fun\", \"fn[[a=tvar2], tvar3]\", DefinitionId(8))],
+        type_vars: [UnificationKey(100), UnificationKey(101)]
+        }"},
+
+        indoc! {"7: Function {
+        name: \"A__init__\",
+        sig: \"fn[[v=tvar3], class4]\",
+        var_id: [2, 3]
+        }"},
+
+        indoc! {"8: Function {
+        name: \"Afun\",
+        sig: \"fn[[a=tvar2], tvar3]\",
+        var_id: [2, 3]
+        }"},
+
+        indoc! {"9: Initializer { DefinitionId(6) }"},
+
+        indoc! {"10: Function {
+        name: \"gfun\",
+        sig: \"fn[[a=class6[2->list[class2], 3->class0]], class4]\",
+        var_id: []
+        }"},
+
+        indoc! {"11: Class {
+        name: \"B\",
+        def_id: DefinitionId(11),
+        ancestors: [CustomClassKind { id: DefinitionId(11), params: [] }],
+        fields: [],
+        methods: [(\"__init__\", \"fn[[], class4]\", DefinitionId(12))],
+        type_vars: []
+        }"},
+
+        indoc! {"12: Function {
+        name: \"B__init__\",
+        sig: \"fn[[], class4]\",
+        var_id: []
+        }"},
+
+        indoc! {"13: Initializer { DefinitionId(11) }"},
+    ];
+    "list tuple generic"
+)]
 fn test_simple_class_analyze(source: Vec<&str>, res: Vec<&str>) {
     let mut composer = TopLevelComposer::new();
 
