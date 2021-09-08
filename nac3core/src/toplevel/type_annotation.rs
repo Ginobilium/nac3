@@ -213,10 +213,13 @@ pub fn get_type_from_type_annotation_kinds(
                         // NOTE: check for compatible range here
                         let mut result: HashMap<u32, Type> = HashMap::new();
                         for (tvar, p) in type_vars.iter().zip(param_ty) {
-                            if let TypeEnum::TVar { id, range, meta: TypeVarMeta::Generic } = unifier.get_ty(*tvar).as_ref() {
+                            if let TypeEnum::TVar { id, range, meta: TypeVarMeta::Generic } =
+                                unifier.get_ty(*tvar).as_ref()
+                            {
                                 let ok: bool = {
                                     // NOTE: create a temp type var and unify to check compatibility
-                                    let temp = unifier.get_fresh_var_with_range(range.borrow().as_slice());
+                                    let temp =
+                                        unifier.get_fresh_var_with_range(range.borrow().as_slice());
                                     unifier.unify(temp.0, p).is_ok()
                                 };
                                 if ok {
@@ -230,7 +233,7 @@ pub fn get_type_from_type_annotation_kinds(
                                             &mut |id| format!("tvar{}", id)
                                         ),
                                         *id
-                                    ))
+                                    ));
                                 }
                             } else {
                                 unreachable!("must be generic type var")
@@ -250,16 +253,16 @@ pub fn get_type_from_type_annotation_kinds(
                         (name.clone(), subst_ty)
                     }));
 
-                    println!("tobj_fields: {:?}", tobj_fields);
-                    println!(
-                        "{:?}: {}\n",
-                        tobj_fields.get("__init__").unwrap(),
-                        unifier.stringify(
-                            *tobj_fields.get("__init__").unwrap(),
-                            &mut |id| format!("class{}", id),
-                            &mut |id| format!("tvar{}", id)
-                        )
-                    );
+                    // println!("tobj_fields: {:?}", tobj_fields);
+                    // println!(
+                    //     "{:?}: {}\n",
+                    //     tobj_fields.get("__init__").unwrap(),
+                    //     unifier.stringify(
+                    //         *tobj_fields.get("__init__").unwrap(),
+                    //         &mut |id| format!("class{}", id),
+                    //         &mut |id| format!("tvar{}", id)
+                    //     )
+                    // );
 
                     Ok(unifier.add_ty(TypeEnum::TObj {
                         obj_id: *id,
@@ -342,13 +345,15 @@ pub fn get_type_var_contained_in_type_annotation(ann: &TypeAnnotation) -> Vec<Ty
                 result.extend(get_type_var_contained_in_type_annotation(p));
             }
         }
-        TypeAnnotation::ListKind(ann) => result.extend(get_type_var_contained_in_type_annotation(ann.as_ref())),
+        TypeAnnotation::ListKind(ann) => {
+            result.extend(get_type_var_contained_in_type_annotation(ann.as_ref()))
+        }
         TypeAnnotation::TupleKind(anns) => {
             for a in anns {
                 result.extend(get_type_var_contained_in_type_annotation(a));
             }
         }
-        TypeAnnotation::PrimitiveKind( .. ) => {}
+        TypeAnnotation::PrimitiveKind(..) => {}
     }
     result
 }

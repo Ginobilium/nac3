@@ -350,7 +350,7 @@ impl TestEnvironment {
 
     "},
     [("a", "fn[[x=bool], bool]"), ("b", "fn[[x=int32], int32]"), ("c", "bool"),
-     ("d", "int32"), ("foo1", "Foo[bool]"), ("foo2", "Foo[int32]")].iter().cloned().collect(),
+     ("d", "int32"), ("foo1", "Foo[1->bool]"), ("foo2", "Foo[1->int32]")].iter().cloned().collect(),
     &[]
     ; "obj test")]
 #[test_case(indoc! {"

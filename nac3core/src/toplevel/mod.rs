@@ -551,7 +551,7 @@ impl TopLevelComposer {
             }
         }
 
-        println!("type_var_to_concrete_def1: {:?}", type_var_to_concrete_def);
+        // println!("type_var_to_concrete_def1: {:?}", type_var_to_concrete_def);
 
         // handle the inheritanced methods and fields
         let mut current_ancestor_depth: usize = 2;
@@ -587,19 +587,19 @@ impl TopLevelComposer {
             }
         }
 
-        println!("type_var_to_concrete_def3: {:?}\n", type_var_to_concrete_def);
+        // println!("type_var_to_concrete_def3: {:?}\n", type_var_to_concrete_def);
 
         // unification of previously assigned typevar
         for (ty, def) in type_var_to_concrete_def {
-            println!(
-                "{:?}_{} -> {:?}\n",
-                ty,
-                unifier.stringify(ty,
-                    &mut |id| format!("class{}", id),
-                    &mut |id| format!("tvar{}", id)
-                ),
-                def
-            );
+            // println!(
+            //     "{:?}_{} -> {:?}\n",
+            //     ty,
+            //     unifier.stringify(ty,
+            //         &mut |id| format!("class{}", id),
+            //         &mut |id| format!("tvar{}", id)
+            //     ),
+            //     def
+            // );
             let target_ty =
                 get_type_from_type_annotation_kinds(&temp_def_list, unifier, primitives, &def)?;
             unifier.unify(ty, target_ty)?;
