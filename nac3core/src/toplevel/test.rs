@@ -156,23 +156,23 @@ fn test_simple_function_analyze(source: Vec<&str>, tys: Vec<&str>, names: Vec<&s
     vec![
         indoc! {"
             class A():
-                def __init__(self):
+                def __init__():
                     self.a: int32 = 3
-                def fun(self, b: B):
+                def fun(b: B):
                     pass
-                def foo(self, a: T, b: V):
+                def foo(a: T, b: V):
                     pass
         "},
         indoc! {"
             class B(C):
-                def __init__(self):
+                def __init__():
                     pass
         "},
         indoc! {"
             class C(A):
-                def __init__(self):
+                def __init__():
                     pass
-                def fun(self, b: B):
+                def fun(b: B):
                     a = 1
                     pass
         "},
@@ -190,69 +190,81 @@ fn test_simple_function_analyze(source: Vec<&str>, tys: Vec<&str>, names: Vec<&s
         name: \"A\",
         def_id: DefinitionId(5),
         ancestors: [CustomClassKind { id: DefinitionId(5), params: [] }],
-        fields: [(\"a\", \"0\")],
-        methods: [(\"__init__\", \"fn[[self=5], 5]\", DefinitionId(6)), (\"fun\", \"fn[[self=5, b=9], 4]\", DefinitionId(7))],
+        fields: [(\"a\", \"class0\")],
+        methods: [(\"__init__\", \"fn[[], class4]\", DefinitionId(6)), (\"fun\", \"fn[[b=class10], class4]\", DefinitionId(7)), (\"foo\", \"fn[[a=tvar2, b=tvar3], class4]\", DefinitionId(8))],
         type_vars: []
         }"},
 
         indoc! {"6: Function {
         name: \"A__init__\",
-        sig: \"fn[[self=5], 5]\",
+        sig: \"fn[[], class4]\",
         var_id: []
         }"},
 
         indoc! {"7: Function {
         name: \"Afun\",
-        sig: \"fn[[self=5, b=9], 4]\",
+        sig: \"fn[[b=class10], class4]\",
         var_id: []
         }"},
 
-        indoc! {"8: Initializer { DefinitionId(5) }"},
+        indoc! {"8: Function {
+        name: \"Afoo\",
+        sig: \"fn[[a=tvar2, b=tvar3], class4]\",
+        var_id: [2, 3]
+        }"},
 
-        indoc! {"9: Class {
+        indoc! {"9: Initializer { DefinitionId(5) }"},
+
+        indoc! {"10: Class {
         name: \"B\",
-        def_id: DefinitionId(9),
-        ancestors: [CustomClassKind { id: DefinitionId(9), params: [] }, CustomClassKind { id: DefinitionId(12), params: [] }, CustomClassKind { id: DefinitionId(5), params: [] }],
-        fields: [(\"a\", \"0\")],
-        methods: [(\"__init__\", \"fn[[self=9], 9]\", DefinitionId(10)), (\"fun\", \"fn[[self=12, b=9], 4]\", DefinitionId(14))],
+        def_id: DefinitionId(10),
+        ancestors: [CustomClassKind { id: DefinitionId(10), params: [] }, CustomClassKind { id: DefinitionId(13), params: [] }, CustomClassKind { id: DefinitionId(5), params: [] }],
+        fields: [(\"a\", \"class0\")],
+        methods: [(\"__init__\", \"fn[[], class4]\", DefinitionId(11)), (\"fun\", \"fn[[b=class10], class4]\", DefinitionId(15)), (\"foo\", \"fn[[a=tvar2, b=tvar3], class4]\", DefinitionId(8))],
         type_vars: []
         }"},
 
-        indoc! {"10: Function {
+        indoc! {"11: Function {
         name: \"B__init__\",
-        sig: \"fn[[self=9], 9]\",
+        sig: \"fn[[], class4]\",
         var_id: []
         }"},
 
-        indoc! {"11: Initializer { DefinitionId(9) }"},
+        indoc! {"12: Initializer { DefinitionId(10) }"},
 
-        indoc! {"12: Class {
+        indoc! {"13: Class {
         name: \"C\",
-        def_id: DefinitionId(12),
-        ancestors: [CustomClassKind { id: DefinitionId(12), params: [] }, CustomClassKind { id: DefinitionId(5), params: [] }],
-        fields: [(\"a\", \"0\")],
-        methods: [(\"__init__\", \"fn[[self=12], 12]\", DefinitionId(13)), (\"fun\", \"fn[[self=12, b=9], 4]\", DefinitionId(14))],
+        def_id: DefinitionId(13),
+        ancestors: [CustomClassKind { id: DefinitionId(13), params: [] }, CustomClassKind { id: DefinitionId(5), params: [] }],
+        fields: [(\"a\", \"class0\")],
+        methods: [(\"__init__\", \"fn[[], class4]\", DefinitionId(14)), (\"fun\", \"fn[[b=class10], class4]\", DefinitionId(15)), (\"foo\", \"fn[[a=tvar2, b=tvar3], class4]\", DefinitionId(8))],
         type_vars: []
-        }"},
-
-        indoc! {"13: Function {
-        name: \"C__init__\",
-        sig: \"fn[[self=12], 12]\",
-        var_id: []
         }"},
 
         indoc! {"14: Function {
-        name: \"Cfun\",
-        sig: \"fn[[self=12, b=9], 4]\",
+        name: \"C__init__\",
+        sig: \"fn[[], class4]\",
         var_id: []
         }"},
 
-        indoc! {"15: Initializer { DefinitionId(12) }"},
-
-        indoc! {"16: Function {
-        name: \"foo\",
-        sig: \"fn[[a=5], 4]\",
+        indoc! {"15: Function {
+        name: \"Cfun\",
+        sig: \"fn[[b=class10], class4]\",
         var_id: []
+        }"},
+
+        indoc! {"16: Initializer { DefinitionId(13) }"},
+
+        indoc! {"17: Function {
+        name: \"foo\",
+        sig: \"fn[[a=class5], class4]\",
+        var_id: []
+        }"},
+
+        indoc! {"18: Function {
+        name: \"ff\",
+        sig: \"fn[[a=tvar2], tvar3]\",
+        var_id: [2, 3]
         }"},
     ];
     "simple class compose"
@@ -260,12 +272,67 @@ fn test_simple_function_analyze(source: Vec<&str>, tys: Vec<&str>, names: Vec<&s
 #[test_case(
     vec![
         indoc! {"
-            class Generic_A(Generic[T, V]):
+            class Generic_A(Generic[V], B):
                 def __init__():
+                    self.a: int64 = 123123123123
+                def fun(a: int32) -> V:
+                    pass
+        "},
+        indoc! {"
+            class B:
+                def __init__():
+                    self.aa: bool = False
+                def foo(b: T):
                     pass
         "}
     ],
-    vec![];
+    vec![
+        indoc! {"5: Class {
+        name: \"Generic_A\",
+        def_id: DefinitionId(5),
+        ancestors: [CustomClassKind { id: DefinitionId(5), params: [TypeVarKind(UnificationKey(101))] }, CustomClassKind { id: DefinitionId(9), params: [] }],
+        fields: [(\"aa\", \"class3\"), (\"a\", \"class1\")],
+        methods: [(\"__init__\", \"fn[[], class4]\", DefinitionId(6)), (\"foo\", \"fn[[b=tvar2], class4]\", DefinitionId(11)), (\"fun\", \"fn[[a=class0], tvar3]\", DefinitionId(7))],
+        type_vars: [UnificationKey(101)]
+        }"},
+
+        indoc! {"6: Function {
+        name: \"Generic_A__init__\",
+        sig: \"fn[[], class4]\",
+        var_id: [3]
+        }"},
+
+        indoc! {"7: Function {
+        name: \"Generic_Afun\",
+        sig: \"fn[[a=class0], tvar3]\",
+        var_id: [3]
+        }"},
+
+        indoc! {"8: Initializer { DefinitionId(5) }"},
+
+        indoc! {"9: Class {
+        name: \"B\",
+        def_id: DefinitionId(9),
+        ancestors: [CustomClassKind { id: DefinitionId(9), params: [] }],
+        fields: [(\"aa\", \"class3\")],
+        methods: [(\"__init__\", \"fn[[], class4]\", DefinitionId(10)), (\"foo\", \"fn[[b=tvar2], class4]\", DefinitionId(11))],
+        type_vars: []
+        }"},
+
+        indoc! {"10: Function {
+        name: \"B__init__\",
+        sig: \"fn[[], class4]\",
+        var_id: []
+        }"},
+
+        indoc! {"11: Function {
+        name: \"Bfoo\",
+        sig: \"fn[[b=tvar2], class4]\",
+        var_id: [2]
+        }"},
+
+        indoc! {"12: Initializer { DefinitionId(9) }"},
+    ];
     "generic class"
 )]
 fn test_simple_class_analyze(source: Vec<&str>, res: Vec<&str>) {
@@ -275,6 +342,7 @@ fn test_simple_class_analyze(source: Vec<&str>, res: Vec<&str>) {
     let tvar_v = composer
         .unifier
         .get_fresh_var_with_range(&[composer.primitives_ty.bool, composer.primitives_ty.int32]);
+    
     println!("t: {}, {:?}", tvar_t.1, tvar_t.0);
     println!("v: {}, {:?}\n", tvar_v.1, tvar_v.0);
 
@@ -311,17 +379,17 @@ fn test_simple_class_analyze(source: Vec<&str>, res: Vec<&str>) {
         //         &mut |id| format!("tvar{}", id)
         //     )
         // );
-        // assert_eq!(
-        //     format!(
-        //         "{}: {}",
-        //         i + 5,
-        //         def.to_string(
-        //             composer.unifier.borrow_mut(),
-        //             &mut |id| id.to_string(),
-        //             &mut |id| id.to_string()
-        //         )
-        //     ),
-        //     res[i]
-        // )
+        assert_eq!(
+            format!(
+                "{}: {}",
+                i + 5,
+                def.to_string(
+                    composer.unifier.borrow_mut(),
+                    &mut |id| format!("class{}", id.to_string()),
+                    &mut |id| format!("tvar{}", id.to_string()),
+                )
+            ),
+            res[i]
+        )
     }
 }

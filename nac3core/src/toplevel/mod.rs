@@ -135,6 +135,7 @@ impl TopLevelComposer {
                 "bool".into(),
                 "none".into(),
                 "None".into(),
+                "self".into(),
             ]),
             defined_class_method_name: Default::default(),
             defined_class_name: Default::default(),
@@ -586,11 +587,9 @@ impl TopLevelComposer {
             }
         }
 
-        // println!("type_var_to_concrete_def2: {:?}", type_var_to_concrete_def);
-
-        // unification of previously assigned typevar
         println!("type_var_to_concrete_def3: {:?}\n", type_var_to_concrete_def);
-        let mut ddddd: Vec<(Type, Type)> = Vec::new();
+        
+        // unification of previously assigned typevar
         for (ty, def) in type_var_to_concrete_def {
             println!(
                 "{:?}_{} -> {:?}\n",
@@ -604,23 +603,6 @@ impl TopLevelComposer {
             let target_ty =
                 get_type_from_type_annotation_kinds(&temp_def_list, unifier, primitives, &def)?;
             unifier.unify(ty, target_ty)?;
-            ddddd.push((ty, target_ty));
-        }
-
-        for (ty, tar_ty) in ddddd {
-            println!(
-                "{:?}_{} -> {:?}_{}",
-                ty,
-                unifier.stringify(ty,
-                    &mut |id| format!("class{}", id),
-                    &mut |id| format!("tvar{}", id)
-                ),
-                tar_ty,
-                unifier.stringify(tar_ty,
-                    &mut |id| format!("class{}", id),
-                    &mut |id| format!("tvar{}", id)
-                ),
-            )
         }
 
         Ok(())
@@ -793,7 +775,7 @@ impl TopLevelComposer {
     ) -> Result<(), String> {
         let mut class_def = class_def.write();
         let (
-            class_id,
+            _class_id,
             _class_name,
             _class_bases_ast,
             class_body_ast,
@@ -862,126 +844,90 @@ impl TopLevelComposer {
                         and names thould not be the same as the keywords"
                             .into());
                     }
-                    if name == "__init__" && !defined_paramter_name.contains("self") {
-                        return Err(
-                            "class __init__ function must contain the `self` parameter".into()
-                        );
-                    }
 
                     let mut result = Vec::new();
                     for x in &args.args {
                         let name = x.node.arg.clone();
-                        if name != "self" {
-                            let type_ann = {
-                                let annotation_expr = x
-                                    .node
-                                    .annotation
-                                    .as_ref()
-                                    .ok_or_else(|| "type annotation needed".to_string())?
-                                    .as_ref();
-                                parse_ast_to_type_annotation_kinds(
-                                    class_resolver.as_ref(),
-                                    temp_def_list,
-                                    unifier,
-                                    primitives,
-                                    annotation_expr,
-                                )?
-                            };
-
-                            // find type vars within this method parameter type annotation
-                            let type_vars_within =
-                                get_type_var_contained_in_type_annotation(&type_ann);
-                            // handle the class type var and the method type var
-                            for type_var_within in type_vars_within {
-                                if let TypeAnnotation::TypeVarKind(ty) = type_var_within {
-                                    let id = Self::get_var_id(ty, unifier)?;
-                                    if let Some(prev_ty) = method_var_map.insert(id, ty) {
-                                        // if already in the list, make sure they are the same?
-                                        assert_eq!(prev_ty, ty);
-                                    }
-                                } else {
-                                    unreachable!("must be type var annotation");
+                        let type_ann = {
+                            let annotation_expr = x
+                                .node
+                                .annotation
+                                .as_ref()
+                                .ok_or_else(|| "type annotation needed".to_string())?
+                                .as_ref();
+                            parse_ast_to_type_annotation_kinds(
+                                class_resolver.as_ref(),
+                                temp_def_list,
+                                unifier,
+                                primitives,
+                                annotation_expr,
+                            )?
+                        };
+                        // find type vars within this method parameter type annotation
+                        let type_vars_within =
+                            get_type_var_contained_in_type_annotation(&type_ann);
+                        // handle the class type var and the method type var
+                        for type_var_within in type_vars_within {
+                            if let TypeAnnotation::TypeVarKind(ty) = type_var_within {
+                                let id = Self::get_var_id(ty, unifier)?;
+                                if let Some(prev_ty) = method_var_map.insert(id, ty) {
+                                    // if already in the list, make sure they are the same?
+                                    assert_eq!(prev_ty, ty);
                                 }
+                            } else {
+                                unreachable!("must be type var annotation");
                             }
-
-                            // finish handling type vars
-                            let dummy_func_arg = FuncArg {
-                                name,
-                                ty: unifier.get_fresh_var().0,
-                                // TODO: symbol default value?
-                                default_value: None,
-                            };
-                            // push the dummy type and the type annotation
-                            // into the list for later unification
-                            type_var_to_concrete_def.insert(dummy_func_arg.ty, type_ann.clone());
-                            result.push(dummy_func_arg)
-                        } else {
-                            // if the parameter name is self
-                            // python does not seem to enforce the name
-                            // representing the self class object to be
-                            // `self`??, but we do it here
-                            let dummy_func_arg = FuncArg {
-                                name: "self".into(),
-                                ty: unifier.get_fresh_var().0,
-                                default_value: None,
-                            };
-                            type_var_to_concrete_def.insert(
-                                dummy_func_arg.ty,
-                                make_self_type_annotation(class_type_vars_def.as_slice(), class_id),
-                            );
-                            result.push(dummy_func_arg);
                         }
+                        // finish handling type vars
+                        let dummy_func_arg = FuncArg {
+                            name,
+                            ty: unifier.get_fresh_var().0,
+                            // TODO: symbol default value?
+                            default_value: None,
+                        };
+                        // push the dummy type and the type annotation
+                        // into the list for later unification
+                        type_var_to_concrete_def.insert(dummy_func_arg.ty, type_ann.clone());
+                        result.push(dummy_func_arg)
                     }
                     result
                 };
 
                 let ret_type = {
-                    if name != "__init__" {
-                        if let Some(result) = returns {
-                            let result = result.as_ref();
-                            let annotation = parse_ast_to_type_annotation_kinds(
-                                class_resolver.as_ref(),
-                                temp_def_list,
-                                unifier,
-                                primitives,
-                                result,
-                            )?;
-
-                            // find type vars within this return type annotation
-                            let type_vars_within =
-                                get_type_var_contained_in_type_annotation(&annotation);
-                            // handle the class type var and the method type var
-                            for type_var_within in type_vars_within {
-                                if let TypeAnnotation::TypeVarKind(ty) = type_var_within {
-                                    let id = Self::get_var_id(ty, unifier)?;
-                                    if let Some(prev_ty) = method_var_map.insert(id, ty) {
-                                        // if already in the list, make sure they are the same?
-                                        assert_eq!(prev_ty, ty);
-                                    }
-                                } else {
-                                    unreachable!("must be type var annotation");
+                    if let Some(result) = returns {
+                        let result = result.as_ref();
+                        let annotation = parse_ast_to_type_annotation_kinds(
+                            class_resolver.as_ref(),
+                            temp_def_list,
+                            unifier,
+                            primitives,
+                            result,
+                        )?;
+                        // find type vars within this return type annotation
+                        let type_vars_within =
+                            get_type_var_contained_in_type_annotation(&annotation);
+                        // handle the class type var and the method type var
+                        for type_var_within in type_vars_within {
+                            if let TypeAnnotation::TypeVarKind(ty) = type_var_within {
+                                let id = Self::get_var_id(ty, unifier)?;
+                                if let Some(prev_ty) = method_var_map.insert(id, ty) {
+                                    // if already in the list, make sure they are the same?
+                                    assert_eq!(prev_ty, ty);
                                 }
+                            } else {
+                                unreachable!("must be type var annotation");
                             }
-
-                            let dummy_return_type = unifier.get_fresh_var().0;
-                            type_var_to_concrete_def.insert(dummy_return_type, annotation.clone());
-                            dummy_return_type
-                        } else {
-                            // if do not have return annotation, return none
-                            // for uniform handling, still use type annoatation
-                            let dummy_return_type = unifier.get_fresh_var().0;
-                            type_var_to_concrete_def.insert(
-                                dummy_return_type,
-                                TypeAnnotation::PrimitiveKind(primitives.none),
-                            );
-                            dummy_return_type
                         }
+                        let dummy_return_type = unifier.get_fresh_var().0;
+                        type_var_to_concrete_def.insert(dummy_return_type, annotation.clone());
+                        dummy_return_type
                     } else {
-                        // if is the "__init__" function, the return type is self
+                        // if do not have return annotation, return none
+                        // for uniform handling, still use type annoatation
                         let dummy_return_type = unifier.get_fresh_var().0;
                         type_var_to_concrete_def.insert(
                             dummy_return_type,
-                            make_self_type_annotation(class_type_vars_def.as_slice(), class_id),
+                            TypeAnnotation::PrimitiveKind(primitives.none),
                         );
                         dummy_return_type
                     }
@@ -1041,7 +987,8 @@ impl TopLevelComposer {
                                                 unreachable!("must be type var annotation");
                                             }
                                         }
-
+                                        
+                                        // TODO: allow class have field which type refers to Self type?
                                         type_var_to_concrete_def
                                             .insert(dummy_field_type, annotation);
                                     } else {
