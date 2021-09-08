@@ -1,3 +1,5 @@
+use std::cell::RefCell;
+
 use crate::typecheck::typedef::TypeVarMeta;
 
 use super::*;
@@ -19,7 +21,7 @@ pub enum TypeAnnotation {
 }
 
 pub fn parse_ast_to_type_annotation_kinds<T>(
-    resolver: &Mutex<Box<dyn SymbolResolver + Send + Sync>>,
+    resolver: &(dyn SymbolResolver + Send + Sync),
     top_level_defs: &[Arc<RwLock<TopLevelDef>>],
     unifier: &mut Unifier,
     primitives: &PrimitiveStore,
@@ -36,7 +38,7 @@ pub fn parse_ast_to_type_annotation_kinds<T>(
                 if let Some(obj_id) = {
                     // write this way because the lock in the if/let construct lives
                     // for the whole if let construct
-                    let id = resolver.lock().get_identifier_def(x);
+                    let id = resolver.get_identifier_def(x);
                     id
                 } {
                     let def = top_level_defs[obj_id.0].read();
@@ -53,7 +55,7 @@ pub fn parse_ast_to_type_annotation_kinds<T>(
                         Err("function cannot be used as a type".into())
                     }
                 } else if let Some(ty) = {
-                    let ty = resolver.lock().get_symbol_type(unifier, primitives, id);
+                    let ty = resolver.get_symbol_type(unifier, primitives, id);
                     ty
                 } {
                     if let TypeEnum::TVar { .. } = unifier.get_ty(ty).as_ref() {
@@ -128,7 +130,6 @@ pub fn parse_ast_to_type_annotation_kinds<T>(
                     return Err("keywords cannot be class name".into());
                 }
                 let obj_id = resolver
-                    .lock()
                     .get_identifier_def(id)
                     .ok_or_else(|| "unknown class name".to_string())?;
                 let def = top_level_defs[obj_id.0].read();
@@ -237,9 +238,22 @@ pub fn get_type_from_type_annotation_kinds(
                         let subst_ty = unifier.subst(*ty, &subst).unwrap_or(*ty);
                         (name.clone(), subst_ty)
                     }));
+
+                    println!("tobj_fields: {:?}", tobj_fields);
+                    println!("{:?}: {}\n", 
+                        tobj_fields.get("__init__").unwrap(),
+                        unifier.stringify(
+                            *tobj_fields.get("__init__").unwrap(), 
+                            &mut |id| format!("class{}", id),
+                            &mut |id| format!("tvar{}", id)
+                        )
+                    );
+                    
                     Ok(unifier.add_ty(TypeEnum::TObj {
                         obj_id: *id,
-                        fields: tobj_fields.into(),
+                        //fields: RefCell::new(tobj_fields),
+                        fields: RefCell::new(HashMap::new()),
+                        // fields: Default::default(),
                         params: subst.into(),
                     }))
                 }

@@ -1,11 +1,4 @@
-use std::{
-    borrow::BorrowMut,
-    collections::{HashMap, HashSet},
-    fmt::Debug,
-    iter::FromIterator,
-    ops::{Deref, DerefMut},
-    sync::Arc,
-};
+use std::{borrow::BorrowMut, collections::{HashMap, HashSet}, fmt::Debug, iter::FromIterator, ops::{Deref, DerefMut}, sync::Arc};
 
 use super::typecheck::type_inferencer::PrimitiveStore;
 use super::typecheck::typedef::{FunSignature, FuncArg, SharedUnifier, Type, TypeEnum, Unifier};
@@ -50,7 +43,7 @@ pub enum TopLevelDef {
         // ancestor classes, including itself.
         ancestors: Vec<TypeAnnotation>,
         // symbol resolver of the module defined the class, none if it is built-in type
-        resolver: Option<Arc<Mutex<Box<dyn SymbolResolver + Send + Sync>>>>,
+        resolver: Option<Arc<Box<dyn SymbolResolver + Send + Sync>>>,
     },
     Function {
         // prefix for symbol, should be unique globally, and not ending with numbers
@@ -71,7 +64,7 @@ pub enum TopLevelDef {
         /// rigid type variables that would be substituted when the function is instantiated.
         instance_to_stmt: HashMap<String, FunInstance>,
         // symbol resolver of the module defined the class
-        resolver: Option<Arc<Mutex<Box<dyn SymbolResolver + Send + Sync>>>>,
+        resolver: Option<Arc<Box<dyn SymbolResolver + Send + Sync>>>,
     },
     Initializer {
         class_id: DefinitionId,
@@ -162,7 +155,7 @@ impl TopLevelComposer {
     pub fn register_top_level(
         &mut self,
         ast: ast::Stmt<()>,
-        resolver: Option<Arc<Mutex<Box<dyn SymbolResolver + Send + Sync>>>>,
+        resolver: Option<Arc<Box<dyn SymbolResolver + Send + Sync>>>,
     ) -> Result<(String, DefinitionId), String> {
         let defined_class_name = &mut self.defined_class_name;
         let defined_class_method_name = &mut self.defined_class_method_name;
@@ -374,7 +367,7 @@ impl TopLevelComposer {
                         let type_vars = type_var_list
                             .into_iter()
                             .map(|e| {
-                                class_resolver.lock().parse_type_annotation(
+                                class_resolver.parse_type_annotation(
                                     &temp_def_list,
                                     unifier,
                                     primitives_store,
@@ -463,7 +456,7 @@ impl TopLevelComposer {
                 // the function parse_ast_to make sure that no type var occured in
                 // bast_ty if it is a CustomClassKind
                 let base_ty = parse_ast_to_type_annotation_kinds(
-                    class_resolver,
+                    class_resolver.as_ref(),
                     &temp_def_list,
                     unifier,
                     &self.primitives_ty,
@@ -550,6 +543,8 @@ impl TopLevelComposer {
             }
         }
 
+        println!("type_var_to_concrete_def1: {:?}", type_var_to_concrete_def);
+
         // handle the inheritanced methods and fields
         let mut current_ancestor_depth: usize = 2;
         loop {
@@ -584,11 +579,41 @@ impl TopLevelComposer {
             }
         }
 
+        // println!("type_var_to_concrete_def2: {:?}", type_var_to_concrete_def);
+
         // unification of previously assigned typevar
+        println!("type_var_to_concrete_def3: {:?}\n", type_var_to_concrete_def);
+        let mut ddddd: Vec<(Type, Type)> = Vec::new();
         for (ty, def) in type_var_to_concrete_def {
+            println!(
+                "{:?}_{} -> {:?}\n",
+                ty,
+                unifier.stringify(ty, 
+                    &mut |id| format!("class{}", id),
+                    &mut |id| format!("tvar{}", id)
+                ),
+                def
+            );
             let target_ty =
                 get_type_from_type_annotation_kinds(&temp_def_list, unifier, primitives, &def)?;
             unifier.unify(ty, target_ty)?;
+            ddddd.push((ty, target_ty));
+        }
+        
+        for (ty, tar_ty) in ddddd {
+            println!(
+                "{:?}_{} -> {:?}_{}",
+                ty,
+                unifier.stringify(ty, 
+                    &mut |id| format!("class{}", id),
+                    &mut |id| format!("tvar{}", id)
+                ),
+                tar_ty,
+                unifier.stringify(tar_ty, 
+                    &mut |id| format!("class{}", id),
+                    &mut |id| format!("tvar{}", id)
+                ),
+            )
         }
 
         Ok(())
@@ -649,7 +674,7 @@ impl TopLevelComposer {
                                     .as_ref();
 
                                 let type_annotation = parse_ast_to_type_annotation_kinds(
-                                    resolver,
+                                    resolver.as_ref(),
                                     temp_def_list.as_slice(),
                                     unifier,
                                     primitives_store,
@@ -695,7 +720,7 @@ impl TopLevelComposer {
                             let return_ty_annotation = {
                                 let return_annotation = returns.as_ref();
                                 parse_ast_to_type_annotation_kinds(
-                                    resolver,
+                                    resolver.as_ref(),
                                     &temp_def_list,
                                     unifier,
                                     primitives_store,
@@ -848,7 +873,7 @@ impl TopLevelComposer {
                                     .ok_or_else(|| "type annotation needed".to_string())?
                                     .as_ref();
                                 parse_ast_to_type_annotation_kinds(
-                                    class_resolver,
+                                    class_resolver.as_ref(),
                                     temp_def_list,
                                     unifier,
                                     primitives,
@@ -908,7 +933,7 @@ impl TopLevelComposer {
                         if let Some(result) = returns {
                             let result = result.as_ref();
                             let annotation = parse_ast_to_type_annotation_kinds(
-                                class_resolver,
+                                class_resolver.as_ref(),
                                 temp_def_list,
                                 unifier,
                                 primitives,
@@ -986,7 +1011,7 @@ impl TopLevelComposer {
                                         class_fields_def.push((attr.to_string(), dummy_field_type));
 
                                         let annotation = parse_ast_to_type_annotation_kinds(
-                                            class_resolver,
+                                            class_resolver.as_ref(),
                                             &temp_def_list,
                                             unifier,
                                             primitives,

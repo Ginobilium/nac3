@@ -164,11 +164,11 @@ fn main() {
         .collect();
     id_to_type.insert("output".into(), output_fun);
 
-    let resolver = Arc::new(Mutex::new(Box::new(basic_symbol_resolver::Resolver {
+    let resolver = Arc::new(Box::new(basic_symbol_resolver::Resolver {
         class_names: Default::default(),
         id_to_type,
         id_to_def,
-    }) as Box<dyn SymbolResolver + Send + Sync>));
+    }) as Box<dyn SymbolResolver + Send + Sync>);
 
     for (_, (id, ast, signature)) in functions.into_iter() {
         if let TopLevelDef::Function {
@@ -253,7 +253,7 @@ fn main() {
 
     let instance = {
         let defs = top_level.definitions.read();
-        let mut instance = defs[resolver.lock().get_identifier_def("run").unwrap().0].write();
+        let mut instance = defs[resolver.get_identifier_def("run").unwrap().0].write();
         if let TopLevelDef::Function {
             instance_to_stmt,
             instance_to_symbol,

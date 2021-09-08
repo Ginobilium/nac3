@@ -32,8 +32,4 @@ impl SymbolResolver for Resolver {
     fn get_identifier_def(&self, id: &str) -> Option<DefinitionId> {
         self.id_to_def.get(id).cloned()
     }
-
-    fn add_id_def(&mut self, _: String, _: DefinitionId) {
-        unimplemented!();
-    }
 }

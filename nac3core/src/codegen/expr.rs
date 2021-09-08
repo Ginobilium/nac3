@@ -610,7 +610,7 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
                 if let ExprKind::Name { id, .. } = &func.as_ref().node {
                     // TODO: handle primitive casts and function pointers
                     let fun =
-                        self.resolver.lock().get_identifier_def(&id).expect("Unknown identifier");
+                        self.resolver.get_identifier_def(&id).expect("Unknown identifier");
                     let mut params =
                         args.iter().map(|arg| (None, self.gen_expr(arg).unwrap())).collect_vec();
                     let kw_iter = keywords.iter().map(|kw| {

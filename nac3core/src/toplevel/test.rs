@@ -15,15 +15,23 @@ use test_case::test_case;
 
 use super::*;
 
-struct Resolver {
-    id_to_type: HashMap<String, Type>,
-    id_to_def: HashMap<String, DefinitionId>,
-    class_names: HashMap<String, Type>,
+struct ResolverInternal {
+    id_to_type: Mutex<HashMap<String, Type>>,
+    id_to_def: Mutex<HashMap<String, DefinitionId>>,
+    class_names: Mutex<HashMap<String, Type>>,
 }
+
+impl ResolverInternal {
+    fn add_id_def(&self, id: String, def: DefinitionId) {
+        self.id_to_def.lock().insert(id, def);
+    }
+}
+
+struct Resolver(Arc<ResolverInternal>);
 
 impl SymbolResolver for Resolver {
     fn get_symbol_type(&self, _: &mut Unifier, _: &PrimitiveStore, str: &str) -> Option<Type> {
-        self.id_to_type.get(str).cloned()
+        self.0.id_to_type.lock().get(str).cloned()
     }
 
     fn get_symbol_value(&self, _: &str) -> Option<SymbolValue> {
@@ -35,12 +43,9 @@ impl SymbolResolver for Resolver {
     }
 
     fn get_identifier_def(&self, id: &str) -> Option<DefinitionId> {
-        self.id_to_def.get(id).cloned()
+        self.0.id_to_def.lock().get(id).cloned()
     }
 
-    fn add_id_def(&mut self, id: String, def: DefinitionId) {
-        self.id_to_def.insert(id, def);
-    }
 }
 
 #[test_case(
@@ -72,7 +77,8 @@ impl SymbolResolver for Resolver {
                     self.c: int32 = 4
                     self.a: bool = True
         "}
-    ]
+    ];
+    "register"
 )]
 fn test_simple_register(source: Vec<&str>) {
     let mut composer = TopLevelComposer::new();
@@ -109,23 +115,25 @@ fn test_simple_register(source: Vec<&str>) {
         "fun",
         "foo",
         "f"
-    ]
+    ];
+    "function compose"
 )]
 fn test_simple_function_analyze(source: Vec<&str>, tys: Vec<&str>, names: Vec<&str>) {
     let mut composer = TopLevelComposer::new();
 
-    let resolver = Arc::new(Mutex::new(Box::new(Resolver {
+    let internal_resolver = Arc::new(ResolverInternal {
         id_to_def: Default::default(),
         id_to_type: Default::default(),
         class_names: Default::default(),
-    }) as Box<dyn SymbolResolver + Send + Sync>));
+    });
+    let resolver = Arc::new(Box::new(Resolver(internal_resolver.clone())) as Box<dyn SymbolResolver + Send + Sync>);
 
     for s in source {
         let ast = parse_program(s).unwrap();
         let ast = ast[0].clone();
 
         let (id, def_id) = composer.register_top_level(ast, Some(resolver.clone())).unwrap();
-        resolver.lock().add_id_def(id, def_id);
+        internal_resolver.add_id_def(id, def_id);
     }
 
     composer.start_analysis().unwrap();
@@ -245,7 +253,19 @@ fn test_simple_function_analyze(source: Vec<&str>, tys: Vec<&str>, names: Vec<&s
         sig: \"fn[[a=5], 4]\",
         var_id: []
         }"},
-    ]
+    ];
+    "simple class compose"
+)]
+#[test_case(
+    vec![
+        indoc! {"
+            class Generic_A(Generic[T, V]):
+                def __init__():
+                    pass
+        "}
+    ],
+    vec![];
+    "generic class"
 )]
 fn test_simple_class_analyze(source: Vec<&str>, res: Vec<&str>) {
     let mut composer = TopLevelComposer::new();
@@ -254,23 +274,24 @@ fn test_simple_class_analyze(source: Vec<&str>, res: Vec<&str>) {
     let tvar_v = composer
         .unifier
         .get_fresh_var_with_range(&[composer.primitives_ty.bool, composer.primitives_ty.int32]);
-    println!("t: {}", tvar_t.1);
-    println!("v: {}\n", tvar_v.1);
+    println!("t: {}, {:?}", tvar_t.1, tvar_t.0);
+    println!("v: {}, {:?}\n", tvar_v.1, tvar_v.0);
 
-    let resolver = Arc::new(Mutex::new(Box::new(Resolver {
+    let internal_resolver = Arc::new(ResolverInternal {
         id_to_def: Default::default(),
-        id_to_type: vec![("T".to_string(), tvar_t.0), ("V".to_string(), tvar_v.0)]
-            .into_iter()
-            .collect(),
+        id_to_type: Mutex::new(vec![("T".to_string(), tvar_t.0), ("V".to_string(), tvar_v.0)]
+        .into_iter()
+        .collect()),
         class_names: Default::default(),
-    }) as Box<dyn SymbolResolver + Send + Sync>));
+    });
+    let resolver = Arc::new(Box::new(Resolver(internal_resolver.clone())) as Box<dyn SymbolResolver + Send + Sync>);
 
     for s in source {
         let ast = parse_program(s).unwrap();
         let ast = ast[0].clone();
 
         let (id, def_id) = composer.register_top_level(ast, Some(resolver.clone())).unwrap();
-        resolver.lock().add_id_def(id, def_id);
+        internal_resolver.add_id_def(id, def_id);
     }
 
     composer.start_analysis().unwrap();
@@ -278,15 +299,15 @@ fn test_simple_class_analyze(source: Vec<&str>, res: Vec<&str>) {
     // skip 5 to skip primitives
     for (i, (def, _)) in composer.definition_ast_list.iter().skip(5).enumerate() {
         let def = &*def.read();
-        println!(
-            "{}: {}\n",
-            i + 5,
-            def.to_string(
-                composer.unifier.borrow_mut(),
-                &mut |id| format!("class{}", id),
-                &mut |id| format!("tvar{}", id)
-            )
-        );
+        // println!(
+        //     "{}: {}\n",
+        //     i + 5,
+        //     def.to_string(
+        //         composer.unifier.borrow_mut(),
+        //         &mut |id| format!("class{}", id),
+        //         &mut |id| format!("tvar{}", id)
+        //     )
+        // );
         // assert_eq!(
         //     format!(
         //         "{}: {}",
