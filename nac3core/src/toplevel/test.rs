@@ -342,7 +342,7 @@ fn test_simple_class_analyze(source: Vec<&str>, res: Vec<&str>) {
     let tvar_v = composer
         .unifier
         .get_fresh_var_with_range(&[composer.primitives_ty.bool, composer.primitives_ty.int32]);
-    
+
     println!("t: {}, {:?}", tvar_t.1, tvar_t.0);
     println!("v: {}, {:?}\n", tvar_v.1, tvar_v.0);
 

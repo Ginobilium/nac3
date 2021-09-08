@@ -588,7 +588,7 @@ impl TopLevelComposer {
         }
 
         println!("type_var_to_concrete_def3: {:?}\n", type_var_to_concrete_def);
-        
+
         // unification of previously assigned typevar
         for (ty, def) in type_var_to_concrete_def {
             println!(
@@ -864,8 +864,7 @@ impl TopLevelComposer {
                             )?
                         };
                         // find type vars within this method parameter type annotation
-                        let type_vars_within =
-                            get_type_var_contained_in_type_annotation(&type_ann);
+                        let type_vars_within = get_type_var_contained_in_type_annotation(&type_ann);
                         // handle the class type var and the method type var
                         for type_var_within in type_vars_within {
                             if let TypeAnnotation::TypeVarKind(ty) = type_var_within {
@@ -987,7 +986,7 @@ impl TopLevelComposer {
                                                 unreachable!("must be type var annotation");
                                             }
                                         }
-                                        
+
                                         // TODO: allow class have field which type refers to Self type?
                                         type_var_to_concrete_def
                                             .insert(dummy_field_type, annotation);

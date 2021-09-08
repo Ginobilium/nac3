@@ -43,7 +43,12 @@ impl TopLevelDef {
                 "Function {{\nname: {:?},\nsig: {:?},\nvar_id: {:?}\n}}",
                 name,
                 unifier.stringify(*signature, obj_to_name, var_to_name),
-                var_id
+                {
+                    // NOTE: preserve the order for debug output and test
+                    let mut r = var_id.clone();
+                    r.sort_unstable();
+                    r
+                }
             ),
             TopLevelDef::Initializer { class_id } => format!("Initializer {{ {:?} }}", class_id),
         }
