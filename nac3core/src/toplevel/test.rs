@@ -156,7 +156,7 @@ fn test_simple_function_analyze(source: Vec<&str>, tys: Vec<&str>, names: Vec<&s
     vec![
         indoc! {"
             class A():
-                def __init__():
+                def __init__(self):
                     self.a: int32 = 3
                 def fun(b: B):
                     pass
@@ -165,12 +165,12 @@ fn test_simple_function_analyze(source: Vec<&str>, tys: Vec<&str>, names: Vec<&s
         "},
         indoc! {"
             class B(C):
-                def __init__():
+                def __init__(self):
                     pass
         "},
         indoc! {"
             class C(A):
-                def __init__():
+                def __init__(self):
                     pass
                 def fun(b: B):
                     a = 1
@@ -273,16 +273,16 @@ fn test_simple_function_analyze(source: Vec<&str>, tys: Vec<&str>, names: Vec<&s
     vec![
         indoc! {"
             class Generic_A(Generic[V], B):
-                def __init__():
+                def __init__(self):
                     self.a: int64 = 123123123123
-                def fun(a: int32) -> V:
+                def fun(self, a: int32) -> V:
                     pass
         "},
         indoc! {"
             class B:
-                def __init__():
+                def __init__(self):
                     self.aa: bool = False
-                def foo(b: T):
+                def foo(self, b: T):
                     pass
         "}
     ],
@@ -343,7 +343,7 @@ fn test_simple_function_analyze(source: Vec<&str>, tys: Vec<&str>, names: Vec<&s
         "},
         indoc! {"
             class A(Generic[T, V]):
-                def __init__(v: V):
+                def __init__(self, v: V):
                     self.a: T = 1
                     self.b: V = v
                 def fun(a: T) -> V:
@@ -355,7 +355,7 @@ fn test_simple_function_analyze(source: Vec<&str>, tys: Vec<&str>, names: Vec<&s
         "},
         indoc! {"
             class B:
-                def __init__():
+                def __init__(self):
                     pass
         "}
     ],
