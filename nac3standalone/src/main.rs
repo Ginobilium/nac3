@@ -6,7 +6,7 @@ use inkwell::{
     targets::*,
     OptimizationLevel,
 };
-use parking_lot::{Mutex, RwLock};
+use parking_lot::RwLock;
 use rustpython_parser::{
     ast::{fold::Fold, StmtKind},
     parser,
