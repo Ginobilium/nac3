@@ -414,7 +414,47 @@ fn test_simple_function_analyze(source: Vec<&str>, tys: Vec<&str>, names: Vec<&s
     ];
     "list tuple generic"
 )]
+#[test_case(
+    vec![indoc! {"
+        class A:
+            pass
+    "}],
+    vec!["class def must have __init__ method defined"];
+    "err no __init__"
+)]
+#[test_case(
+    vec![indoc! {"
+        class A:
+            def __init__():
+                pass
+    "}],
+    vec!["__init__ function must have a `self` parameter"];
+    "err no self_1"
+)]
+#[test_case(
+    vec![
+        indoc! {"
+            class A(B, Generic[T], C):
+                def __init__(self):
+                    pass
+        "},
+        indoc! {"
+            class B:
+                def __init__(self):
+                    pass
+        "},
+        indoc! {"
+            class C:
+                def __init__(self):
+                    pass
+        "}
+
+    ],
+    vec!["a class def can only have at most one base class declaration and one generic declaration"];
+    "err multiple inheritance"
+)]
 fn test_simple_class_analyze(source: Vec<&str>, res: Vec<&str>) {
+    let print = false;
     let mut composer = TopLevelComposer::new();
 
     let tvar_t = composer.unifier.get_fresh_var();
@@ -422,8 +462,10 @@ fn test_simple_class_analyze(source: Vec<&str>, res: Vec<&str>) {
         .unifier
         .get_fresh_var_with_range(&[composer.primitives_ty.bool, composer.primitives_ty.int32]);
 
-    println!("t: {}, {:?}", tvar_t.1, tvar_t.0);
-    println!("v: {}, {:?}\n", tvar_v.1, tvar_v.0);
+    if print {
+        println!("t: {}, {:?}", tvar_t.1, tvar_t.0);
+        println!("v: {}, {:?}\n", tvar_v.1, tvar_v.0);
+    }
 
     let internal_resolver = Arc::new(ResolverInternal {
         id_to_def: Default::default(),
@@ -440,35 +482,58 @@ fn test_simple_class_analyze(source: Vec<&str>, res: Vec<&str>) {
         let ast = parse_program(s).unwrap();
         let ast = ast[0].clone();
 
-        let (id, def_id) = composer.register_top_level(ast, Some(resolver.clone())).unwrap();
+        let (id, def_id) = {
+            match composer.register_top_level(ast, Some(resolver.clone())) {
+                Ok(x) => x,
+                Err(msg) => {
+                    if print {
+                        println!("{}", msg);
+                    } else {
+                        assert_eq!(res[0], msg);
+                    }
+                    return
+                }
+            }
+        };
         internal_resolver.add_id_def(id, def_id);
     }
 
-    composer.start_analysis().unwrap();
-
-    // skip 5 to skip primitives
-    for (i, (def, _)) in composer.definition_ast_list.iter().skip(5).enumerate() {
-        let def = &*def.read();
-        // println!(
-        //     "{}: {}\n",
-        //     i + 5,
-        //     def.to_string(
-        //         composer.unifier.borrow_mut(),
-        //         &mut |id| format!("class{}", id),
-        //         &mut |id| format!("tvar{}", id)
-        //     )
-        // );
-        assert_eq!(
-            format!(
-                "{}: {}",
-                i + 5,
-                def.to_string(
-                    composer.unifier.borrow_mut(),
-                    &mut |id| format!("class{}", id.to_string()),
-                    &mut |id| format!("tvar{}", id.to_string()),
+    if let Err(msg) = composer.start_analysis() {
+        if print {
+            println!("{}", msg);
+        } else {
+            assert_eq!(res[0], msg);
+        }
+    } else {
+        // skip 5 to skip primitives
+        for (i, (def, _)) in composer.definition_ast_list.iter().skip(5).enumerate() {
+            let def = &*def.read();
+            
+            if print {
+                println!(
+                    "{}: {}\n",
+                    i + 5,
+                    def.to_string(
+                        composer.unifier.borrow_mut(),
+                        &mut |id| format!("class{}", id),
+                        &mut |id| format!("tvar{}", id)
+                    )
+                );
+            } else {
+                assert_eq!(
+                    format!(
+                        "{}: {}",
+                        i + 5,
+                        def.to_string(
+                            composer.unifier.borrow_mut(),
+                            &mut |id| format!("class{}", id.to_string()),
+                            &mut |id| format!("tvar{}", id.to_string()),
+                        )
+                    ),
+                    res[i]
                 )
-            ),
-            res[i]
-        )
+            }
+        }
     }
+
 }
