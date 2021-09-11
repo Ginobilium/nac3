@@ -777,7 +777,7 @@ fn test_analyze(source: Vec<&str>, res: Vec<&str>) {
                     } else {
                         assert_eq!(res[0], msg);
                     }
-                    return
+                    return;
                 }
             }
         };
@@ -794,7 +794,7 @@ fn test_analyze(source: Vec<&str>, res: Vec<&str>) {
         // skip 5 to skip primitives
         for (i, (def, _)) in composer.definition_ast_list.iter().skip(5).enumerate() {
             let def = &*def.read();
-            
+
             if print {
                 println!(
                     "{}: {}\n",

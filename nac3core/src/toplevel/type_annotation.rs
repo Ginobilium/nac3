@@ -27,7 +27,7 @@ pub fn parse_ast_to_type_annotation_kinds<T>(
     primitives: &PrimitiveStore,
     expr: &ast::Expr<T>,
     // the key stores the type_var of this topleveldef::class, we only need this field here
-    mut locked: HashMap<DefinitionId, Vec<Type>>
+    mut locked: HashMap<DefinitionId, Vec<Type>>,
 ) -> Result<TypeAnnotation, String> {
     match &expr.node {
         ast::ExprKind::Name { id, .. } => match id.as_str() {
@@ -80,7 +80,7 @@ pub fn parse_ast_to_type_annotation_kinds<T>(
                 unifier,
                 primitives,
                 slice.as_ref(),
-                locked
+                locked,
             )?;
             if !matches!(def, TypeAnnotation::CustomClassKind { .. }) {
                 unreachable!("must be concretized custom class kind in the virtual")
@@ -98,7 +98,7 @@ pub fn parse_ast_to_type_annotation_kinds<T>(
                 unifier,
                 primitives,
                 slice.as_ref(),
-                locked
+                locked,
             )?;
             Ok(TypeAnnotation::ListKind(def_ann.into()))
         }
@@ -117,7 +117,7 @@ pub fn parse_ast_to_type_annotation_kinds<T>(
                             unifier,
                             primitives,
                             e,
-                            locked.clone()
+                            locked.clone(),
                         )
                     })
                     .collect::<Result<Vec<_>, _>>()?;
@@ -174,7 +174,7 @@ pub fn parse_ast_to_type_annotation_kinds<T>(
                                 {
                                     locked.insert(obj_id, type_vars.clone());
                                     locked.clone()
-                                }
+                                },
                             )
                         })
                         .collect::<Result<Vec<_>, _>>()?;

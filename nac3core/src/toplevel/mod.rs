@@ -137,7 +137,7 @@ impl TopLevelComposer {
                 "None".into(),
                 "self".into(),
                 "Kernel".into(),
-                "KernelImmutable".into()
+                "KernelImmutable".into(),
             ]),
             defined_class_method_name: Default::default(),
             defined_class_name: Default::default(),
@@ -426,14 +426,10 @@ impl TopLevelComposer {
         // skip 5 to skip analyzing the primitives
         for (class_def, class_ast) in self.definition_ast_list.iter_mut().skip(5) {
             let mut class_def = class_def.write();
-            let (
-                class_def_id,
-                class_bases,
-                class_ancestors,
-                class_resolver,
-                class_type_vars
-            ) = {
-                if let TopLevelDef::Class { ancestors, resolver, object_id, type_vars, .. } = class_def.deref_mut() {
+            let (class_def_id, class_bases, class_ancestors, class_resolver, class_type_vars) = {
+                if let TopLevelDef::Class { ancestors, resolver, object_id, type_vars, .. } =
+                    class_def.deref_mut()
+                {
                     if let Some(ast::Located {
                         node: ast::StmtKind::ClassDef { bases, .. }, ..
                     }) = class_ast
@@ -478,7 +474,7 @@ impl TopLevelComposer {
                     unifier,
                     &self.primitives_ty,
                     b,
-                    vec![(*class_def_id, class_type_vars.clone())].into_iter().collect()
+                    vec![(*class_def_id, class_type_vars.clone())].into_iter().collect(),
                 )?;
 
                 if let TypeAnnotation::CustomClassKind { .. } = &base_ty {
@@ -827,7 +823,7 @@ impl TopLevelComposer {
         };
         let class_resolver = class_resolver.as_ref().unwrap();
         let class_resolver = class_resolver.as_ref();
-        
+
         let mut defined_fields: HashSet<String> = HashSet::new();
         for b in class_body_ast {
             if let ast::StmtKind::FunctionDef { args, returns, name, .. } = &b.node {
@@ -862,7 +858,7 @@ impl TopLevelComposer {
                         return Err("__init__ function must have a `self` parameter".into());
                     }
                     if !defined_paramter_name.contains("self") {
-                        return Err("currently does not support static method".into())
+                        return Err("currently does not support static method".into());
                     }
 
                     let mut result = Vec::new();
@@ -882,7 +878,9 @@ impl TopLevelComposer {
                                     unifier,
                                     primitives,
                                     annotation_expr,
-                                    vec![(class_id, class_type_vars_def.clone())].into_iter().collect(),
+                                    vec![(class_id, class_type_vars_def.clone())]
+                                        .into_iter()
+                                        .collect(),
                                 )?
                             };
                             // find type vars within this method parameter type annotation
@@ -971,7 +969,8 @@ impl TopLevelComposer {
                 // NOTE: unify now since function type is not in type annotation define
                 // which is fine since type within method_type will be subst later
                 unifier.unify(method_dummy_ty, method_type)?;
-            } else if let ast::StmtKind::AnnAssign { target, annotation, value: None, .. } = &b.node {
+            } else if let ast::StmtKind::AnnAssign { target, annotation, value: None, .. } = &b.node
+            {
                 if let ast::ExprKind::Name { id: attr, .. } = &target.node {
                     if defined_fields.insert(attr.to_string()) {
                         let dummy_field_type = unifier.get_fresh_var().0;
@@ -980,10 +979,14 @@ impl TopLevelComposer {
                         // handle Kernel[T], KernelImmutable[T]
                         let annotation = {
                             match &annotation.as_ref().node {
-                                ast::ExprKind::Subscript { value, slice, .. } if {
-                                    matches!(&value.node, ast::ExprKind::Name { id, .. } if id == "Kernel" || id == "KernelImmutable")
-                                } => slice,
-                                _ => annotation
+                                ast::ExprKind::Subscript { value, slice, .. }
+                                    if {
+                                        matches!(&value.node, ast::ExprKind::Name { id, .. } if id == "Kernel" || id == "KernelImmutable")
+                                    } =>
+                                {
+                                    slice
+                                }
+                                _ => annotation,
                             }
                         };
 
@@ -1000,8 +1003,7 @@ impl TopLevelComposer {
                             get_type_var_contained_in_type_annotation(&annotation);
                         // handle the class type var and the method type var
                         for type_var_within in type_vars_within {
-                            if let TypeAnnotation::TypeVarKind(t) = type_var_within
-                            {
+                            if let TypeAnnotation::TypeVarKind(t) = type_var_within {
                                 if !class_type_vars_def.contains(&t) {
                                     return Err("class fields can only use type \
                                     vars declared as class generic type vars"
@@ -1011,14 +1013,13 @@ impl TopLevelComposer {
                                 unreachable!("must be type var annotation");
                             }
                         }
-                        type_var_to_concrete_def
-                            .insert(dummy_field_type, annotation);
+                        type_var_to_concrete_def.insert(dummy_field_type, annotation);
                     } else {
                         return Err("same class fields defined twice".into());
                     }
                 }
             } else {
-                return Err("unsupported statement type in class definition body".into())
+                return Err("unsupported statement type in class definition body".into());
             }
         }
         Ok(())
@@ -1133,7 +1134,10 @@ impl TopLevelComposer {
                             // is_override.insert(class_field_name.to_string());
                             // to_be_added = (class_field_name.to_string(), *class_field_ty);
                             // break;
-                            return Err(format!("field `{}` has already declared in the ancestor classes", class_field_name))
+                            return Err(format!(
+                                "field `{}` has already declared in the ancestor classes",
+                                class_field_name
+                            ));
                         }
                     }
                     new_child_fields.push(to_be_added);
