@@ -500,6 +500,109 @@ fn test_simple_function_analyze(source: Vec<&str>, tys: Vec<&str>, names: Vec<&s
     vec![
         indoc! {"
             class A(Generic[T]):
+                a: int32
+                b: T
+                c: A[int64]
+                def __init__(self, t: T):
+                    self.a = 3
+                    self.b = T
+                def fun(self, a: int32, b: T) -> list[virtual[B[bool]]]:
+                    pass
+                def foo(self, c: C):
+                    pass
+        "},
+        indoc! {"
+            class B(Generic[V], A[float]):
+                d: C
+                def __init__(self):
+                    pass
+                def fun(self, a: int32, b: T) -> list[virtual[B[bool]]]:
+                    # override
+                    pass
+        "},
+        indoc! {"
+            class C(B[bool]):
+                e: int64
+                def __init__(self):
+                    pass
+        "}
+    ],
+    vec![
+        indoc! {"5: Class {
+        name: \"A\",
+        def_id: DefinitionId(5),
+        ancestors: [CustomClassKind { id: DefinitionId(5), params: [TypeVarKind(UnificationKey(100))] }],
+        fields: [(\"a\", \"class0\"), (\"b\", \"tvar2\"), (\"c\", \"class5[2->class1]\")],
+        methods: [(\"__init__\", \"fn[[t=tvar2], class4]\", DefinitionId(6)), (\"fun\", \"fn[[a=class0, b=tvar2], list[virtual[class10[3->class3]]]]\", DefinitionId(7)), (\"foo\", \"fn[[c=class14], class4]\", DefinitionId(8))],
+        type_vars: [UnificationKey(100)]
+        }"},
+
+        indoc! {"6: Function {
+        name: \"A__init__\",
+        sig: \"fn[[t=tvar2], class4]\",
+        var_id: [2]
+        }"},
+
+        indoc! {"7: Function {
+        name: \"Afun\",
+        sig: \"fn[[a=class0, b=tvar2], list[virtual[class10[3->class3]]]]\",
+        var_id: [2]
+        }"},
+
+        indoc! {"8: Function {
+        name: \"Afoo\",
+        sig: \"fn[[c=class14], class4]\",
+        var_id: [2]
+        }"},
+
+        indoc! {"9: Initializer { DefinitionId(5) }"},
+
+        indoc! {"10: Class {
+        name: \"B\",
+        def_id: DefinitionId(10),
+        ancestors: [CustomClassKind { id: DefinitionId(10), params: [TypeVarKind(UnificationKey(101))] }, CustomClassKind { id: DefinitionId(5), params: [PrimitiveKind(UnificationKey(2))] }],
+        fields: [(\"a\", \"class0\"), (\"b\", \"tvar2\"), (\"c\", \"class5[2->class1]\"), (\"d\", \"class14\")],
+        methods: [(\"__init__\", \"fn[[], class4]\", DefinitionId(11)), (\"fun\", \"fn[[a=class0, b=tvar2], list[virtual[class10[3->class3]]]]\", DefinitionId(12)), (\"foo\", \"fn[[c=class14], class4]\", DefinitionId(8))],
+        type_vars: [UnificationKey(101)]
+        }"},
+
+        indoc! {"11: Function {
+        name: \"B__init__\",
+        sig: \"fn[[], class4]\",
+        var_id: [3]
+        }"},
+
+        indoc! {"12: Function {
+        name: \"Bfun\",
+        sig: \"fn[[a=class0, b=tvar2], list[virtual[class10[3->class3]]]]\",
+        var_id: [2, 3]
+        }"},
+
+        indoc! {"13: Initializer { DefinitionId(10) }"},
+
+        indoc! {"14: Class {
+        name: \"C\",
+        def_id: DefinitionId(14),
+        ancestors: [CustomClassKind { id: DefinitionId(14), params: [] }, CustomClassKind { id: DefinitionId(10), params: [PrimitiveKind(UnificationKey(3))] }, CustomClassKind { id: DefinitionId(5), params: [PrimitiveKind(UnificationKey(2))] }],
+        fields: [(\"a\", \"class0\"), (\"b\", \"tvar2\"), (\"c\", \"class5[2->class1]\"), (\"d\", \"class14\"), (\"e\", \"class1\")],
+        methods: [(\"__init__\", \"fn[[], class4]\", DefinitionId(15)), (\"fun\", \"fn[[a=class0, b=tvar2], list[virtual[class10[3->class3]]]]\", DefinitionId(12)), (\"foo\", \"fn[[c=class14], class4]\", DefinitionId(8))],
+        type_vars: []
+        }"},
+
+        indoc! {"15: Function {
+        name: \"C__init__\",
+        sig: \"fn[[], class4]\",
+        var_id: []
+        }"},
+
+        indoc! {"16: Initializer { DefinitionId(14) }"},
+    ];
+    "inheritance_override"
+)]
+#[test_case(
+    vec![
+        indoc! {"
+            class A(Generic[T]):
                 def __init__(self):
                     pass
                 def fun(self, a: A[T]) -> A[T]:
@@ -584,6 +687,57 @@ fn test_simple_function_analyze(source: Vec<&str>, tys: Vec<&str>, names: Vec<&s
     ],
     vec!["a class def can only have at most one base class declaration and one generic declaration"];
     "err multiple inheritance"
+)]
+#[test_case(
+    vec![
+        indoc! {"
+            class A(Generic[T]):
+                a: int32
+                b: T
+                c: A[int64]
+                def __init__(self, t: T):
+                    self.a = 3
+                    self.b = T
+                def fun(self, a: int32, b: T) -> list[virtual[B[bool]]]:
+                    pass
+        "},
+        indoc! {"
+            class B(Generic[V], A[float]):
+                def __init__(self):
+                    pass
+                def fun(self, a: int32, b: T) -> list[virtual[B[int32]]]:
+                    # override
+                    pass
+        "}
+    ],
+    vec!["method has same name as ancestors' method, but incompatible type"];
+    "err_incompatible_inheritance_method"
+)]
+#[test_case(
+    vec![
+        indoc! {"
+            class A(Generic[T]):
+                a: int32
+                b: T
+                c: A[int64]
+                def __init__(self, t: T):
+                    self.a = 3
+                    self.b = T
+                def fun(self, a: int32, b: T) -> list[virtual[B[bool]]]:
+                    pass
+        "},
+        indoc! {"
+            class B(Generic[V], A[float]):
+                a: int32
+                def __init__(self):
+                    pass
+                def fun(self, a: int32, b: T) -> list[virtual[B[bool]]]:
+                    # override
+                    pass
+        "}
+    ],
+    vec!["field `a` has already declared in the ancestor classes"];
+    "err_incompatible_inheritance_field"
 )]
 fn test_analyze(source: Vec<&str>, res: Vec<&str>) {
     let print = false;

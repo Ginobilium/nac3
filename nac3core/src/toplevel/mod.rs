@@ -1114,25 +1114,26 @@ impl TopLevelComposer {
 
                 // handle class fields
                 let mut new_child_fields: Vec<(String, Type)> = Vec::new();
-                let mut is_override: HashSet<String> = HashSet::new();
+                // let mut is_override: HashSet<String> = HashSet::new();
                 for (anc_field_name, anc_field_ty) in fields {
-                    let mut to_be_added = (anc_field_name.to_string(), *anc_field_ty);
+                    let to_be_added = (anc_field_name.to_string(), *anc_field_ty);
                     // find if there is a fields with the same name in the child class
-                    for (class_field_name, class_field_ty) in class_fields_def.iter() {
+                    for (class_field_name, ..) in class_fields_def.iter() {
                         if class_field_name == anc_field_name {
-                            let ok = Self::check_overload_field_type(
-                                *class_field_ty,
-                                *anc_field_ty,
-                                unifier,
-                                type_var_to_concrete_def,
-                            );
-                            if !ok {
-                                return Err("fields has same name as ancestors' field, but incompatible type".into());
-                            }
-                            // mark it as added
-                            is_override.insert(class_field_name.to_string());
-                            to_be_added = (class_field_name.to_string(), *class_field_ty);
-                            break;
+                            // let ok = Self::check_overload_field_type(
+                            //     *class_field_ty,
+                            //     *anc_field_ty,
+                            //     unifier,
+                            //     type_var_to_concrete_def,
+                            // );
+                            // if !ok {
+                            //     return Err("fields has same name as ancestors' field, but incompatible type".into());
+                            // }
+                            // // mark it as added
+                            // is_override.insert(class_field_name.to_string());
+                            // to_be_added = (class_field_name.to_string(), *class_field_ty);
+                            // break;
+                            return Err(format!("field `{}` has already declared in the ancestor classes", class_field_name))
                         }
                     }
                     new_child_fields.push(to_be_added);
