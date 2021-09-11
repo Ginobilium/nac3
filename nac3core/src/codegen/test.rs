@@ -2,7 +2,9 @@ use crate::{
     codegen::{CodeGenTask, WithCall, WorkerRegistry},
     location::Location,
     symbol_resolver::{SymbolResolver, SymbolValue},
-    toplevel::{DefinitionId, FunInstance, TopLevelComposer, TopLevelContext, TopLevelDef},
+    toplevel::{
+        composer::TopLevelComposer, DefinitionId, FunInstance, TopLevelContext, TopLevelDef,
+    },
     typecheck::{
         type_inferencer::{FunctionData, Inferencer, PrimitiveStore},
         typedef::{FunSignature, FuncArg, Type, TypeEnum, Unifier},

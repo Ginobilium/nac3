@@ -16,7 +16,7 @@ use std::{cell::RefCell, collections::HashMap, path::Path, sync::Arc};
 use nac3core::{
     codegen::{CodeGenTask, WithCall, WorkerRegistry},
     symbol_resolver::SymbolResolver,
-    toplevel::{DefinitionId, FunInstance, TopLevelComposer, TopLevelContext, TopLevelDef},
+    toplevel::{DefinitionId, FunInstance, composer::TopLevelComposer, TopLevelContext, TopLevelDef},
     typecheck::{
         type_inferencer::{FunctionData, Inferencer},
         typedef::{FunSignature, FuncArg, TypeEnum},
