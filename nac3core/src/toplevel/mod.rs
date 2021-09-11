@@ -136,6 +136,8 @@ impl TopLevelComposer {
                 "none".into(),
                 "None".into(),
                 "self".into(),
+                "Kernel".into(),
+                "KernelImmutable".into()
             ]),
             defined_class_method_name: Default::default(),
             defined_class_name: Default::default(),
@@ -825,9 +827,10 @@ impl TopLevelComposer {
         };
         let class_resolver = class_resolver.as_ref().unwrap();
         let class_resolver = class_resolver.as_ref();
-
+        
+        let mut defined_fields: HashSet<String> = HashSet::new();
         for b in class_body_ast {
-            if let ast::StmtKind::FunctionDef { args, returns, name, body, .. } = &b.node {
+            if let ast::StmtKind::FunctionDef { args, returns, name, .. } = &b.node {
                 let (method_dummy_ty, method_id) =
                     Self::get_class_method_def_info(class_methods_def, name)?;
 
@@ -968,61 +971,54 @@ impl TopLevelComposer {
                 // NOTE: unify now since function type is not in type annotation define
                 // which is fine since type within method_type will be subst later
                 unifier.unify(method_dummy_ty, method_type)?;
+            } else if let ast::StmtKind::AnnAssign { target, annotation, value: None, .. } = &b.node {
+                if let ast::ExprKind::Name { id: attr, .. } = &target.node {
+                    if defined_fields.insert(attr.to_string()) {
+                        let dummy_field_type = unifier.get_fresh_var().0;
+                        class_fields_def.push((attr.to_string(), dummy_field_type));
 
-                // class fields
-                if name == "__init__" {
-                    for b in body {
-                        let mut defined_fields: HashSet<String> = HashSet::new();
-                        // TODO: check the type of value, field instantiation check?
-                        if let ast::StmtKind::AnnAssign { annotation, target, value: _, .. } =
-                            &b.node
-                        {
-                            if let ast::ExprKind::Attribute { value, attr, .. } = &target.node {
-                                if matches!(&value.node, ast::ExprKind::Name { id, .. } if id == "self")
-                                {
-                                    if defined_fields.insert(attr.to_string()) {
-                                        let dummy_field_type = unifier.get_fresh_var().0;
-                                        class_fields_def.push((attr.to_string(), dummy_field_type));
+                        // handle Kernel[T], KernelImmutable[T]
+                        let annotation = {
+                            match &annotation.as_ref().node {
+                                ast::ExprKind::Subscript { value, slice, .. } if {
+                                    matches!(&value.node, ast::ExprKind::Name { id, .. } if id == "Kernel" || id == "KernelImmutable")
+                                } => slice,
+                                _ => annotation
+                            }
+                        };
 
-                                        let annotation = parse_ast_to_type_annotation_kinds(
-                                            class_resolver.as_ref(),
-                                            &temp_def_list,
-                                            unifier,
-                                            primitives,
-                                            annotation.as_ref(),
-                                            vec![(class_id, class_type_vars_def.clone())].into_iter().collect(),
-                                        )?;
-
-                                        // find type vars within this return type annotation
-                                        let type_vars_within =
-                                            get_type_var_contained_in_type_annotation(&annotation);
-                                        // handle the class type var and the method type var
-                                        for type_var_within in type_vars_within {
-                                            if let TypeAnnotation::TypeVarKind(t) = type_var_within
-                                            {
-                                                if !class_type_vars_def.contains(&t) {
-                                                    return Err("class fields can only use type \
-                                                    vars declared as class generic type vars"
-                                                        .into());
-                                                }
-                                            } else {
-                                                unreachable!("must be type var annotation");
-                                            }
-                                        }
-
-                                        // TODO: allow class have field which type refers to Self type?
-                                        type_var_to_concrete_def
-                                            .insert(dummy_field_type, annotation);
-                                    } else {
-                                        return Err("same class fields defined twice".into());
-                                    }
+                        let annotation = parse_ast_to_type_annotation_kinds(
+                            class_resolver.as_ref(),
+                            &temp_def_list,
+                            unifier,
+                            primitives,
+                            annotation.as_ref(),
+                            vec![(class_id, class_type_vars_def.clone())].into_iter().collect(),
+                        )?;
+                        // find type vars within this return type annotation
+                        let type_vars_within =
+                            get_type_var_contained_in_type_annotation(&annotation);
+                        // handle the class type var and the method type var
+                        for type_var_within in type_vars_within {
+                            if let TypeAnnotation::TypeVarKind(t) = type_var_within
+                            {
+                                if !class_type_vars_def.contains(&t) {
+                                    return Err("class fields can only use type \
+                                    vars declared as class generic type vars"
+                                        .into());
                                 }
+                            } else {
+                                unreachable!("must be type var annotation");
                             }
                         }
+                        type_var_to_concrete_def
+                            .insert(dummy_field_type, annotation);
+                    } else {
+                        return Err("same class fields defined twice".into());
                     }
                 }
             } else {
-                continue;
+                return Err("unsupported statement type in class definition body".into())
             }
         }
         Ok(())

@@ -156,8 +156,9 @@ fn test_simple_function_analyze(source: Vec<&str>, tys: Vec<&str>, names: Vec<&s
     vec![
         indoc! {"
             class A():
+                a: int32
                 def __init__(self):
-                    self.a: int32 = 3
+                    self.a = 3
                 def fun(self, b: B):
                     pass
                 def foo(self, a: T, b: V):
@@ -273,15 +274,17 @@ fn test_simple_function_analyze(source: Vec<&str>, tys: Vec<&str>, names: Vec<&s
     vec![
         indoc! {"
             class Generic_A(Generic[V], B):
+                a: int64
                 def __init__(self):
-                    self.a: int64 = 123123123123
+                    self.a = 123123123123
                 def fun(self, a: int32) -> V:
                     pass
         "},
         indoc! {"
             class B:
+                aa: bool
                 def __init__(self):
-                    self.aa: bool = False
+                    self.aa = False
                 def foo(self, b: T):
                     pass
         "}
@@ -343,9 +346,11 @@ fn test_simple_function_analyze(source: Vec<&str>, tys: Vec<&str>, names: Vec<&s
         "},
         indoc! {"
             class A(Generic[T, V]):
+                a: T
+                b: V
                 def __init__(self, v: V):
-                    self.a: T = 1
-                    self.b: V = v
+                    self.a = 1
+                    self.b = v
                 def fun(self, a: T) -> V:
                     pass
         "},
@@ -418,9 +423,11 @@ fn test_simple_function_analyze(source: Vec<&str>, tys: Vec<&str>, names: Vec<&s
     vec![
         indoc! {"
             class A(Generic[T, V]):
+                a: A[float, bool]
+                b: B
                 def __init__(self, a: A[float, bool], b: B):
-                    self.a: A[float, bool] = a
-                    self.b: B = b
+                    self.a = a
+                    self.b = b
                 def fun(self, a: A[float, bool]) -> A[bool, int32]:
                     pass
         "},
@@ -578,7 +585,7 @@ fn test_simple_function_analyze(source: Vec<&str>, tys: Vec<&str>, names: Vec<&s
     vec!["a class def can only have at most one base class declaration and one generic declaration"];
     "err multiple inheritance"
 )]
-fn test_simple_class_analyze(source: Vec<&str>, res: Vec<&str>) {
+fn test_analyze(source: Vec<&str>, res: Vec<&str>) {
     let print = false;
     let mut composer = TopLevelComposer::new();
 
