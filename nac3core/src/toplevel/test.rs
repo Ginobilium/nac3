@@ -86,7 +86,7 @@ fn test_simple_register(source: Vec<&str>) {
         let ast = parse_program(s).unwrap();
         let ast = ast[0].clone();
 
-        composer.register_top_level(ast, None).unwrap();
+        composer.register_top_level(ast, None, "__main__".into()).unwrap();
     }
 }
 
@@ -133,7 +133,8 @@ fn test_simple_function_analyze(source: Vec<&str>, tys: Vec<&str>, names: Vec<&s
         let ast = parse_program(s).unwrap();
         let ast = ast[0].clone();
 
-        let (id, def_id) = composer.register_top_level(ast, Some(resolver.clone())).unwrap();
+        let (id, def_id) =
+            composer.register_top_level(ast, Some(resolver.clone()), "__main__".into()).unwrap();
         internal_resolver.add_id_def(id, def_id);
     }
 
@@ -739,6 +740,23 @@ fn test_simple_function_analyze(source: Vec<&str>, tys: Vec<&str>, names: Vec<&s
     vec!["field `a` has already declared in the ancestor classes"];
     "err_incompatible_inheritance_field"
 )]
+#[test_case(
+    vec![
+        indoc! {"
+            class A:
+                def __init__(self):
+                    pass
+        "},
+        indoc! {"
+            class A:
+                a: int32
+                def __init__(self):
+                    pass
+        "}
+    ],
+    vec!["duplicate definition of class"];
+    "class same name"
+)]
 fn test_analyze(source: Vec<&str>, res: Vec<&str>) {
     let print = false;
     let mut composer = TopLevelComposer::new();
@@ -769,7 +787,7 @@ fn test_analyze(source: Vec<&str>, res: Vec<&str>) {
         let ast = ast[0].clone();
 
         let (id, def_id) = {
-            match composer.register_top_level(ast, Some(resolver.clone())) {
+            match composer.register_top_level(ast, Some(resolver.clone()), "__main__".into()) {
                 Ok(x) => x,
                 Err(msg) => {
                     if print {

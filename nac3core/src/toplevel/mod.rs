@@ -166,6 +166,7 @@ impl TopLevelComposer {
         &mut self,
         ast: ast::Stmt<()>,
         resolver: Option<Arc<Box<dyn SymbolResolver + Send + Sync>>>,
+        mod_path: String,
     ) -> Result<(String, DefinitionId), String> {
         // FIXME: different module same name?
         let defined_class_name = &mut self.defined_class_name;
@@ -176,7 +177,11 @@ impl TopLevelComposer {
                 if self.keyword_list.contains(name) {
                     return Err("cannot use keyword as a class name".into());
                 }
-                if !defined_class_name.insert(name.clone()) {
+                if !defined_class_name.insert({
+                    let mut n = mod_path.clone();
+                    n.push_str(name.as_str());
+                    n
+                }) {
                     return Err("duplicate definition of class".into());
                 }
 
@@ -216,7 +221,11 @@ impl TopLevelComposer {
                         }
                         let global_class_method_name =
                             Self::make_class_method_name(class_name.clone(), method_name);
-                        if !defined_class_method_name.insert(global_class_method_name.clone()) {
+                        if !defined_class_method_name.insert({
+                            let mut n = mod_path.clone();
+                            n.push_str(global_class_method_name.as_str());
+                            n
+                        }) {
                             return Err("duplicate class method definition".into());
                         }
                         if method_name == "__init__" {
@@ -283,7 +292,11 @@ impl TopLevelComposer {
                     return Err("cannot use keyword as a top level function name".into());
                 }
                 let fun_name = name.to_string();
-                if !defined_function_name.insert(name.to_string()) {
+                if !defined_function_name.insert({
+                    let mut n = mod_path.clone();
+                    n.push_str(name.as_str());
+                    n
+                }) {
                     return Err("duplicate top level function define".into());
                 }
 
