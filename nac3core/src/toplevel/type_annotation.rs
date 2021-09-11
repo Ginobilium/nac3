@@ -26,6 +26,8 @@ pub fn parse_ast_to_type_annotation_kinds<T>(
     unifier: &mut Unifier,
     primitives: &PrimitiveStore,
     expr: &ast::Expr<T>,
+    // the key stores the type_var of this topleveldef::class, we only need this field here
+    mut locked: HashMap<DefinitionId, Vec<Type>>
 ) -> Result<TypeAnnotation, String> {
     match &expr.node {
         ast::ExprKind::Name { id, .. } => match id.as_str() {
@@ -36,19 +38,26 @@ pub fn parse_ast_to_type_annotation_kinds<T>(
             "None" => Ok(TypeAnnotation::PrimitiveKind(primitives.none)),
             x => {
                 if let Some(obj_id) = resolver.get_identifier_def(x) {
-                    let def = top_level_defs[obj_id.0].read();
-                    if let TopLevelDef::Class { type_vars, .. } = &*def {
-                        // also check param number here
-                        if !type_vars.is_empty() {
-                            return Err(format!(
-                                "expect {} type variable parameter but got 0",
-                                type_vars.len()
-                            ));
+                    let type_vars = {
+                        let def_read = top_level_defs[obj_id.0].try_read();
+                        if let Some(def_read) = def_read {
+                            if let TopLevelDef::Class { type_vars, .. } = &*def_read {
+                                type_vars.clone()
+                            } else {
+                                return Err("function cannot be used as a type".into());
+                            }
+                        } else {
+                            locked.get(&obj_id).unwrap().clone()
                         }
-                        Ok(TypeAnnotation::CustomClassKind { id: obj_id, params: vec![] })
-                    } else {
-                        Err("function cannot be used as a type".into())
+                    };
+                    // check param number here
+                    if !type_vars.is_empty() {
+                        return Err(format!(
+                            "expect {} type variable parameter but got 0",
+                            type_vars.len()
+                        ));
                     }
+                    Ok(TypeAnnotation::CustomClassKind { id: obj_id, params: vec![] })
                 } else if let Some(ty) = resolver.get_symbol_type(unifier, primitives, id) {
                     if let TypeEnum::TVar { .. } = unifier.get_ty(ty).as_ref() {
                         Ok(TypeAnnotation::TypeVarKind(ty))
@@ -71,6 +80,7 @@ pub fn parse_ast_to_type_annotation_kinds<T>(
                 unifier,
                 primitives,
                 slice.as_ref(),
+                locked
             )?;
             if !matches!(def, TypeAnnotation::CustomClassKind { .. }) {
                 unreachable!("must be concretized custom class kind in the virtual")
@@ -88,6 +98,7 @@ pub fn parse_ast_to_type_annotation_kinds<T>(
                 unifier,
                 primitives,
                 slice.as_ref(),
+                locked
             )?;
             Ok(TypeAnnotation::ListKind(def_ann.into()))
         }
@@ -106,6 +117,7 @@ pub fn parse_ast_to_type_annotation_kinds<T>(
                             unifier,
                             primitives,
                             e,
+                            locked.clone()
                         )
                     })
                     .collect::<Result<Vec<_>, _>>()?;
@@ -124,53 +136,63 @@ pub fn parse_ast_to_type_annotation_kinds<T>(
                 let obj_id = resolver
                     .get_identifier_def(id)
                     .ok_or_else(|| "unknown class name".to_string())?;
-                let def = top_level_defs[obj_id.0].read();
-                if let TopLevelDef::Class { type_vars, .. } = &*def {
-                    // we do not check whether the application of type variables are compatible here
-                    let param_type_infos = {
-                        let params_ast = if let ast::ExprKind::Tuple { elts, .. } = &slice.node {
-                            elts.iter().collect_vec()
+                let type_vars = {
+                    let def_read = top_level_defs[obj_id.0].try_read();
+                    if let Some(def_read) = def_read {
+                        if let TopLevelDef::Class { type_vars, .. } = &*def_read {
+                            type_vars.clone()
                         } else {
-                            vec![slice.as_ref()]
-                        };
-                        if type_vars.len() != params_ast.len() {
-                            return Err(format!(
-                                "expect {} type parameters but got {}",
-                                type_vars.len(),
-                                params_ast.len()
-                            ));
+                            unreachable!("must be class here")
                         }
-                        let result = params_ast
-                            .into_iter()
-                            .map(|x| {
-                                parse_ast_to_type_annotation_kinds(
-                                    resolver,
-                                    top_level_defs,
-                                    unifier,
-                                    primitives,
-                                    x,
-                                )
-                            })
-                            .collect::<Result<Vec<_>, _>>()?;
-
-                        // make sure the result do not contain any type vars
-                        let no_type_var = result
-                            .iter()
-                            .all(|x| get_type_var_contained_in_type_annotation(x).is_empty());
-                        if no_type_var {
-                            result
-                        } else {
-                            return Err("application of type vars to generic class \
-                            is not currently supported"
-                                .into());
-                        }
+                    } else {
+                        locked.get(&obj_id).unwrap().clone()
+                    }
+                };
+                // we do not check whether the application of type variables are compatible here
+                let param_type_infos = {
+                    let params_ast = if let ast::ExprKind::Tuple { elts, .. } = &slice.node {
+                        elts.iter().collect_vec()
+                    } else {
+                        vec![slice.as_ref()]
                     };
+                    if type_vars.len() != params_ast.len() {
+                        return Err(format!(
+                            "expect {} type parameters but got {}",
+                            type_vars.len(),
+                            params_ast.len()
+                        ));
+                    }
+                    let result = params_ast
+                        .into_iter()
+                        .map(|x| {
+                            parse_ast_to_type_annotation_kinds(
+                                resolver,
+                                top_level_defs,
+                                unifier,
+                                primitives,
+                                x,
+                                {
+                                    locked.insert(obj_id, type_vars.clone());
+                                    locked.clone()
+                                }
+                            )
+                        })
+                        .collect::<Result<Vec<_>, _>>()?;
 
-                    // allow type var in class generic application list
-                    Ok(TypeAnnotation::CustomClassKind { id: obj_id, params: param_type_infos })
-                } else {
-                    Err("function cannot be used as a type".into())
-                }
+                    // make sure the result do not contain any type vars
+                    let no_type_var = result
+                        .iter()
+                        .all(|x| get_type_var_contained_in_type_annotation(x).is_empty());
+                    if no_type_var {
+                        result
+                    } else {
+                        return Err("application of type vars to generic class \
+                        is not currently supported"
+                            .into());
+                    }
+                };
+
+                Ok(TypeAnnotation::CustomClassKind { id: obj_id, params: param_type_infos })
             } else {
                 Err("unsupported expression type for class name".into())
             }
@@ -180,6 +202,9 @@ pub fn parse_ast_to_type_annotation_kinds<T>(
     }
 }
 
+// no need to have the `locked` parameter, unlike the `parse_ast_to_type_annotation_kinds`, since
+// when calling this function, there should be no topleveldef::class being write, and this function
+// also only read the toplevedefs
 pub fn get_type_from_type_annotation_kinds(
     top_level_defs: &[Arc<RwLock<TopLevelDef>>],
     unifier: &mut Unifier,
@@ -187,9 +212,10 @@ pub fn get_type_from_type_annotation_kinds(
     ann: &TypeAnnotation,
 ) -> Result<Type, String> {
     match ann {
-        TypeAnnotation::CustomClassKind { id, params } => {
-            let class_def = top_level_defs[id.0].read();
-            if let TopLevelDef::Class { fields, methods, type_vars, .. } = &*class_def {
+        TypeAnnotation::CustomClassKind { id: obj_id, params } => {
+            let def_read = top_level_defs[obj_id.0].read();
+            let class_def: &TopLevelDef = def_read.deref();
+            if let TopLevelDef::Class { fields, methods, type_vars, .. } = class_def {
                 if type_vars.len() != params.len() {
                     Err(format!(
                         "unexpected number of type parameters: expected {} but got {}",
@@ -210,7 +236,8 @@ pub fn get_type_from_type_annotation_kinds(
                         .collect::<Result<Vec<_>, _>>()?;
 
                     let subst = {
-                        // NOTE: check for compatible range here
+                        // check for compatible range
+                        // TODO: if allow type var to be applied, need more check
                         let mut result: HashMap<u32, Type> = HashMap::new();
                         for (tvar, p) in type_vars.iter().zip(param_ty) {
                             if let TypeEnum::TVar { id, range, meta: TypeVarMeta::Generic } =
@@ -265,7 +292,7 @@ pub fn get_type_from_type_annotation_kinds(
                     // );
 
                     Ok(unifier.add_ty(TypeEnum::TObj {
-                        obj_id: *id,
+                        obj_id: *obj_id,
                         fields: RefCell::new(tobj_fields),
                         params: subst.into(),
                     }))

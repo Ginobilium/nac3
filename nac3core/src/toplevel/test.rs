@@ -158,9 +158,9 @@ fn test_simple_function_analyze(source: Vec<&str>, tys: Vec<&str>, names: Vec<&s
             class A():
                 def __init__(self):
                     self.a: int32 = 3
-                def fun(b: B):
+                def fun(self, b: B):
                     pass
-                def foo(a: T, b: V):
+                def foo(self, a: T, b: V):
                     pass
         "},
         indoc! {"
@@ -172,7 +172,7 @@ fn test_simple_function_analyze(source: Vec<&str>, tys: Vec<&str>, names: Vec<&s
             class C(A):
                 def __init__(self):
                     pass
-                def fun(b: B):
+                def fun(self, b: B):
                     a = 1
                     pass
         "},
@@ -346,7 +346,7 @@ fn test_simple_function_analyze(source: Vec<&str>, tys: Vec<&str>, names: Vec<&s
                 def __init__(self, v: V):
                     self.a: T = 1
                     self.b: V = v
-                def fun(a: T) -> V:
+                def fun(self, a: T) -> V:
                     pass
         "},
         indoc! {"
@@ -413,6 +413,131 @@ fn test_simple_function_analyze(source: Vec<&str>, tys: Vec<&str>, names: Vec<&s
         indoc! {"13: Initializer { DefinitionId(11) }"},
     ];
     "list tuple generic"
+)]
+#[test_case(
+    vec![
+        indoc! {"
+            class A(Generic[T, V]):
+                def __init__(self, a: A[float, bool], b: B):
+                    self.a: A[float, bool] = a
+                    self.b: B = b
+                def fun(self, a: A[float, bool]) -> A[bool, int32]:
+                    pass
+        "},
+        indoc! {"
+            class B(A[int64, bool]):
+                def __init__(self):
+                    pass
+                def foo(self, b: B) -> B:
+                    pass
+                def bar(self, a: A[list[B], int32]) -> tuple[A[virtual[A[B, int32]], bool], B]:
+                    pass
+        "}
+    ],
+    vec![
+        indoc! {"5: Class {
+        name: \"A\",
+        def_id: DefinitionId(5),
+        ancestors: [CustomClassKind { id: DefinitionId(5), params: [TypeVarKind(UnificationKey(100)), TypeVarKind(UnificationKey(101))] }],
+        fields: [(\"a\", \"class5[2->class2, 3->class3]\"), (\"b\", \"class9\")],
+        methods: [(\"__init__\", \"fn[[a=class5[2->class2, 3->class3], b=class9], class4]\", DefinitionId(6)), (\"fun\", \"fn[[a=class5[2->class2, 3->class3]], class5[2->class3, 3->class0]]\", DefinitionId(7))],
+        type_vars: [UnificationKey(100), UnificationKey(101)]
+        }"},
+        
+        indoc! {"6: Function {
+        name: \"A__init__\",
+        sig: \"fn[[a=class5[2->class2, 3->class3], b=class9], class4]\",
+        var_id: [2, 3]
+        }"},
+        
+        indoc! {"7: Function {
+        name: \"Afun\",
+        sig: \"fn[[a=class5[2->class2, 3->class3]], class5[2->class3, 3->class0]]\",
+        var_id: [2, 3]
+        }"},
+        
+        indoc! {"8: Initializer { DefinitionId(5) }"},
+        
+        indoc! {"9: Class {
+        name: \"B\",
+        def_id: DefinitionId(9),
+        ancestors: [CustomClassKind { id: DefinitionId(9), params: [] }, CustomClassKind { id: DefinitionId(5), params: [PrimitiveKind(UnificationKey(1)), PrimitiveKind(UnificationKey(3))] }],
+        fields: [(\"a\", \"class5[2->class2, 3->class3]\"), (\"b\", \"class9\")],
+        methods: [(\"__init__\", \"fn[[], class4]\", DefinitionId(10)), (\"fun\", \"fn[[a=class5[2->class2, 3->class3]], class5[2->class3, 3->class0]]\", DefinitionId(7)), (\"foo\", \"fn[[b=class9], class9]\", DefinitionId(11)), (\"bar\", \"fn[[a=class5[2->list[class9], 3->class0]], tuple[class5[2->virtual[class5[2->class9, 3->class0]], 3->class3], class9]]\", DefinitionId(12))],
+        type_vars: []
+        }"},
+        
+        indoc! {"10: Function {
+        name: \"B__init__\",
+        sig: \"fn[[], class4]\",
+        var_id: []
+        }"},
+        
+        indoc! {"11: Function {
+        name: \"Bfoo\",
+        sig: \"fn[[b=class9], class9]\",
+        var_id: []
+        }"},
+        
+        indoc! {"12: Function {
+        name: \"Bbar\",
+        sig: \"fn[[a=class5[2->list[class9], 3->class0]], tuple[class5[2->virtual[class5[2->class9, 3->class0]], 3->class3], class9]]\",
+        var_id: []
+        }"},
+        
+        indoc! {"13: Initializer { DefinitionId(9) }"},
+    ];
+    "self1"
+)]
+#[test_case(
+    vec![
+        indoc! {"
+            class A(Generic[T]):
+                def __init__(self):
+                    pass
+                def fun(self, a: A[T]) -> A[T]:
+                    pass
+        "}
+    ],
+    vec!["application of type vars to generic class is not currently supported"];
+    "err no type var in generic app"
+)]
+#[test_case(
+    vec![
+        indoc! {"
+            class A(B):
+                def __init__(self):
+                    pass
+        "},
+        indoc! {"
+            class B(A):
+                def __init__(self):
+                    pass
+        "}
+    ],
+    vec!["cyclic inheritance detected"];
+    "cyclic1"
+)]
+#[test_case(
+    vec![
+        indoc! {"
+            class A(B[bool, int64]):
+                def __init__(self):
+                    pass
+        "},
+        indoc! {"
+            class B(Generic[V, T], C[int32]):
+                def __init__(self):
+                    pass
+        "},
+        indoc! {"
+            class C(Generic[T], A):
+                def __init__(self):
+                    pass
+        "},
+    ],
+    vec!["cyclic inheritance detected"];
+    "cyclic2"
 )]
 #[test_case(
     vec![indoc! {"
@@ -535,5 +660,4 @@ fn test_simple_class_analyze(source: Vec<&str>, res: Vec<&str>) {
             }
         }
     }
-
 }

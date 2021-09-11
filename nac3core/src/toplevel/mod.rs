@@ -165,6 +165,7 @@ impl TopLevelComposer {
         ast: ast::Stmt<()>,
         resolver: Option<Arc<Box<dyn SymbolResolver + Send + Sync>>>,
     ) -> Result<(String, DefinitionId), String> {
+        // FIXME: different module same name?
         let defined_class_name = &mut self.defined_class_name;
         let defined_class_method_name = &mut self.defined_class_method_name;
         let defined_function_name = &mut self.defined_function_name;
@@ -423,13 +424,19 @@ impl TopLevelComposer {
         // skip 5 to skip analyzing the primitives
         for (class_def, class_ast) in self.definition_ast_list.iter_mut().skip(5) {
             let mut class_def = class_def.write();
-            let (class_bases, class_ancestors, class_resolver) = {
-                if let TopLevelDef::Class { ancestors, resolver, .. } = class_def.deref_mut() {
+            let (
+                class_def_id,
+                class_bases,
+                class_ancestors,
+                class_resolver,
+                class_type_vars
+            ) = {
+                if let TopLevelDef::Class { ancestors, resolver, object_id, type_vars, .. } = class_def.deref_mut() {
                     if let Some(ast::Located {
                         node: ast::StmtKind::ClassDef { bases, .. }, ..
                     }) = class_ast
                     {
-                        (bases, ancestors, resolver)
+                        (object_id, bases, ancestors, resolver, type_vars)
                     } else {
                         unreachable!("must be both class")
                     }
@@ -469,6 +476,7 @@ impl TopLevelComposer {
                     unifier,
                     &self.primitives_ty,
                     b,
+                    vec![(*class_def_id, class_type_vars.clone())].into_iter().collect()
                 )?;
 
                 if let TypeAnnotation::CustomClassKind { .. } = &base_ty {
@@ -667,6 +675,8 @@ impl TopLevelComposer {
                                     unifier,
                                     primitives_store,
                                     annotation,
+                                    // NOTE: since only class need this, for function, it should be fine
+                                    HashMap::new(),
                                 )?;
 
                                 let type_vars_within =
@@ -713,6 +723,8 @@ impl TopLevelComposer {
                                     unifier,
                                     primitives_store,
                                     return_annotation,
+                                    // NOTE: since only class need this, for function, it should be fine
+                                    HashMap::new(),
                                 )?
                             };
 
@@ -774,7 +786,7 @@ impl TopLevelComposer {
     ) -> Result<(), String> {
         let mut class_def = class_def.write();
         let (
-            _class_id,
+            class_id,
             _class_name,
             _class_bases_ast,
             class_body_ast,
@@ -809,7 +821,7 @@ impl TopLevelComposer {
                 unreachable!("here must be class def ast");
             }
         } else {
-            unreachable!("here must be class def ast");
+            unreachable!("here must be toplevel class def");
         };
         let class_resolver = class_resolver.as_ref().unwrap();
         let class_resolver = class_resolver.as_ref();
@@ -846,6 +858,9 @@ impl TopLevelComposer {
                     if name == "__init__" && !defined_paramter_name.contains("self") {
                         return Err("__init__ function must have a `self` parameter".into());
                     }
+                    if !defined_paramter_name.contains("self") {
+                        return Err("currently does not support static method".into())
+                    }
 
                     let mut result = Vec::new();
                     for x in &args.args {
@@ -864,6 +879,7 @@ impl TopLevelComposer {
                                     unifier,
                                     primitives,
                                     annotation_expr,
+                                    vec![(class_id, class_type_vars_def.clone())].into_iter().collect(),
                                 )?
                             };
                             // find type vars within this method parameter type annotation
@@ -885,7 +901,7 @@ impl TopLevelComposer {
                             let dummy_func_arg = FuncArg {
                                 name,
                                 ty: unifier.get_fresh_var().0,
-                                // TODO: symbol default value?
+                                // TODO: default value?
                                 default_value: None,
                             };
                             // push the dummy type and the type annotation
@@ -906,6 +922,7 @@ impl TopLevelComposer {
                             unifier,
                             primitives,
                             result,
+                            vec![(class_id, class_type_vars_def.clone())].into_iter().collect(),
                         )?;
                         // find type vars within this return type annotation
                         let type_vars_within =
@@ -973,6 +990,7 @@ impl TopLevelComposer {
                                             unifier,
                                             primitives,
                                             annotation.as_ref(),
+                                            vec![(class_id, class_type_vars_def.clone())].into_iter().collect(),
                                         )?;
 
                                         // find type vars within this return type annotation
