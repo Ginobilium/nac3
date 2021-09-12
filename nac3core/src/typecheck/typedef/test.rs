@@ -67,7 +67,7 @@ impl Unifier {
 
 struct TestEnvironment {
     pub unifier: Unifier,
-    type_mapping: HashMap<String, Type>,
+    pub type_mapping: HashMap<String, Type>,
 }
 
 impl TestEnvironment {
@@ -323,6 +323,30 @@ fn test_invalid_unification(
         env.unifier.unify(a, b).unwrap();
     }
     assert_eq!(env.unifier.unify(t1, t2), Err(errornous_pair.1.to_string()));
+}
+
+#[test]
+fn test_recursive_subst() {
+    let mut env = TestEnvironment::new();
+    let int = *env.type_mapping.get("int").unwrap();
+    let foo_id = *env.type_mapping.get("Foo").unwrap();
+    let foo_ty = env.unifier.get_ty(foo_id);
+    let mapping: HashMap<_, _>;
+    if let TypeEnum::TObj { fields, params, .. } = &*foo_ty {
+        fields.borrow_mut().insert("rec".into(), foo_id);
+        mapping = params.borrow().iter().map(|(id, _)| (*id, int)).collect();
+    } else {
+        unreachable!()
+    }
+    let instantiated = env.unifier.subst(foo_id, &mapping).unwrap();
+    let instantiated_ty = env.unifier.get_ty(instantiated);
+    if let TypeEnum::TObj { fields, .. } = &*instantiated_ty {
+        let fields = fields.borrow();
+        assert!(env.unifier.unioned(*fields.get("a").unwrap(), int));
+        assert!(env.unifier.unioned(*fields.get("rec").unwrap(), instantiated));
+    } else {
+        unreachable!()
+    }
 }
 
 #[test]
