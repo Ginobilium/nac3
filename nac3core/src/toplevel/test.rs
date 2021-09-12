@@ -198,19 +198,19 @@ fn test_simple_function_analyze(source: Vec<&str>, tys: Vec<&str>, names: Vec<&s
         }"},
 
         indoc! {"6: Function {
-        name: \"A__init__\",
+        name: \"A.__init__\",
         sig: \"fn[[], class4]\",
         var_id: []
         }"},
 
         indoc! {"7: Function {
-        name: \"Afun\",
+        name: \"A.fun\",
         sig: \"fn[[b=class10], class4]\",
         var_id: []
         }"},
 
         indoc! {"8: Function {
-        name: \"Afoo\",
+        name: \"A.foo\",
         sig: \"fn[[a=tvar2, b=tvar3], class4]\",
         var_id: [2, 3]
         }"},
@@ -227,7 +227,7 @@ fn test_simple_function_analyze(source: Vec<&str>, tys: Vec<&str>, names: Vec<&s
         }"},
 
         indoc! {"11: Function {
-        name: \"B__init__\",
+        name: \"B.__init__\",
         sig: \"fn[[], class4]\",
         var_id: []
         }"},
@@ -244,13 +244,13 @@ fn test_simple_function_analyze(source: Vec<&str>, tys: Vec<&str>, names: Vec<&s
         }"},
 
         indoc! {"14: Function {
-        name: \"C__init__\",
+        name: \"C.__init__\",
         sig: \"fn[[], class4]\",
         var_id: []
         }"},
 
         indoc! {"15: Function {
-        name: \"Cfun\",
+        name: \"C.fun\",
         sig: \"fn[[b=class10], class4]\",
         var_id: []
         }"},
@@ -301,13 +301,13 @@ fn test_simple_function_analyze(source: Vec<&str>, tys: Vec<&str>, names: Vec<&s
         }"},
 
         indoc! {"6: Function {
-        name: \"Generic_A__init__\",
+        name: \"Generic_A.__init__\",
         sig: \"fn[[], class4]\",
         var_id: [3]
         }"},
 
         indoc! {"7: Function {
-        name: \"Generic_Afun\",
+        name: \"Generic_A.fun\",
         sig: \"fn[[a=class0], tvar3]\",
         var_id: [3]
         }"},
@@ -324,13 +324,13 @@ fn test_simple_function_analyze(source: Vec<&str>, tys: Vec<&str>, names: Vec<&s
         }"},
 
         indoc! {"10: Function {
-        name: \"B__init__\",
+        name: \"B.__init__\",
         sig: \"fn[[], class4]\",
         var_id: []
         }"},
 
         indoc! {"11: Function {
-        name: \"Bfoo\",
+        name: \"B.foo\",
         sig: \"fn[[b=tvar2], class4]\",
         var_id: [2]
         }"},
@@ -382,13 +382,13 @@ fn test_simple_function_analyze(source: Vec<&str>, tys: Vec<&str>, names: Vec<&s
         }"},
 
         indoc! {"7: Function {
-        name: \"A__init__\",
+        name: \"A.__init__\",
         sig: \"fn[[v=tvar3], class4]\",
         var_id: [2, 3]
         }"},
 
         indoc! {"8: Function {
-        name: \"Afun\",
+        name: \"A.fun\",
         sig: \"fn[[a=tvar2], tvar3]\",
         var_id: [2, 3]
         }"},
@@ -411,7 +411,7 @@ fn test_simple_function_analyze(source: Vec<&str>, tys: Vec<&str>, names: Vec<&s
         }"},
 
         indoc! {"12: Function {
-        name: \"B__init__\",
+        name: \"B.__init__\",
         sig: \"fn[[], class4]\",
         var_id: []
         }"},
@@ -453,13 +453,13 @@ fn test_simple_function_analyze(source: Vec<&str>, tys: Vec<&str>, names: Vec<&s
         }"},
         
         indoc! {"6: Function {
-        name: \"A__init__\",
+        name: \"A.__init__\",
         sig: \"fn[[a=class5[2->class2, 3->class3], b=class9], class4]\",
         var_id: [2, 3]
         }"},
         
         indoc! {"7: Function {
-        name: \"Afun\",
+        name: \"A.fun\",
         sig: \"fn[[a=class5[2->class2, 3->class3]], class5[2->class3, 3->class0]]\",
         var_id: [2, 3]
         }"},
@@ -476,19 +476,19 @@ fn test_simple_function_analyze(source: Vec<&str>, tys: Vec<&str>, names: Vec<&s
         }"},
         
         indoc! {"10: Function {
-        name: \"B__init__\",
+        name: \"B.__init__\",
         sig: \"fn[[], class4]\",
         var_id: []
         }"},
         
         indoc! {"11: Function {
-        name: \"Bfoo\",
+        name: \"B.foo\",
         sig: \"fn[[b=class9], class9]\",
         var_id: []
         }"},
         
         indoc! {"12: Function {
-        name: \"Bbar\",
+        name: \"B.bar\",
         sig: \"fn[[a=class5[2->list[class9], 3->class0]], tuple[class5[2->virtual[class5[2->class9, 3->class0]], 3->class3], class9]]\",
         var_id: []
         }"},
@@ -539,19 +539,19 @@ fn test_simple_function_analyze(source: Vec<&str>, tys: Vec<&str>, names: Vec<&s
         }"},
 
         indoc! {"6: Function {
-        name: \"A__init__\",
+        name: \"A.__init__\",
         sig: \"fn[[t=tvar2], class4]\",
         var_id: [2]
         }"},
 
         indoc! {"7: Function {
-        name: \"Afun\",
+        name: \"A.fun\",
         sig: \"fn[[a=class0, b=tvar2], list[virtual[class10[3->class3]]]]\",
         var_id: [2]
         }"},
 
         indoc! {"8: Function {
-        name: \"Afoo\",
+        name: \"A.foo\",
         sig: \"fn[[c=class14], class4]\",
         var_id: [2]
         }"},
@@ -568,13 +568,13 @@ fn test_simple_function_analyze(source: Vec<&str>, tys: Vec<&str>, names: Vec<&s
         }"},
 
         indoc! {"11: Function {
-        name: \"B__init__\",
+        name: \"B.__init__\",
         sig: \"fn[[], class4]\",
         var_id: [3]
         }"},
 
         indoc! {"12: Function {
-        name: \"Bfun\",
+        name: \"B.fun\",
         sig: \"fn[[a=class0, b=tvar2], list[virtual[class10[3->class3]]]]\",
         var_id: [2, 3]
         }"},
@@ -591,7 +591,7 @@ fn test_simple_function_analyze(source: Vec<&str>, tys: Vec<&str>, names: Vec<&s
         }"},
 
         indoc! {"15: Function {
-        name: \"C__init__\",
+        name: \"C.__init__\",
         sig: \"fn[[], class4]\",
         var_id: []
         }"},

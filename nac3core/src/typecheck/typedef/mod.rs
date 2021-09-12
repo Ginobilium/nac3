@@ -717,7 +717,7 @@ impl Unifier {
                     let params = params.iter().map(|(id, v)| {
                         format!("{}->{}", *id, self.stringify(*v, obj_to_name, var_to_name))
                     });
-                    // NOTE: sort to preserve order
+                    // sort to preserve order
                     let mut params = params.sorted();
                     format!("{}[{}]", name, params.join(", "))
                 } else {

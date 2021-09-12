@@ -44,7 +44,7 @@ impl TopLevelDef {
                 name,
                 unifier.stringify(*signature, obj_to_name, var_to_name),
                 {
-                    // NOTE: preserve the order for debug output and test
+                    // preserve the order for debug output and test
                     let mut r = var_id.clone();
                     r.sort_unstable();
                     r
@@ -123,6 +123,7 @@ impl TopLevelComposer {
     }
 
     pub fn make_class_method_name(mut class_name: String, method_name: &str) -> String {
+        class_name.push('.');
         class_name.push_str(method_name);
         class_name
     }

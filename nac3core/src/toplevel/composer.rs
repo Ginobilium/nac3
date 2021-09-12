@@ -85,7 +85,6 @@ impl TopLevelComposer {
         resolver: Option<Arc<Box<dyn SymbolResolver + Send + Sync>>>,
         mod_path: String,
     ) -> Result<(String, DefinitionId), String> {
-        // FIXME: different module same name?
         let defined_class_name = &mut self.defined_class_name;
         let defined_class_method_name = &mut self.defined_class_method_name;
         let defined_function_name = &mut self.defined_function_name;
@@ -603,7 +602,8 @@ impl TopLevelComposer {
                                     unifier,
                                     primitives_store,
                                     annotation,
-                                    // NOTE: since only class need this, for function, it should be fine
+                                    // NOTE: since only class need this, for function
+                                    // it should be fine to be empty map
                                     HashMap::new(),
                                 )?;
 
@@ -651,7 +651,8 @@ impl TopLevelComposer {
                                     unifier,
                                     primitives_store,
                                     return_annotation,
-                                    // NOTE: since only class need this, for function, it should be fine
+                                    // NOTE: since only class need this, for function
+                                    // it should be fine to be empty map
                                     HashMap::new(),
                                 )?
                             };
@@ -896,8 +897,8 @@ impl TopLevelComposer {
                     FunSignature { args: arg_types, ret: ret_type, vars: method_var_map }.into(),
                 ));
 
-                // NOTE: unify now since function type is not in type annotation define
-                // which is fine since type within method_type will be subst later
+                // unify now since function type is not in type annotation define
+                // which should be fine since type within method_type will be subst later
                 unifier.unify(method_dummy_ty, method_type)?;
             } else if let ast::StmtKind::AnnAssign { target, annotation, value: None, .. } = &b.node
             {

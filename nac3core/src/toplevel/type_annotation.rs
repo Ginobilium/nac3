@@ -244,7 +244,7 @@ pub fn get_type_from_type_annotation_kinds(
                                 unifier.get_ty(*tvar).as_ref()
                             {
                                 let ok: bool = {
-                                    // NOTE: create a temp type var and unify to check compatibility
+                                    // create a temp type var and unify to check compatibility
                                     let temp =
                                         unifier.get_fresh_var_with_range(range.borrow().as_slice());
                                     unifier.unify(temp.0, p).is_ok()
