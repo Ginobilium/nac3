@@ -1,8 +1,9 @@
 use super::*;
 
+type DefAst = (Arc<RwLock<TopLevelDef>>, Option<ast::Stmt<()>>);
 pub struct TopLevelComposer {
     // list of top level definitions, same as top level context
-    pub definition_ast_list: Vec<(Arc<RwLock<TopLevelDef>>, Option<ast::Stmt<()>>)>,
+    pub definition_ast_list: Vec<DefAst>,
     // start as a primitive unifier, will add more top_level defs inside
     pub unifier: Unifier,
     // primitive store
@@ -69,7 +70,7 @@ impl TopLevelComposer {
             )
             .into(),
             // FIXME: all the big unifier or?
-            unifiers: Default::default(),
+            unifiers: Arc::new(RwLock::new(vec![(self.unifier.get_shared_unifier(), self.primitives_ty)])),
         }
     }
 
@@ -118,14 +119,16 @@ impl TopLevelComposer {
                 // parse class def body and register class methods into the def list.
                 // module's symbol resolver would not know the name of the class methods,
                 // thus cannot return their definition_id
-                let mut class_method_name_def_ids: Vec<(
+                type MethodInfo = (
                     // the simple method name without class name
                     String,
                     // in this top level def, method name is prefixed with the class name
                     Arc<RwLock<TopLevelDef>>,
                     DefinitionId,
                     Type,
-                )> = Vec::new();
+                    ast::Stmt<()>,
+                );
+                let mut class_method_name_def_ids: Vec<MethodInfo> = Vec::new();
                 // we do not push anything to the def list, so we keep track of the index
                 // and then push in the correct order after the for loop
                 let mut class_method_index_offset = 0;
@@ -166,6 +169,7 @@ impl TopLevelComposer {
                             .into(),
                             DefinitionId(method_def_id),
                             dummy_method_type.0,
+                            b.clone(),
                         ));
                     } else {
                         // do nothing
@@ -179,7 +183,7 @@ impl TopLevelComposer {
                 // move the ast to the entry of the class in the ast_list
                 class_def_ast.1 = Some(ast);
                 // get the methods into the top level class_def
-                for (name, _, id, ty) in &class_method_name_def_ids {
+                for (name, _, id, ty, ..) in &class_method_name_def_ids {
                     let mut class_def = class_def_ast.0.write();
                     if let TopLevelDef::Class { methods, .. } = class_def.deref_mut() {
                         methods.push((name.clone(), *ty, *id))
@@ -189,8 +193,8 @@ impl TopLevelComposer {
                 }
                 // now class_def_ast and class_method_def_ast_ids are ok, put them into actual def list in correct order
                 self.definition_ast_list.push(class_def_ast);
-                for (_, def, ..) in class_method_name_def_ids {
-                    self.definition_ast_list.push((def, None));
+                for (_, def, _, _, ast) in class_method_name_def_ids {
+                    self.definition_ast_list.push((def, Some(ast)));
                 }
 
                 // put the constructor into the def_list
@@ -209,7 +213,7 @@ impl TopLevelComposer {
                 }
                 let fun_name = name.to_string();
                 if !defined_function_name.insert({
-                    let mut n = mod_path.clone();
+                    let mut n = mod_path;
                     n.push_str(name.as_str());
                     n
                 }) {
@@ -555,16 +559,19 @@ impl TopLevelComposer {
         for (function_def, function_ast) in def_list.iter().skip(5) {
             let mut function_def = function_def.write();
             let function_def = function_def.deref_mut();
-            let function_ast = if let Some(function_ast) = function_ast {
-                function_ast
+            let function_ast = if let Some(x) = function_ast.as_ref() {
+                x
             } else {
-                // no ast, class method, continue
                 continue;
             };
 
             if let TopLevelDef::Function { signature: dummy_ty, resolver, var_id, .. } =
                 function_def
             {
+                if matches!(unifier.get_ty(*dummy_ty).as_ref(), TypeEnum::TFunc(_)) {
+                    // already have a function type, is class method, skip
+                    continue;
+                }
                 if let ast::StmtKind::FunctionDef { args, returns, .. } = &function_ast.node {
                     let resolver = resolver.as_ref();
                     let resolver = resolver.unwrap();
