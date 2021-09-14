@@ -25,12 +25,17 @@ impl ResolverInternal {
     fn add_id_def(&self, id: String, def: DefinitionId) {
         self.id_to_def.lock().insert(id, def);
     }
+
+    fn add_id_type(&self, id: String, ty: Type) {
+        self.id_to_type.lock().insert(id, ty);
+    }
 }
 
 struct Resolver(Arc<ResolverInternal>);
 
 impl SymbolResolver for Resolver {
     fn get_symbol_type(&self, _: &mut Unifier, _: &PrimitiveStore, str: &str) -> Option<Type> {
+        println!("unkonw here resolver {}", str);
         self.0.id_to_type.lock().get(str).cloned()
     }
 
@@ -133,9 +138,12 @@ fn test_simple_function_analyze(source: Vec<&str>, tys: Vec<&str>, names: Vec<&s
         let ast = parse_program(s).unwrap();
         let ast = ast[0].clone();
 
-        let (id, def_id) =
+        let (id, def_id, ty) =
             composer.register_top_level(ast, Some(resolver.clone()), "__main__".into()).unwrap();
-        internal_resolver.add_id_def(id, def_id);
+        internal_resolver.add_id_def(id.clone(), def_id);
+        if let Some(ty) = ty {
+            internal_resolver.add_id_type(id, ty);
+        }
     }
 
     composer.start_analysis(true).unwrap();
@@ -786,7 +794,7 @@ fn test_analyze(source: Vec<&str>, res: Vec<&str>) {
         let ast = parse_program(s).unwrap();
         let ast = ast[0].clone();
 
-        let (id, def_id) = {
+        let (id, def_id, ty) = {
             match composer.register_top_level(ast, Some(resolver.clone()), "__main__".into()) {
                 Ok(x) => x,
                 Err(msg) => {
@@ -799,7 +807,10 @@ fn test_analyze(source: Vec<&str>, res: Vec<&str>) {
                 }
             }
         };
-        internal_resolver.add_id_def(id, def_id);
+        internal_resolver.add_id_def(id.clone(), def_id);
+        if let Some(ty) = ty {
+            internal_resolver.add_id_type(id, ty);
+        }
     }
 
     if let Err(msg) = composer.start_analysis(false) {
@@ -846,6 +857,14 @@ fn test_analyze(source: Vec<&str>, res: Vec<&str>) {
         indoc! {"
             def fun(a: int32, b: int32) -> int32:
                 return a + b
+        "},
+        indoc! {"
+            def fib(n: int32) -> int32:
+                if n <= 2:
+                    return 1
+                a = fib(n - 1)
+                b = fib(n - 2)
+                return fib(n - 1)
         "}
     ],
     vec![];
@@ -861,14 +880,24 @@ fn test_analyze(source: Vec<&str>, res: Vec<&str>) {
                 def fun(self) -> int32:
                     b = self.a + 3
                     return b * self.a
-                def dup(self) -> A:
+                def clone(self) -> A:
                     SELF = self
                     return SELF
-
+                def sum(self) -> int32:
+                    if self.a == 0:
+                        return self.a
+                    else:
+                        a = self.a
+                        self.a = self.a - 1
+                        return a + self.sum()
+                def fib(self, a: int32) -> int32:
+                    if a <= 2:
+                        return 1
+                    return self.fib(a - 1) + self.fib(a - 2)
         "},
         indoc! {"
             def fun(a: A) -> int32:
-                return a.fun()
+                return a.fun() + 2
         "}
     ],
     vec![];
@@ -878,21 +907,9 @@ fn test_inference(source: Vec<&str>, res: Vec<&str>) {
     let print = true;
     let mut composer = TopLevelComposer::new();
 
-    let tvar_t = composer.unifier.get_fresh_var();
-    let tvar_v = composer
-        .unifier
-        .get_fresh_var_with_range(&[composer.primitives_ty.bool, composer.primitives_ty.int32]);
-
-    if print {
-        println!("t: {}, {:?}", tvar_t.1, tvar_t.0);
-        println!("v: {}, {:?}\n", tvar_v.1, tvar_v.0);
-    }
-
     let internal_resolver = Arc::new(ResolverInternal {
         id_to_def: Default::default(),
-        id_to_type: Mutex::new(
-            vec![("T".to_string(), tvar_t.0), ("V".to_string(), tvar_v.0)].into_iter().collect(),
-        ),
+        id_to_type: Default::default(),
         class_names: Default::default(),
     });
     let resolver = Arc::new(
@@ -903,7 +920,7 @@ fn test_inference(source: Vec<&str>, res: Vec<&str>) {
         let ast = parse_program(s).unwrap();
         let ast = ast[0].clone();
 
-        let (id, def_id) = {
+        let (id, def_id, ty) = {
             match composer.register_top_level(ast, Some(resolver.clone()), "__main__".into()) {
                 Ok(x) => x,
                 Err(msg) => {
@@ -916,12 +933,14 @@ fn test_inference(source: Vec<&str>, res: Vec<&str>) {
                 }
             }
         };
-        internal_resolver.add_id_def(id, def_id);
+        internal_resolver.add_id_def(id.clone(), def_id);
+        if let Some(ty) = ty {
+            internal_resolver.add_id_type(id, ty);
+        }
     }
-    
+
     if let Err(msg) = composer.start_analysis(true) {
         if print {
-            // println!("err2:");
             println!("{}", msg);
         } else {
             assert_eq!(res[0], msg);
@@ -931,10 +950,15 @@ fn test_inference(source: Vec<&str>, res: Vec<&str>) {
         for (i, (def, _)) in composer.definition_ast_list.iter().skip(5).enumerate() {
             let def = &*def.read();
 
-            if let TopLevelDef::Function { instance_to_stmt, .. } = def {
+            if let TopLevelDef::Function { instance_to_stmt, name, .. } = def {
                 for inst in instance_to_stmt.iter() {
                     let ast = &inst.1.body;
-                    println!("{:?}", ast)
+                    println!("{}:", name);
+                    for b in ast {
+                        println!("{:?}", b);
+                        println!("--------------------");
+                    }
+                    println!("\n");
                 }
             }
         }
