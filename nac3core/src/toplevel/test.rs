@@ -138,7 +138,7 @@ fn test_simple_function_analyze(source: Vec<&str>, tys: Vec<&str>, names: Vec<&s
         internal_resolver.add_id_def(id, def_id);
     }
 
-    composer.start_analysis().unwrap();
+    composer.start_analysis(true).unwrap();
 
     for (i, (def, _)) in composer.definition_ast_list.iter().skip(5).enumerate() {
         let def = &*def.read();
@@ -802,7 +802,7 @@ fn test_analyze(source: Vec<&str>, res: Vec<&str>) {
         internal_resolver.add_id_def(id, def_id);
     }
 
-    if let Err(msg) = composer.start_analysis() {
+    if let Err(msg) = composer.start_analysis(false) {
         if print {
             println!("{}", msg);
         } else {
@@ -836,6 +836,106 @@ fn test_analyze(source: Vec<&str>, res: Vec<&str>) {
                     ),
                     res[i]
                 )
+            }
+        }
+    }
+}
+
+#[test_case(
+    vec![
+        indoc! {"
+            def fun(a: int32, b: int32) -> int32:
+                return a + b
+        "}
+    ],
+    vec![];
+    "simple function"
+)]
+#[test_case(
+    vec![
+        indoc! {"
+            class A:
+                a: int32
+                def __init__(self):
+                    self.a = 3
+                def fun(self) -> int32:
+                    b = self.a + 3
+                    return b * self.a
+                def dup(self) -> A:
+                    SELF = self
+                    return SELF
+
+        "},
+        indoc! {"
+            def fun(a: A) -> int32:
+                return a.fun()
+        "}
+    ],
+    vec![];
+    "simple class body"
+)]
+fn test_inference(source: Vec<&str>, res: Vec<&str>) {
+    let print = true;
+    let mut composer = TopLevelComposer::new();
+
+    let tvar_t = composer.unifier.get_fresh_var();
+    let tvar_v = composer
+        .unifier
+        .get_fresh_var_with_range(&[composer.primitives_ty.bool, composer.primitives_ty.int32]);
+
+    if print {
+        println!("t: {}, {:?}", tvar_t.1, tvar_t.0);
+        println!("v: {}, {:?}\n", tvar_v.1, tvar_v.0);
+    }
+
+    let internal_resolver = Arc::new(ResolverInternal {
+        id_to_def: Default::default(),
+        id_to_type: Mutex::new(
+            vec![("T".to_string(), tvar_t.0), ("V".to_string(), tvar_v.0)].into_iter().collect(),
+        ),
+        class_names: Default::default(),
+    });
+    let resolver = Arc::new(
+        Box::new(Resolver(internal_resolver.clone())) as Box<dyn SymbolResolver + Send + Sync>
+    );
+
+    for s in source {
+        let ast = parse_program(s).unwrap();
+        let ast = ast[0].clone();
+
+        let (id, def_id) = {
+            match composer.register_top_level(ast, Some(resolver.clone()), "__main__".into()) {
+                Ok(x) => x,
+                Err(msg) => {
+                    if print {
+                        println!("{}", msg);
+                    } else {
+                        assert_eq!(res[0], msg);
+                    }
+                    return;
+                }
+            }
+        };
+        internal_resolver.add_id_def(id, def_id);
+    }
+    
+    if let Err(msg) = composer.start_analysis(true) {
+        if print {
+            // println!("err2:");
+            println!("{}", msg);
+        } else {
+            assert_eq!(res[0], msg);
+        }
+    } else {
+        // skip 5 to skip primitives
+        for (i, (def, _)) in composer.definition_ast_list.iter().skip(5).enumerate() {
+            let def = &*def.read();
+
+            if let TopLevelDef::Function { instance_to_stmt, .. } = def {
+                for inst in instance_to_stmt.iter() {
+                    let ast = &inst.1.body;
+                    println!("{:?}", ast)
+                }
             }
         }
     }

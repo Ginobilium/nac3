@@ -36,7 +36,7 @@ pub struct FunInstance {
     pub unifier_id: usize,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum TopLevelDef {
     Class {
         // name for error messages and symbols
