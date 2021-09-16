@@ -35,8 +35,11 @@ struct Resolver(Arc<ResolverInternal>);
 
 impl SymbolResolver for Resolver {
     fn get_symbol_type(&self, _: &mut Unifier, _: &PrimitiveStore, str: &str) -> Option<Type> {
-        println!("unkonw here resolver {}", str);
-        self.0.id_to_type.lock().get(str).cloned()
+        let ret = self.0.id_to_type.lock().get(str).cloned();
+        if ret.is_none() {
+            println!("unknown here resolver {}", str);
+        }
+        ret
     }
 
     fn get_symbol_value(&self, _: &str) -> Option<SymbolValue> {
@@ -903,13 +906,34 @@ fn test_analyze(source: Vec<&str>, res: Vec<&str>) {
     vec![];
     "simple class body"
 )]
+#[test_case(
+    vec![
+        indoc! {"
+            def fun(a: V) -> V:
+                return a
+        "}
+    ],
+    vec![];
+    "type var fun"
+)]
 fn test_inference(source: Vec<&str>, res: Vec<&str>) {
     let print = true;
     let mut composer = TopLevelComposer::new();
 
+    let tvar_t = composer.unifier.get_fresh_var();
+    let tvar_v = composer
+        .unifier
+        .get_fresh_var_with_range(&[composer.primitives_ty.bool, composer.primitives_ty.int32]);
+    if print {
+        println!("t: {}, {:?}", tvar_t.1, tvar_t.0);
+        println!("v: {}, {:?}\n", tvar_v.1, tvar_v.0);
+    }
+
     let internal_resolver = Arc::new(ResolverInternal {
         id_to_def: Default::default(),
-        id_to_type: Default::default(),
+        id_to_type: Mutex::new(
+            vec![("T".to_string(), tvar_t.0), ("V".to_string(), tvar_v.0)].into_iter().collect(),
+        ),
         class_names: Default::default(),
     });
     let resolver = Arc::new(
