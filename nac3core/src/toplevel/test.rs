@@ -9,7 +9,7 @@ use crate::{
 };
 use indoc::indoc;
 use parking_lot::Mutex;
-use rustpython_parser::parser::parse_program;
+use rustpython_parser::{ast::fold::Fold, parser::parse_program};
 use std::{collections::HashMap, sync::Arc};
 use test_case::test_case;
 
@@ -910,6 +910,7 @@ fn test_analyze(source: Vec<&str>, res: Vec<&str>) {
     vec![
         indoc! {"
             def fun(a: V) -> V:
+                b = a
                 return a
         "}
     ],
@@ -923,7 +924,7 @@ fn test_inference(source: Vec<&str>, res: Vec<&str>) {
     let tvar_t = composer.unifier.get_fresh_var();
     let tvar_v = composer
         .unifier
-        .get_fresh_var_with_range(&[composer.primitives_ty.bool, composer.primitives_ty.int32]);
+        .get_fresh_var_with_range(&[composer.primitives_ty.bool, composer.primitives_ty.int64]);
     if print {
         println!("t: {}, {:?}", tvar_t.1, tvar_t.0);
         println!("v: {}, {:?}\n", tvar_v.1, tvar_v.0);
@@ -971,6 +972,7 @@ fn test_inference(source: Vec<&str>, res: Vec<&str>) {
         }
     } else {
         // skip 5 to skip primitives
+        let mut stringify_folder = TypeToStringFolder { unifier: &mut composer.unifier};
         for (i, (def, _)) in composer.definition_ast_list.iter().skip(5).enumerate() {
             let def = &*def.read();
 
@@ -979,12 +981,33 @@ fn test_inference(source: Vec<&str>, res: Vec<&str>) {
                     let ast = &inst.1.body;
                     println!("{}:", name);
                     for b in ast {
-                        println!("{:?}", b);
+                        println!("{:?}", stringify_folder.fold_stmt(b.clone()).unwrap());
                         println!("--------------------");
                     }
                     println!("\n");
                 }
             }
         }
+    }
+}
+
+struct TypeToStringFolder<'a> {
+    unifier: &'a mut Unifier
+}
+
+impl<'a> Fold<Option<Type>> for TypeToStringFolder<'a> {
+    type TargetU = String;
+    type Error = String;
+    fn map_user(&mut self, user: Option<Type>) -> Result<Self::TargetU, Self::Error> {
+        Ok(if let Some(ty) = user {
+                self.unifier.stringify(
+                    ty,
+                    &mut |id| format!("class{}", id.to_string()),
+                    &mut |id| format!("tvar{}", id.to_string()),
+                ) 
+            } else {
+                "None".into()
+            }
+        )
     }
 }
