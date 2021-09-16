@@ -175,9 +175,9 @@ impl WorkerRegistry {
         }
 
         // do whatever...
-        let mut lock = self.task_count.lock();
         module.verify().unwrap();
         f.run(&module);
+        let mut lock = self.task_count.lock();
         *lock += 1;
         self.wait_condvar.notify_all();
     }
