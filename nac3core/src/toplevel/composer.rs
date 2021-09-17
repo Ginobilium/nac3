@@ -1151,9 +1151,16 @@ impl TopLevelComposer {
                             None
                         }
                     };
-                    let type_var_subst_comb = {
+                    let (type_var_subst_comb, no_range_vars) = {
                         let unifier = &mut self.unifier;
-                        let var_ids = vars.iter().map(|(id, _)| *id);
+                        let mut no_ranges: Vec<Type> = Vec::new();
+                        let var_ids = vars.iter().map(|(id, ty)| {
+                            if matches!(unifier.get_ty(*ty).as_ref(), TypeEnum::TVar { range, .. } if range.borrow().is_empty()) {
+                                no_ranges.push(*ty);
+                            }
+                            *id
+                        })
+                        .collect_vec();
                         let var_combs = vars
                             .iter()
                             .map(|(_, ty)| {
@@ -1163,28 +1170,33 @@ impl TopLevelComposer {
                             .collect_vec();
                         let mut result: Vec<HashMap<u32, Type>> = Default::default();
                         for comb in var_combs {
-                            result.push(var_ids.clone().zip(comb).collect());
+                            result.push(var_ids.clone().into_iter().zip(comb).collect());
                         }
                         // NOTE: if is empty, means no type var, append a empty subst, ok to do this?
                         if result.is_empty() {
                             result.push(HashMap::new())
                         }
-                        result
+                        (result, no_ranges)
                     };
 
                     for subst in type_var_subst_comb {
                         // for each instance
-                        let unifier = &mut self.unifier;
-                        let inst_ret = unifier.subst(*ret, &subst).unwrap_or(*ret);
-                        let inst_args = args
-                            .iter()
-                            .map(|a| FuncArg {
-                                name: a.name.clone(),
-                                ty: unifier.subst(a.ty, &subst).unwrap_or(a.ty),
-                                default_value: a.default_value.clone(),
-                            })
-                            .collect_vec();
-                        let self_type = self_type.map(|x| unifier.subst(x, &subst).unwrap_or(x));
+                        let inst_ret = self.unifier.subst(*ret, &subst).unwrap_or(*ret);
+                        let inst_args = {
+                            let unifier = &mut self.unifier;
+                            args
+                                .iter()
+                                .map(|a| FuncArg {
+                                    name: a.name.clone(),
+                                    ty: unifier.subst(a.ty, &subst).unwrap_or(a.ty),
+                                    default_value: a.default_value.clone(),
+                                })
+                                .collect_vec()
+                        };
+                        let self_type = {
+                            let unifier = &mut self.unifier;
+                            self_type.map(|x| unifier.subst(x, &subst).unwrap_or(x))
+                        };
 
                         let mut identifiers = {
                             // NOTE: none and function args?
@@ -1196,38 +1208,36 @@ impl TopLevelComposer {
                             result.extend(inst_args.iter().map(|x| x.name.clone()));
                             result
                         };
-                        let mut inferencer = {
-                            Inferencer {
-                                top_level: &self.make_top_level_context(),
-                                defined_identifiers: identifiers.clone(),
-                                function_data: &mut FunctionData {
-                                    resolver: resolver.as_ref().unwrap().clone(),
-                                    return_type: if self
-                                        .unifier
-                                        .unioned(inst_ret, self.primitives_ty.none)
-                                    {
-                                        None
-                                    } else {
-                                        Some(inst_ret)
-                                    },
-                                    // NOTE: allowed type vars: leave blank?
-                                    bound_variables: Vec::new(),
+                        let mut inferencer = Inferencer {
+                            top_level: &self.make_top_level_context(),
+                            defined_identifiers: identifiers.clone(),
+                            function_data: &mut FunctionData {
+                                resolver: resolver.as_ref().unwrap().clone(),
+                                return_type: if self
+                                    .unifier
+                                    .unioned(inst_ret, self.primitives_ty.none)
+                                {
+                                    None
+                                } else {
+                                    Some(inst_ret)
                                 },
-                                unifier: &mut self.unifier,
-                                variable_mapping: {
-                                    // NOTE: none and function args?
-                                    let mut result: HashMap<String, Type> = HashMap::new();
-                                    result.insert("None".into(), self.primitives_ty.none);
-                                    if let Some(self_ty) = self_type {
-                                        result.insert("self".into(), self_ty);
-                                    }
-                                    result.extend(inst_args.iter().map(|x| (x.name.clone(), x.ty)));
-                                    result
-                                },
-                                primitives: &self.primitives_ty,
-                                virtual_checks: &mut Vec::new(),
-                                calls: &mut HashMap::new(),
-                            }
+                                // NOTE: allowed type vars
+                                bound_variables: no_range_vars.clone(),
+                            },
+                            unifier: &mut self.unifier,
+                            variable_mapping: {
+                                // NOTE: none and function args?
+                                let mut result: HashMap<String, Type> = HashMap::new();
+                                result.insert("None".into(), self.primitives_ty.none);
+                                if let Some(self_ty) = self_type {
+                                    result.insert("self".into(), self_ty);
+                                }
+                                result.extend(inst_args.iter().map(|x| (x.name.clone(), x.ty)));
+                                result
+                            },
+                            primitives: &self.primitives_ty,
+                            virtual_checks: &mut Vec::new(),
+                            calls: &mut HashMap::new(),
                         };
 
                         let fun_body = if let ast::StmtKind::FunctionDef { body, .. } =
@@ -1257,8 +1267,17 @@ impl TopLevelComposer {
                         }
 
                         instance_to_stmt.insert(
-                            // FIXME: how?
-                            "".to_string(),
+                            // NOTE: refer to codegen/expr/get_subst_key function
+                            {
+                                let unifier = &mut self.unifier;
+                                subst
+                                    .keys()
+                                    .sorted()
+                                    .map(|id| {
+                                        let ty = subst.get(id).unwrap();
+                                        unifier.stringify(*ty, &mut |id| id.to_string(), &mut |id| id.to_string())
+                                    }).join(", ")
+                            },
                             FunInstance {
                                 body: fun_body,
                                 unifier_id: 0,

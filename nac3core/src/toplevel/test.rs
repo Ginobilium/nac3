@@ -37,7 +37,7 @@ impl SymbolResolver for Resolver {
     fn get_symbol_type(&self, _: &mut Unifier, _: &PrimitiveStore, str: &str) -> Option<Type> {
         let ret = self.0.id_to_type.lock().get(str).cloned();
         if ret.is_none() {
-            println!("unknown here resolver {}", str);
+            // println!("unknown here resolver {}", str);
         }
         ret
     }
@@ -772,23 +772,15 @@ fn test_analyze(source: Vec<&str>, res: Vec<&str>) {
     let print = false;
     let mut composer = TopLevelComposer::new();
 
-    let tvar_t = composer.unifier.get_fresh_var();
-    let tvar_v = composer
-        .unifier
-        .get_fresh_var_with_range(&[composer.primitives_ty.bool, composer.primitives_ty.int32]);
-
-    if print {
-        println!("t: {}, {:?}", tvar_t.1, tvar_t.0);
-        println!("v: {}, {:?}\n", tvar_v.1, tvar_v.0);
-    }
-
-    let internal_resolver = Arc::new(ResolverInternal {
-        id_to_def: Default::default(),
-        id_to_type: Mutex::new(
-            vec![("T".to_string(), tvar_t.0), ("V".to_string(), tvar_v.0)].into_iter().collect(),
-        ),
-        class_names: Default::default(),
-    });
+    let internal_resolver = make_internal_resolver_with_tvar(
+    vec![
+            ("T".into(), vec![]),
+            ("V".into(), vec![composer.primitives_ty.bool, composer.primitives_ty.int32]),
+            ("G".into(), vec![composer.primitives_ty.bool, composer.primitives_ty.int64]),
+        ],
+        &mut composer.unifier,
+        print
+    );
     let resolver = Arc::new(
         Box::new(Resolver(internal_resolver.clone())) as Box<dyn SymbolResolver + Send + Sync>
     );
@@ -888,7 +880,7 @@ fn test_analyze(source: Vec<&str>, res: Vec<&str>) {
                     return SELF
                 def sum(self) -> int32:
                     if self.a == 0:
-                        return self.a
+                        return self.a + self
                     else:
                         a = self.a
                         self.a = self.a - 1
@@ -909,34 +901,58 @@ fn test_analyze(source: Vec<&str>, res: Vec<&str>) {
 #[test_case(
     vec![
         indoc! {"
-            def fun(a: V) -> V:
+            def fun(a: V, c: G, t: T) -> V:
                 b = a
-                return a
+                cc = c
+                ret = fun(b, cc, t)
+                return ret * ret
+        "},
+        indoc! {"
+            def sum3(l: list[V]) -> V:
+                return l[0] + l[1] + l[2]
+        "},
+        indoc! {"
+            def sum_sq_pair(p: tuple[V, V]) -> list[V]:
+                a = p[0]
+                b = p[1]
+                a = a**a
+                b = b**b
+                return [a, b]
         "}
     ],
     vec![];
     "type var fun"
 )]
+#[test_case(
+    vec![
+        indoc! {"
+            class A(Generic[G]):
+                a: G
+                b: bool
+                def __init__(self, aa: G):
+                    self.a = aa
+                    self.b = True
+                def fun(self, a: G) -> list[G]:
+                    ret = [a, self.a]
+                    return ret if self.b else self.fun(self.a)
+        "}
+    ],
+    vec![];
+    "type var class"
+)]
 fn test_inference(source: Vec<&str>, res: Vec<&str>) {
     let print = true;
     let mut composer = TopLevelComposer::new();
 
-    let tvar_t = composer.unifier.get_fresh_var();
-    let tvar_v = composer
-        .unifier
-        .get_fresh_var_with_range(&[composer.primitives_ty.bool, composer.primitives_ty.int64]);
-    if print {
-        println!("t: {}, {:?}", tvar_t.1, tvar_t.0);
-        println!("v: {}, {:?}\n", tvar_v.1, tvar_v.0);
-    }
-
-    let internal_resolver = Arc::new(ResolverInternal {
-        id_to_def: Default::default(),
-        id_to_type: Mutex::new(
-            vec![("T".to_string(), tvar_t.0), ("V".to_string(), tvar_v.0)].into_iter().collect(),
-        ),
-        class_names: Default::default(),
-    });
+    let internal_resolver = make_internal_resolver_with_tvar(
+    vec![
+            ("T".into(), vec![]),
+            ("V".into(), vec![composer.primitives_ty.float, composer.primitives_ty.int32, composer.primitives_ty.int64]),
+            ("G".into(), vec![composer.primitives_ty.bool, composer.primitives_ty.int64]),
+        ],
+        &mut composer.unifier,
+        print
+    );
     let resolver = Arc::new(
         Box::new(Resolver(internal_resolver.clone())) as Box<dyn SymbolResolver + Send + Sync>
     );
@@ -977,9 +993,9 @@ fn test_inference(source: Vec<&str>, res: Vec<&str>) {
             let def = &*def.read();
 
             if let TopLevelDef::Function { instance_to_stmt, name, .. } = def {
+                println!("=========`{}`: number of instances: {}===========", name, instance_to_stmt.len());
                 for inst in instance_to_stmt.iter() {
                     let ast = &inst.1.body;
-                    println!("{}:", name);
                     for b in ast {
                         println!("{:?}", stringify_folder.fold_stmt(b.clone()).unwrap());
                         println!("--------------------");
@@ -989,6 +1005,31 @@ fn test_inference(source: Vec<&str>, res: Vec<&str>) {
             }
         }
     }
+}
+
+fn make_internal_resolver_with_tvar(tvars: Vec<(String, Vec<Type>)>, unifier: &mut Unifier, print: bool) -> Arc<ResolverInternal> {
+    let res: Arc<ResolverInternal> = ResolverInternal {
+        id_to_def: Default::default(),
+        id_to_type: tvars
+            .into_iter()
+            .map(|(name, range)| (
+                name.clone(),
+                {
+                    let (ty, id) = unifier.get_fresh_var_with_range(range.as_slice());
+                    if print {
+                        println!("{}: {:?}, tvar{}", name, ty, id);
+                    }
+                    ty
+                }
+            ))
+            .collect::<HashMap<_, _>>()
+            .into(),
+        class_names: Default::default()
+    }.into();
+    if print {
+        println!();
+    }
+    res
 }
 
 struct TypeToStringFolder<'a> {
