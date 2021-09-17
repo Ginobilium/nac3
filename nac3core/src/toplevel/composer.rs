@@ -1208,6 +1208,7 @@ impl TopLevelComposer {
                             result.extend(inst_args.iter().map(|x| x.name.clone()));
                             result
                         };
+                        let mut calls: HashMap<CodeLocation, CallId> = HashMap::new();
                         let mut inferencer = Inferencer {
                             top_level: &self.make_top_level_context(),
                             defined_identifiers: identifiers.clone(),
@@ -1237,7 +1238,7 @@ impl TopLevelComposer {
                             },
                             primitives: &self.primitives_ty,
                             virtual_checks: &mut Vec::new(),
-                            calls: &mut HashMap::new(),
+                            calls: &mut calls,
                         };
 
                         let fun_body = if let ast::StmtKind::FunctionDef { body, .. } =
@@ -1281,7 +1282,7 @@ impl TopLevelComposer {
                             FunInstance {
                                 body: fun_body,
                                 unifier_id: 0,
-                                calls: HashMap::new(),
+                                calls,
                                 subst,
                             },
                         );
