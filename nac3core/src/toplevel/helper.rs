@@ -50,7 +50,6 @@ impl TopLevelDef {
                     r
                 }
             ),
-            TopLevelDef::Initializer { class_id } => format!("Initializer {{ {:?} }}", class_id),
         }
     }
 }
@@ -94,6 +93,7 @@ impl TopLevelComposer {
         index: usize,
         resolver: Option<Arc<Box<dyn SymbolResolver + Send + Sync>>>,
         name: &str,
+        constructor: Option<Type>
     ) -> TopLevelDef {
         TopLevelDef::Class {
             name: name.to_string(),
@@ -102,6 +102,7 @@ impl TopLevelComposer {
             fields: Default::default(),
             methods: Default::default(),
             ancestors: Default::default(),
+            constructor,
             resolver,
         }
     }
@@ -109,11 +110,13 @@ impl TopLevelComposer {
     /// when first registering, the type is a invalid value
     pub fn make_top_level_function_def(
         name: String,
+        simple_name: String,
         ty: Type,
         resolver: Option<Arc<Box<dyn SymbolResolver + Send + Sync>>>,
     ) -> TopLevelDef {
         TopLevelDef::Function {
             name,
+            simple_name,
             signature: ty,
             var_id: Default::default(),
             instance_to_symbol: Default::default(),

@@ -53,10 +53,14 @@ pub enum TopLevelDef {
         ancestors: Vec<TypeAnnotation>,
         // symbol resolver of the module defined the class, none if it is built-in type
         resolver: Option<Arc<Box<dyn SymbolResolver + Send + Sync>>>,
+        // constructor type
+        constructor: Option<Type>,
     },
     Function {
         // prefix for symbol, should be unique globally, and not ending with numbers
         name: String,
+        // simple name, the same as in method/function definition
+        simple_name: String,
         // function signature.
         signature: Type,
         // instantiated type variable IDs
@@ -74,9 +78,6 @@ pub enum TopLevelDef {
         instance_to_stmt: HashMap<String, FunInstance>,
         // symbol resolver of the module defined the class
         resolver: Option<Arc<Box<dyn SymbolResolver + Send + Sync>>>,
-    },
-    Initializer {
-        class_id: DefinitionId,
     },
 }
 

@@ -341,8 +341,16 @@ pub fn gen_func<'ctx>(
         unifier,
     };
 
+    let mut returned = false;
     for stmt in task.body.iter() {
-        code_gen_context.gen_stmt(stmt);
+        returned = code_gen_context.gen_stmt(stmt);
+        if returned {
+            break;
+        }
+    }
+    // after static analysis, only void functions can have no return at the end.
+    if !returned {
+        code_gen_context.builder.build_return(None);
     }
 
     let CodeGenContext { builder, module, .. } = code_gen_context;

@@ -114,10 +114,28 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
         let symbol = {
             // make sure this lock guard is dropped at the end of this scope...
             let def = definition.read();
-            if let TopLevelDef::Function { instance_to_symbol, .. } = &*def {
-                instance_to_symbol.get(&key).cloned()
-            } else {
-                unreachable!()
+            match &*def {
+                TopLevelDef::Function { instance_to_symbol, .. } => {
+                    instance_to_symbol.get(&key).cloned()
+                }
+                TopLevelDef::Class { methods, .. } => {
+                    // TODO: what about other fields that require alloca?
+                    let mut fun_id = None;
+                    for (name, _, id) in methods.iter() {
+                        if name == "__init__" {
+                            fun_id = Some(*id);
+                        }
+                    }
+                    let fun_id = fun_id.unwrap();
+
+                    let ty = self.get_llvm_type(fun.0.ret).into_pointer_type();
+                    let zelf_ty: BasicTypeEnum = ty.get_element_type().try_into().unwrap();
+                    let zelf = self.builder.build_alloca(zelf_ty, "alloca").into();
+                    let mut sign = fun.0.clone();
+                    sign.ret = self.primitives.none;
+                    self.gen_call(Some((fun.0.ret, zelf)), (&sign, fun_id), params);
+                    return Some(zelf);
+                }
             }
         }
         .unwrap_or_else(|| {
@@ -164,7 +182,7 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
                         })
                         .collect();
 
-                    let signature = FunSignature {
+                    let mut signature = FunSignature {
                         args: fun
                             .0
                             .args
@@ -185,6 +203,13 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
                             })
                             .collect(),
                     };
+
+                    if let Some(obj) = &obj {
+                        signature.args.insert(
+                            0,
+                            FuncArg { name: "self".into(), ty: obj.0, default_value: None },
+                        );
+                    }
 
                     let unifier = (unifier.get_shared_unifier(), *primitives);
 
@@ -209,7 +234,11 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
         }
 
         let fun_val = self.module.get_function(&symbol).unwrap_or_else(|| {
-            let params = fun.0.args.iter().map(|arg| self.get_llvm_type(arg.ty)).collect_vec();
+            let mut args = fun.0.args.clone();
+            if let Some(obj) = &obj {
+                args.insert(0, FuncArg { name: "self".into(), ty: obj.0, default_value: None });
+            }
+            let params = args.iter().map(|arg| self.get_llvm_type(arg.ty)).collect_vec();
             let fun_ty = if self.unifier.unioned(fun.0.ret, self.primitives.none) {
                 self.ctx.void_type().fn_type(&params, false)
             } else {
@@ -227,7 +256,11 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
             mapping.insert(k.name, self.gen_symbol_val(&k.default_value.unwrap()));
         }
         // reorder the parameters
-        let params = fun.0.args.iter().map(|arg| mapping.remove(&arg.name).unwrap()).collect_vec();
+        let mut params =
+            fun.0.args.iter().map(|arg| mapping.remove(&arg.name).unwrap()).collect_vec();
+        if let Some(obj) = obj {
+            params.insert(0, obj.1);
+        }
         self.builder.build_call(fun_val, &params, "call").try_as_basic_value().left()
     }
 
@@ -607,26 +640,53 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
                 phi.as_basic_value()
             }
             ExprKind::Call { func, args, keywords } => {
-                if let ExprKind::Name { id, .. } = &func.as_ref().node {
-                    // TODO: handle primitive casts and function pointers
-                    let fun = self.resolver.get_identifier_def(&id).expect("Unknown identifier");
-                    let mut params =
-                        args.iter().map(|arg| (None, self.gen_expr(arg).unwrap())).collect_vec();
-                    let kw_iter = keywords.iter().map(|kw| {
-                        (
-                            Some(kw.node.arg.as_ref().unwrap().clone()),
-                            self.gen_expr(&kw.node.value).unwrap(),
-                        )
-                    });
-                    params.extend(kw_iter);
-                    let signature = self
-                        .unifier
-                        .get_call_signature(*self.calls.get(&expr.location.into()).unwrap())
-                        .unwrap();
-                    return self.gen_call(None, (&signature, fun), params);
-                } else {
-                    // TODO: method
-                    unimplemented!()
+                let mut params =
+                    args.iter().map(|arg| (None, self.gen_expr(arg).unwrap())).collect_vec();
+                let kw_iter = keywords.iter().map(|kw| {
+                    (
+                        Some(kw.node.arg.as_ref().unwrap().clone()),
+                        self.gen_expr(&kw.node.value).unwrap(),
+                    )
+                });
+                params.extend(kw_iter);
+                let signature = self
+                    .unifier
+                    .get_call_signature(*self.calls.get(&expr.location.into()).unwrap())
+                    .unwrap();
+                match &func.as_ref().node {
+                    ExprKind::Name { id, .. } => {
+                        // TODO: handle primitive casts and function pointers
+                        let fun =
+                            self.resolver.get_identifier_def(&id).expect("Unknown identifier");
+                        return self.gen_call(None, (&signature, fun), params);
+                    }
+                    ExprKind::Attribute { value, attr, .. } => {
+                        let val = self.gen_expr(value).unwrap();
+                        let id = if let TypeEnum::TObj { obj_id, .. } =
+                            &*self.unifier.get_ty(value.custom.unwrap())
+                        {
+                            *obj_id
+                        } else {
+                            unreachable!()
+                        };
+                        let fun_id = {
+                            let defs = self.top_level.definitions.read();
+                            let obj_def = defs.get(id.0).unwrap().read();
+                            if let TopLevelDef::Class { methods, .. } = &*obj_def {
+                                let mut fun_id = None;
+                                for (name, _, id) in methods.iter() {
+                                    if name == attr {
+                                        fun_id = Some(*id);
+                                    }
+                                }
+                                fun_id.unwrap()
+                            } else {
+                                unreachable!()
+                            }
+                        };
+                        return self.gen_call(Some((value.custom.unwrap(), val)), (&signature, fun_id), params);
+                    }
+                    _ => unimplemented!(),
                 }
             }
             ExprKind::Subscript { value, slice, .. } => {

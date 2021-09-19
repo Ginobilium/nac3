@@ -34,16 +34,18 @@ impl Default for TopLevelComposer {
 impl TopLevelComposer {
     /// return a composer and things to make a "primitive" symbol resolver, so that the symbol
     /// resolver can later figure out primitive type definitions when passed a primitive type name
-    pub fn new(builtins: Vec<(String, FunSignature)>) -> (Self, HashMap<String, DefinitionId>, HashMap<String, Type>) {
+    pub fn new(
+        builtins: Vec<(String, FunSignature)>,
+    ) -> (Self, HashMap<String, DefinitionId>, HashMap<String, Type>) {
         let primitives = Self::make_primitives();
 
         let mut definition_ast_list = {
             let top_level_def_list = vec![
-                Arc::new(RwLock::new(Self::make_top_level_class_def(0, None, "int32"))),
-                Arc::new(RwLock::new(Self::make_top_level_class_def(1, None, "int64"))),
-                Arc::new(RwLock::new(Self::make_top_level_class_def(2, None, "float"))),
-                Arc::new(RwLock::new(Self::make_top_level_class_def(3, None, "bool"))),
-                Arc::new(RwLock::new(Self::make_top_level_class_def(4, None, "none"))),
+                Arc::new(RwLock::new(Self::make_top_level_class_def(0, None, "int32", None))),
+                Arc::new(RwLock::new(Self::make_top_level_class_def(1, None, "int64", None))),
+                Arc::new(RwLock::new(Self::make_top_level_class_def(2, None, "float", None))),
+                Arc::new(RwLock::new(Self::make_top_level_class_def(3, None, "bool", None))),
+                Arc::new(RwLock::new(Self::make_top_level_class_def(4, None, "none", None))),
             ];
             let ast_list: Vec<Option<ast::Stmt<()>>> = vec![None, None, None, None, None];
             izip!(top_level_def_list, ast_list).collect_vec()
@@ -69,10 +71,10 @@ impl TopLevelComposer {
         let mut defined_class_name: HashSet<String> = Default::default();
         let mut defined_function_name: HashSet<String> = Default::default();
         let method_class: HashMap<DefinitionId, DefinitionId> = Default::default();
-        
+
         let mut built_in_id: HashMap<String, DefinitionId> = Default::default();
         let mut built_in_ty: HashMap<String, Type> = Default::default();
-        
+
         for (name, sig) in builtins {
             let fun_sig = unifier.add_ty(TypeEnum::TFunc(RefCell::new(sig)));
             built_in_ty.insert(name.clone(), fun_sig);
@@ -80,22 +82,20 @@ impl TopLevelComposer {
             definition_ast_list.push((
                 Arc::new(RwLock::new(TopLevelDef::Function {
                     name: name.clone(),
+                    simple_name: name.clone(),
                     signature: fun_sig,
                     instance_to_stmt: HashMap::new(),
-                    instance_to_symbol: [("".to_string(), name.clone())]
-                        .iter()
-                        .cloned()
-                        .collect(),
+                    instance_to_symbol: [("".to_string(), name.clone())].iter().cloned().collect(),
                     var_id: Default::default(),
                     resolver: None,
                 })),
-                None
+                None,
             ));
             defined_class_method_name.insert(name.clone());
             defined_class_name.insert(name.clone());
             defined_function_name.insert(name);
         }
-        
+
         (
             TopLevelComposer {
                 built_in_num: definition_ast_list.len(),
@@ -160,11 +160,13 @@ impl TopLevelComposer {
 
                 // since later when registering class method, ast will still be used,
                 // here push None temporarly, later will move the ast inside
+                let constructor_ty = self.unifier.get_fresh_var().0;
                 let mut class_def_ast = (
                     Arc::new(RwLock::new(Self::make_top_level_class_def(
                         class_def_id,
                         resolver.clone(),
                         name,
+                        Some(constructor_ty)
                     ))),
                     None,
                 );
@@ -215,6 +217,7 @@ impl TopLevelComposer {
                             method_name.clone(),
                             RwLock::new(Self::make_top_level_function_def(
                                 global_class_method_name,
+                                method_name.clone(),
                                 // later unify with parsed type
                                 dummy_method_type.0,
                                 resolver.clone(),
@@ -251,14 +254,7 @@ impl TopLevelComposer {
                     self.definition_ast_list.push((def, Some(ast)));
                 }
 
-                // put the constructor into the def_list
-                self.definition_ast_list.push((
-                    RwLock::new(TopLevelDef::Initializer { class_id: DefinitionId(class_def_id) })
-                        .into(),
-                    None,
-                ));
-
-                Ok((class_name, DefinitionId(class_def_id), None))
+                Ok((class_name, DefinitionId(class_def_id), Some(constructor_ty)))
             }
 
             ast::StmtKind::FunctionDef { name, .. } => {
@@ -278,6 +274,8 @@ impl TopLevelComposer {
                 // add to the definition list
                 self.definition_ast_list.push((
                     RwLock::new(Self::make_top_level_function_def(
+                        // TODO: is this fun_name or the above name with mod_path?
+                        name.into(),
                         name.into(),
                         // dummy here, unify with correct type later
                         ty_to_be_unified,
@@ -801,7 +799,7 @@ impl TopLevelComposer {
             resolver,
             type_vars,
             ..
-        } = class_def.deref_mut()
+        } = &mut *class_def
         {
             if let ast::StmtKind::ClassDef { name, bases, body, .. } = &class_ast {
                 (
@@ -1161,32 +1159,36 @@ impl TopLevelComposer {
 
     /// step 5, analyze and call type inferecer to fill the `instance_to_stmt` of topleveldef::function
     fn analyze_function_instance(&mut self) -> Result<(), String> {
-        for (id, (def, ast)) in self.definition_ast_list.iter().enumerate().skip(self.built_in_num) {
+        for (id, (def, ast)) in self.definition_ast_list.iter().enumerate().skip(self.built_in_num)
+        {
             let mut function_def = def.write();
-            if let TopLevelDef::Function {
-                instance_to_stmt,
-                name,
-                signature,
-                var_id,
-                resolver,
-                ..
-            } = &mut *function_def
+            if let TopLevelDef::Function { instance_to_stmt, name, simple_name, signature, resolver, .. } =
+                &mut *function_def
             {
-                if let TypeEnum::TFunc(func_sig) = self.unifier.get_ty(*signature).as_ref() {
+               if let TypeEnum::TFunc(func_sig) = self.unifier.get_ty(*signature).as_ref() {
                     let FunSignature { args, ret, vars } = &*func_sig.borrow();
                     // None if is not class method
                     let self_type = {
                         if let Some(class_id) = self.method_class.get(&DefinitionId(id)) {
                             let class_def = self.definition_ast_list.get(class_id.0).unwrap();
                             let class_def = class_def.0.read();
-                            if let TopLevelDef::Class { type_vars, .. } = &*class_def {
+                            if let TopLevelDef::Class { type_vars, constructor, .. } = &*class_def {
                                 let ty_ann = make_self_type_annotation(type_vars, *class_id);
-                                Some(get_type_from_type_annotation_kinds(
+                                let self_ty = get_type_from_type_annotation_kinds(
                                     self.extract_def_list().as_slice(),
                                     &mut self.unifier,
                                     &self.primitives_ty,
                                     &ty_ann,
-                                )?)
+                                )?;
+                                if simple_name == "__init__" {
+                                    let fn_type = self.unifier.add_ty(TypeEnum::TFunc(RefCell::new(FunSignature {
+                                        args: args.clone(),
+                                        ret: self_ty,
+                                        vars: vars.clone()
+                                    })));
+                                    self.unifier.unify(fn_type, constructor.unwrap())?;
+                                }
+                                Some(self_ty)
                             } else {
                                 unreachable!("must be class def")
                             }
@@ -1227,8 +1229,7 @@ impl TopLevelComposer {
                         let inst_ret = self.unifier.subst(*ret, &subst).unwrap_or(*ret);
                         let inst_args = {
                             let unifier = &mut self.unifier;
-                            args
-                                .iter()
+                            args.iter()
                                 .map(|a| FuncArg {
                                     name: a.name.clone(),
                                     ty: unifier.subst(a.ty, &subst).unwrap_or(a.ty),
@@ -1319,15 +1320,15 @@ impl TopLevelComposer {
                                     .sorted()
                                     .map(|id| {
                                         let ty = subst.get(id).unwrap();
-                                        unifier.stringify(*ty, &mut |id| id.to_string(), &mut |id| id.to_string())
-                                    }).join(", ")
+                                        unifier.stringify(
+                                            *ty,
+                                            &mut |id| id.to_string(),
+                                            &mut |id| id.to_string(),
+                                        )
+                                    })
+                                    .join(", ")
                             },
-                            FunInstance {
-                                body: fun_body,
-                                unifier_id: 0,
-                                calls,
-                                subst,
-                            },
+                            FunInstance { body: fun_body, unifier_id: 0, calls, subst },
                         );
                     }
                 } else {

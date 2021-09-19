@@ -1,14 +1,11 @@
-use std::time::SystemTime;
-use std::{collections::HashSet, fs};
-
+use std::fs;
 use inkwell::{
     passes::{PassManager, PassManagerBuilder},
     targets::*,
     OptimizationLevel,
 };
 use nac3core::typecheck::type_inferencer::PrimitiveStore;
-use parking_lot::RwLock;
-use rustpython_parser::parser;
+use rustpython_parser::{parser, ast::StmtKind};
 use std::{collections::HashMap, path::Path, sync::Arc};
 
 use nac3core::{
@@ -55,11 +52,17 @@ fn main() {
     );
 
     for stmt in parser::parse_program(&program).unwrap().into_iter() {
+        let is_class = matches!(stmt.node, StmtKind::ClassDef{ .. });
         let (name, def_id, ty) = composer.register_top_level(
             stmt,
             Some(resolver.clone()),
             "__main__".into(),
         ).unwrap();
+
+        if is_class {
+            internal_resolver.add_id_type(name.clone(), ty.unwrap());
+        }
+
         internal_resolver.add_id_def(name.clone(), def_id);
         if let Some(ty) = ty {
             internal_resolver.add_id_type(name, ty);
