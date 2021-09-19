@@ -88,7 +88,7 @@ impl SymbolResolver for Resolver {
     "register"
 )]
 fn test_simple_register(source: Vec<&str>) {
-    let mut composer = TopLevelComposer::new();
+    let mut composer: TopLevelComposer = Default::default();
 
     for s in source {
         let ast = parse_program(s).unwrap();
@@ -126,7 +126,7 @@ fn test_simple_register(source: Vec<&str>) {
     "function compose"
 )]
 fn test_simple_function_analyze(source: Vec<&str>, tys: Vec<&str>, names: Vec<&str>) {
-    let mut composer = TopLevelComposer::new();
+    let mut composer: TopLevelComposer = Default::default();
 
     let internal_resolver = Arc::new(ResolverInternal {
         id_to_def: Default::default(),
@@ -151,7 +151,7 @@ fn test_simple_function_analyze(source: Vec<&str>, tys: Vec<&str>, names: Vec<&s
 
     composer.start_analysis(true).unwrap();
 
-    for (i, (def, _)) in composer.definition_ast_list.iter().skip(5).enumerate() {
+    for (i, (def, _)) in composer.definition_ast_list.iter().skip(composer.built_in_num).enumerate() {
         let def = &*def.read();
         if let TopLevelDef::Function { signature, name, .. } = def {
             let ty_str =
@@ -770,7 +770,7 @@ fn test_simple_function_analyze(source: Vec<&str>, tys: Vec<&str>, names: Vec<&s
 )]
 fn test_analyze(source: Vec<&str>, res: Vec<&str>) {
     let print = false;
-    let mut composer = TopLevelComposer::new();
+    let mut composer: TopLevelComposer = Default::default();
 
     let internal_resolver = make_internal_resolver_with_tvar(
     vec![
@@ -816,7 +816,7 @@ fn test_analyze(source: Vec<&str>, res: Vec<&str>) {
         }
     } else {
         // skip 5 to skip primitives
-        for (i, (def, _)) in composer.definition_ast_list.iter().skip(5).enumerate() {
+        for (i, (def, _)) in composer.definition_ast_list.iter().skip(composer.built_in_num).enumerate() {
             let def = &*def.read();
 
             if print {
@@ -942,7 +942,7 @@ fn test_analyze(source: Vec<&str>, res: Vec<&str>) {
 )]
 fn test_inference(source: Vec<&str>, res: Vec<&str>) {
     let print = true;
-    let mut composer = TopLevelComposer::new();
+    let mut composer: TopLevelComposer = Default::default();
 
     let internal_resolver = make_internal_resolver_with_tvar(
     vec![
@@ -989,7 +989,7 @@ fn test_inference(source: Vec<&str>, res: Vec<&str>) {
     } else {
         // skip 5 to skip primitives
         let mut stringify_folder = TypeToStringFolder { unifier: &mut composer.unifier};
-        for (i, (def, _)) in composer.definition_ast_list.iter().skip(5).enumerate() {
+        for (i, (def, _)) in composer.definition_ast_list.iter().skip(composer.built_in_num).enumerate() {
             let def = &*def.read();
 
             if let TopLevelDef::Function { instance_to_stmt, name, .. } = def {

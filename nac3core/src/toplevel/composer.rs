@@ -1,3 +1,5 @@
+use std::cell::RefCell;
+
 use rustpython_parser::ast::fold::Fold;
 
 use crate::typecheck::type_inferencer::{FunctionData, Inferencer};
@@ -20,54 +22,95 @@ pub struct TopLevelComposer {
     pub defined_function_name: HashSet<String>,
     // get the class def id of a class method
     pub method_class: HashMap<DefinitionId, DefinitionId>,
+    pub built_in_num: usize,
 }
 
 impl Default for TopLevelComposer {
     fn default() -> Self {
-        Self::new()
+        Self::new(vec![]).0
     }
 }
 
 impl TopLevelComposer {
     /// return a composer and things to make a "primitive" symbol resolver, so that the symbol
     /// resolver can later figure out primitive type definitions when passed a primitive type name
-    pub fn new() -> Self {
+    pub fn new(builtins: Vec<(String, FunSignature)>) -> (Self, HashMap<String, DefinitionId>, HashMap<String, Type>) {
         let primitives = Self::make_primitives();
 
-        TopLevelComposer {
-            definition_ast_list: {
-                let top_level_def_list = vec![
-                    Arc::new(RwLock::new(Self::make_top_level_class_def(0, None, "int32"))),
-                    Arc::new(RwLock::new(Self::make_top_level_class_def(1, None, "int64"))),
-                    Arc::new(RwLock::new(Self::make_top_level_class_def(2, None, "float"))),
-                    Arc::new(RwLock::new(Self::make_top_level_class_def(3, None, "bool"))),
-                    Arc::new(RwLock::new(Self::make_top_level_class_def(4, None, "none"))),
-                ];
-                let ast_list: Vec<Option<ast::Stmt<()>>> = vec![None, None, None, None, None];
-                izip!(top_level_def_list, ast_list).collect_vec()
-            },
-            primitives_ty: primitives.0,
-            unifier: primitives.1,
-            keyword_list: HashSet::from_iter(vec![
-                "Generic".into(),
-                "virtual".into(),
-                "list".into(),
-                "tuple".into(),
-                "int32".into(),
-                "int64".into(),
-                "float".into(),
-                "bool".into(),
-                "none".into(),
-                "None".into(),
-                "self".into(),
-                "Kernel".into(),
-                "KernelImmutable".into(),
-            ]),
-            defined_class_method_name: Default::default(),
-            defined_class_name: Default::default(),
-            defined_function_name: Default::default(),
-            method_class: Default::default(),
+        let mut definition_ast_list = {
+            let top_level_def_list = vec![
+                Arc::new(RwLock::new(Self::make_top_level_class_def(0, None, "int32"))),
+                Arc::new(RwLock::new(Self::make_top_level_class_def(1, None, "int64"))),
+                Arc::new(RwLock::new(Self::make_top_level_class_def(2, None, "float"))),
+                Arc::new(RwLock::new(Self::make_top_level_class_def(3, None, "bool"))),
+                Arc::new(RwLock::new(Self::make_top_level_class_def(4, None, "none"))),
+            ];
+            let ast_list: Vec<Option<ast::Stmt<()>>> = vec![None, None, None, None, None];
+            izip!(top_level_def_list, ast_list).collect_vec()
+        };
+        let primitives_ty = primitives.0;
+        let mut unifier = primitives.1;
+        let keyword_list: HashSet<String> = HashSet::from_iter(vec![
+            "Generic".into(),
+            "virtual".into(),
+            "list".into(),
+            "tuple".into(),
+            "int32".into(),
+            "int64".into(),
+            "float".into(),
+            "bool".into(),
+            "none".into(),
+            "None".into(),
+            "self".into(),
+            "Kernel".into(),
+            "KernelImmutable".into(),
+        ]);
+        let mut defined_class_method_name: HashSet<String> = Default::default();
+        let mut defined_class_name: HashSet<String> = Default::default();
+        let mut defined_function_name: HashSet<String> = Default::default();
+        let method_class: HashMap<DefinitionId, DefinitionId> = Default::default();
+        
+        let mut built_in_id: HashMap<String, DefinitionId> = Default::default();
+        let mut built_in_ty: HashMap<String, Type> = Default::default();
+        
+        for (name, sig) in builtins {
+            let fun_sig = unifier.add_ty(TypeEnum::TFunc(RefCell::new(sig)));
+            built_in_ty.insert(name.clone(), fun_sig);
+            built_in_id.insert(name.clone(), DefinitionId(definition_ast_list.len()));
+            definition_ast_list.push((
+                Arc::new(RwLock::new(TopLevelDef::Function {
+                    name: name.clone(),
+                    signature: fun_sig,
+                    instance_to_stmt: HashMap::new(),
+                    instance_to_symbol: [("".to_string(), name.clone())]
+                        .iter()
+                        .cloned()
+                        .collect(),
+                    var_id: Default::default(),
+                    resolver: None,
+                })),
+                None
+            ));
+            defined_class_method_name.insert(name.clone());
+            defined_class_name.insert(name.clone());
+            defined_function_name.insert(name);
         }
+        
+        (
+            TopLevelComposer {
+                built_in_num: definition_ast_list.len(),
+                definition_ast_list,
+                primitives_ty,
+                unifier,
+                keyword_list,
+                defined_class_method_name,
+                defined_class_name,
+                defined_function_name,
+                method_class,
+            },
+            built_in_id,
+            built_in_ty,
+        )
     }
 
     pub fn make_top_level_context(&self) -> TopLevelContext {
@@ -275,7 +318,7 @@ impl TopLevelComposer {
         let primitives_store = &self.primitives_ty;
 
         // skip 5 to skip analyzing the primitives
-        for (class_def, class_ast) in def_list.iter().skip(5) {
+        for (class_def, class_ast) in def_list.iter().skip(self.built_in_num) {
             // only deal with class def here
             let mut class_def = class_def.write();
             let (class_bases_ast, class_def_type_vars, class_resolver) = {
@@ -376,7 +419,7 @@ impl TopLevelComposer {
 
         // first, only push direct parent into the list
         // skip 5 to skip analyzing the primitives
-        for (class_def, class_ast) in self.definition_ast_list.iter_mut().skip(5) {
+        for (class_def, class_ast) in self.definition_ast_list.iter_mut().skip(self.built_in_num) {
             let mut class_def = class_def.write();
             let (class_def_id, class_bases, class_ancestors, class_resolver, class_type_vars) = {
                 if let TopLevelDef::Class { ancestors, resolver, object_id, type_vars, .. } =
@@ -440,7 +483,7 @@ impl TopLevelComposer {
         // second, get all ancestors
         let mut ancestors_store: HashMap<DefinitionId, Vec<TypeAnnotation>> = Default::default();
         // skip 5 to skip analyzing the primitives
-        for (class_def, _) in self.definition_ast_list.iter().skip(5) {
+        for (class_def, _) in self.definition_ast_list.iter().skip(self.built_in_num) {
             let class_def = class_def.read();
             let (class_ancestors, class_id) = {
                 if let TopLevelDef::Class { ancestors, object_id, .. } = class_def.deref() {
@@ -462,7 +505,7 @@ impl TopLevelComposer {
 
         // insert the ancestors to the def list
         // skip 5 to skip analyzing the primitives
-        for (class_def, _) in self.definition_ast_list.iter_mut().skip(5) {
+        for (class_def, _) in self.definition_ast_list.iter_mut().skip(self.built_in_num) {
             let mut class_def = class_def.write();
             let (class_ancestors, class_id, class_type_vars) = {
                 if let TopLevelDef::Class { ancestors, object_id, type_vars, .. } =
@@ -495,7 +538,7 @@ impl TopLevelComposer {
         let mut type_var_to_concrete_def: HashMap<Type, TypeAnnotation> = HashMap::new();
 
         // skip 5 to skip analyzing the primitives
-        for (class_def, class_ast) in def_ast_list.iter().skip(5) {
+        for (class_def, class_ast) in def_ast_list.iter().skip(self.built_in_num) {
             if matches!(&*class_def.read(), TopLevelDef::Class { .. }) {
                 Self::analyze_single_class_methods_fields(
                     class_def.clone(),
@@ -516,7 +559,7 @@ impl TopLevelComposer {
         loop {
             let mut finished = true;
 
-            for (class_def, _) in def_ast_list.iter().skip(5) {
+            for (class_def, _) in def_ast_list.iter().skip(self.built_in_num) {
                 let mut class_def = class_def.write();
                 if let TopLevelDef::Class { ancestors, .. } = class_def.deref() {
                     // if the length of the ancestor is equal to the current depth
@@ -575,7 +618,7 @@ impl TopLevelComposer {
         let primitives_store = &self.primitives_ty;
 
         // skip 5 to skip analyzing the primitives
-        for (function_def, function_ast) in def_list.iter().skip(5) {
+        for (function_def, function_ast) in def_list.iter().skip(self.built_in_num) {
             let mut function_def = function_def.write();
             let function_def = function_def.deref_mut();
             let function_ast = if let Some(x) = function_ast.as_ref() {
@@ -1118,7 +1161,7 @@ impl TopLevelComposer {
 
     /// step 5, analyze and call type inferecer to fill the `instance_to_stmt` of topleveldef::function
     fn analyze_function_instance(&mut self) -> Result<(), String> {
-        for (id, (def, ast)) in self.definition_ast_list.iter().enumerate() {
+        for (id, (def, ast)) in self.definition_ast_list.iter().enumerate().skip(self.built_in_num) {
             let mut function_def = def.write();
             if let TopLevelDef::Function {
                 instance_to_stmt,

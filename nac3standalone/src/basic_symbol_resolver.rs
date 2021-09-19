@@ -7,18 +7,34 @@ use nac3core::{
         typedef::{Type, Unifier},
     },
 };
-use std::collections::HashMap;
+use parking_lot::Mutex;
+use std::{collections::HashMap, sync::Arc};
 
-#[derive(Clone)]
-pub struct Resolver {
-    pub id_to_type: HashMap<String, Type>,
-    pub id_to_def: HashMap<String, DefinitionId>,
-    pub class_names: HashMap<String, Type>,
+pub struct ResolverInternal {
+    pub id_to_type: Mutex<HashMap<String, Type>>,
+    pub id_to_def: Mutex<HashMap<String, DefinitionId>>,
+    pub class_names: Mutex<HashMap<String, Type>>,
 }
+
+impl ResolverInternal {
+    pub fn add_id_def(&self, id: String, def: DefinitionId) {
+        self.id_to_def.lock().insert(id, def);
+    }
+
+    pub fn add_id_type(&self, id: String, ty: Type) {
+        self.id_to_type.lock().insert(id, ty);
+    }
+}
+
+pub struct Resolver(pub Arc<ResolverInternal>);
 
 impl SymbolResolver for Resolver {
     fn get_symbol_type(&self, _: &mut Unifier, _: &PrimitiveStore, str: &str) -> Option<Type> {
-        self.id_to_type.get(str).cloned()
+        let ret = self.0.id_to_type.lock().get(str).cloned();
+        if ret.is_none() {
+            // println!("unknown here resolver {}", str);
+        }
+        ret
     }
 
     fn get_symbol_value(&self, _: &str) -> Option<SymbolValue> {
@@ -30,6 +46,6 @@ impl SymbolResolver for Resolver {
     }
 
     fn get_identifier_def(&self, id: &str) -> Option<DefinitionId> {
-        self.id_to_def.get(id).cloned()
+        self.0.id_to_def.lock().get(id).cloned()
     }
 }
