@@ -221,6 +221,7 @@ fn test_simple_call() {
     let foo_id = top_level.definitions.read().len();
     top_level.definitions.write().push(Arc::new(RwLock::new(TopLevelDef::Function {
         name: "foo".to_string(),
+        simple_name: "foo".to_string(),
         signature: fun_ty,
         var_id: vec![],
         instance_to_stmt: HashMap::new(),

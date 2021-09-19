@@ -157,6 +157,7 @@ impl TestEnvironment {
                     methods: Default::default(),
                     ancestors: Default::default(),
                     resolver: None,
+                    constructor: None,
                 })
                 .into(),
             );
@@ -180,6 +181,7 @@ impl TestEnvironment {
                 methods: Default::default(),
                 ancestors: Default::default(),
                 resolver: None,
+                constructor: None,
             })
             .into(),
         );
@@ -217,6 +219,7 @@ impl TestEnvironment {
                 methods: Default::default(),
                 ancestors: Default::default(),
                 resolver: None,
+                constructor: None,
             })
             .into(),
         );
@@ -245,6 +248,7 @@ impl TestEnvironment {
                 methods: Default::default(),
                 ancestors: Default::default(),
                 resolver: None,
+                constructor: None,
             })
             .into(),
         );

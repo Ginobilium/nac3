@@ -204,7 +204,7 @@ fn test_simple_function_analyze(source: Vec<&str>, tys: Vec<&str>, names: Vec<&s
         def_id: DefinitionId(5),
         ancestors: [CustomClassKind { id: DefinitionId(5), params: [] }],
         fields: [(\"a\", \"class0\")],
-        methods: [(\"__init__\", \"fn[[], class4]\", DefinitionId(6)), (\"fun\", \"fn[[b=class10], class4]\", DefinitionId(7)), (\"foo\", \"fn[[a=tvar2, b=tvar3], class4]\", DefinitionId(8))],
+        methods: [(\"__init__\", \"fn[[], class4]\", DefinitionId(6)), (\"fun\", \"fn[[b=class9], class4]\", DefinitionId(7)), (\"foo\", \"fn[[a=tvar2, b=tvar3], class4]\", DefinitionId(8))],
         type_vars: []
         }"},
 
@@ -216,7 +216,7 @@ fn test_simple_function_analyze(source: Vec<&str>, tys: Vec<&str>, names: Vec<&s
 
         indoc! {"7: Function {
         name: \"A.fun\",
-        sig: \"fn[[b=class10], class4]\",
+        sig: \"fn[[b=class9], class4]\",
         var_id: []
         }"},
 
@@ -226,55 +226,49 @@ fn test_simple_function_analyze(source: Vec<&str>, tys: Vec<&str>, names: Vec<&s
         var_id: [2, 3]
         }"},
 
-        indoc! {"9: Initializer { DefinitionId(5) }"},
-
-        indoc! {"10: Class {
+        indoc! {"9: Class {
         name: \"B\",
-        def_id: DefinitionId(10),
-        ancestors: [CustomClassKind { id: DefinitionId(10), params: [] }, CustomClassKind { id: DefinitionId(13), params: [] }, CustomClassKind { id: DefinitionId(5), params: [] }],
+        def_id: DefinitionId(9),
+        ancestors: [CustomClassKind { id: DefinitionId(9), params: [] }, CustomClassKind { id: DefinitionId(11), params: [] }, CustomClassKind { id: DefinitionId(5), params: [] }],
         fields: [(\"a\", \"class0\")],
-        methods: [(\"__init__\", \"fn[[], class4]\", DefinitionId(11)), (\"fun\", \"fn[[b=class10], class4]\", DefinitionId(15)), (\"foo\", \"fn[[a=tvar2, b=tvar3], class4]\", DefinitionId(8))],
+        methods: [(\"__init__\", \"fn[[], class4]\", DefinitionId(10)), (\"fun\", \"fn[[b=class9], class4]\", DefinitionId(13)), (\"foo\", \"fn[[a=tvar2, b=tvar3], class4]\", DefinitionId(8))],
         type_vars: []
         }"},
 
-        indoc! {"11: Function {
+        indoc! {"10: Function {
         name: \"B.__init__\",
         sig: \"fn[[], class4]\",
         var_id: []
         }"},
 
-        indoc! {"12: Initializer { DefinitionId(10) }"},
-
-        indoc! {"13: Class {
+        indoc! {"11: Class {
         name: \"C\",
-        def_id: DefinitionId(13),
-        ancestors: [CustomClassKind { id: DefinitionId(13), params: [] }, CustomClassKind { id: DefinitionId(5), params: [] }],
+        def_id: DefinitionId(11),
+        ancestors: [CustomClassKind { id: DefinitionId(11), params: [] }, CustomClassKind { id: DefinitionId(5), params: [] }],
         fields: [(\"a\", \"class0\")],
-        methods: [(\"__init__\", \"fn[[], class4]\", DefinitionId(14)), (\"fun\", \"fn[[b=class10], class4]\", DefinitionId(15)), (\"foo\", \"fn[[a=tvar2, b=tvar3], class4]\", DefinitionId(8))],
+        methods: [(\"__init__\", \"fn[[], class4]\", DefinitionId(12)), (\"fun\", \"fn[[b=class9], class4]\", DefinitionId(13)), (\"foo\", \"fn[[a=tvar2, b=tvar3], class4]\", DefinitionId(8))],
         type_vars: []
         }"},
 
-        indoc! {"14: Function {
+        indoc! {"12: Function {
         name: \"C.__init__\",
         sig: \"fn[[], class4]\",
         var_id: []
         }"},
 
-        indoc! {"15: Function {
+        indoc! {"13: Function {
         name: \"C.fun\",
-        sig: \"fn[[b=class10], class4]\",
+        sig: \"fn[[b=class9], class4]\",
         var_id: []
         }"},
 
-        indoc! {"16: Initializer { DefinitionId(13) }"},
-
-        indoc! {"17: Function {
+        indoc! {"14: Function {
         name: \"foo\",
         sig: \"fn[[a=class5], class4]\",
         var_id: []
         }"},
 
-        indoc! {"18: Function {
+        indoc! {"15: Function {
         name: \"ff\",
         sig: \"fn[[a=tvar2], tvar3]\",
         var_id: [2, 3]
@@ -305,9 +299,9 @@ fn test_simple_function_analyze(source: Vec<&str>, tys: Vec<&str>, names: Vec<&s
         indoc! {"5: Class {
         name: \"Generic_A\",
         def_id: DefinitionId(5),
-        ancestors: [CustomClassKind { id: DefinitionId(5), params: [TypeVarKind(UnificationKey(101))] }, CustomClassKind { id: DefinitionId(9), params: [] }],
+        ancestors: [CustomClassKind { id: DefinitionId(5), params: [TypeVarKind(UnificationKey(101))] }, CustomClassKind { id: DefinitionId(8), params: [] }],
         fields: [(\"aa\", \"class3\"), (\"a\", \"class1\")],
-        methods: [(\"__init__\", \"fn[[], class4]\", DefinitionId(6)), (\"foo\", \"fn[[b=tvar2], class4]\", DefinitionId(11)), (\"fun\", \"fn[[a=class0], tvar3]\", DefinitionId(7))],
+        methods: [(\"__init__\", \"fn[[], class4]\", DefinitionId(6)), (\"foo\", \"fn[[b=tvar2], class4]\", DefinitionId(10)), (\"fun\", \"fn[[a=class0], tvar3]\", DefinitionId(7))],
         type_vars: [UnificationKey(101)]
         }"},
 
@@ -323,30 +317,26 @@ fn test_simple_function_analyze(source: Vec<&str>, tys: Vec<&str>, names: Vec<&s
         var_id: [3]
         }"},
 
-        indoc! {"8: Initializer { DefinitionId(5) }"},
-
-        indoc! {"9: Class {
+        indoc! {"8: Class {
         name: \"B\",
-        def_id: DefinitionId(9),
-        ancestors: [CustomClassKind { id: DefinitionId(9), params: [] }],
+        def_id: DefinitionId(8),
+        ancestors: [CustomClassKind { id: DefinitionId(8), params: [] }],
         fields: [(\"aa\", \"class3\")],
-        methods: [(\"__init__\", \"fn[[], class4]\", DefinitionId(10)), (\"foo\", \"fn[[b=tvar2], class4]\", DefinitionId(11))],
+        methods: [(\"__init__\", \"fn[[], class4]\", DefinitionId(9)), (\"foo\", \"fn[[b=tvar2], class4]\", DefinitionId(10))],
         type_vars: []
         }"},
 
-        indoc! {"10: Function {
+        indoc! {"9: Function {
         name: \"B.__init__\",
         sig: \"fn[[], class4]\",
         var_id: []
         }"},
 
-        indoc! {"11: Function {
+        indoc! {"10: Function {
         name: \"B.foo\",
         sig: \"fn[[b=tvar2], class4]\",
         var_id: [2]
         }"},
-
-        indoc! {"12: Initializer { DefinitionId(9) }"},
     ];
     "generic class"
 )]
@@ -379,7 +369,7 @@ fn test_simple_function_analyze(source: Vec<&str>, tys: Vec<&str>, names: Vec<&s
     vec![
         indoc! {"5: Function {
         name: \"foo\",
-        sig: \"fn[[a=list[class0], b=tuple[tvar2, class2]], class6[2->class11, 3->class3]]\",
+        sig: \"fn[[a=list[class0], b=tuple[tvar2, class2]], class6[2->class10, 3->class3]]\",
         var_id: [2]
         }"},
 
@@ -404,30 +394,26 @@ fn test_simple_function_analyze(source: Vec<&str>, tys: Vec<&str>, names: Vec<&s
         var_id: [2, 3]
         }"},
 
-        indoc! {"9: Initializer { DefinitionId(6) }"},
-
-        indoc! {"10: Function {
+        indoc! {"9: Function {
         name: \"gfun\",
         sig: \"fn[[a=class6[2->list[class2], 3->class0]], class4]\",
         var_id: []
         }"},
 
-        indoc! {"11: Class {
+        indoc! {"10: Class {
         name: \"B\",
-        def_id: DefinitionId(11),
-        ancestors: [CustomClassKind { id: DefinitionId(11), params: [] }],
+        def_id: DefinitionId(10),
+        ancestors: [CustomClassKind { id: DefinitionId(10), params: [] }],
         fields: [],
-        methods: [(\"__init__\", \"fn[[], class4]\", DefinitionId(12))],
+        methods: [(\"__init__\", \"fn[[], class4]\", DefinitionId(11))],
         type_vars: []
         }"},
 
-        indoc! {"12: Function {
+        indoc! {"11: Function {
         name: \"B.__init__\",
         sig: \"fn[[], class4]\",
         var_id: []
         }"},
-
-        indoc! {"13: Initializer { DefinitionId(11) }"},
     ];
     "list tuple generic"
 )]
@@ -458,14 +444,14 @@ fn test_simple_function_analyze(source: Vec<&str>, tys: Vec<&str>, names: Vec<&s
         name: \"A\",
         def_id: DefinitionId(5),
         ancestors: [CustomClassKind { id: DefinitionId(5), params: [TypeVarKind(UnificationKey(100)), TypeVarKind(UnificationKey(101))] }],
-        fields: [(\"a\", \"class5[2->class2, 3->class3]\"), (\"b\", \"class9\")],
-        methods: [(\"__init__\", \"fn[[a=class5[2->class2, 3->class3], b=class9], class4]\", DefinitionId(6)), (\"fun\", \"fn[[a=class5[2->class2, 3->class3]], class5[2->class3, 3->class0]]\", DefinitionId(7))],
+        fields: [(\"a\", \"class5[2->class2, 3->class3]\"), (\"b\", \"class8\")],
+        methods: [(\"__init__\", \"fn[[a=class5[2->class2, 3->class3], b=class8], class4]\", DefinitionId(6)), (\"fun\", \"fn[[a=class5[2->class2, 3->class3]], class5[2->class3, 3->class0]]\", DefinitionId(7))],
         type_vars: [UnificationKey(100), UnificationKey(101)]
         }"},
         
         indoc! {"6: Function {
         name: \"A.__init__\",
-        sig: \"fn[[a=class5[2->class2, 3->class3], b=class9], class4]\",
+        sig: \"fn[[a=class5[2->class2, 3->class3], b=class8], class4]\",
         var_id: [2, 3]
         }"},
         
@@ -475,36 +461,32 @@ fn test_simple_function_analyze(source: Vec<&str>, tys: Vec<&str>, names: Vec<&s
         var_id: [2, 3]
         }"},
         
-        indoc! {"8: Initializer { DefinitionId(5) }"},
-        
-        indoc! {"9: Class {
+        indoc! {"8: Class {
         name: \"B\",
-        def_id: DefinitionId(9),
-        ancestors: [CustomClassKind { id: DefinitionId(9), params: [] }, CustomClassKind { id: DefinitionId(5), params: [PrimitiveKind(UnificationKey(1)), PrimitiveKind(UnificationKey(3))] }],
-        fields: [(\"a\", \"class5[2->class2, 3->class3]\"), (\"b\", \"class9\")],
-        methods: [(\"__init__\", \"fn[[], class4]\", DefinitionId(10)), (\"fun\", \"fn[[a=class5[2->class2, 3->class3]], class5[2->class3, 3->class0]]\", DefinitionId(7)), (\"foo\", \"fn[[b=class9], class9]\", DefinitionId(11)), (\"bar\", \"fn[[a=class5[2->list[class9], 3->class0]], tuple[class5[2->virtual[class5[2->class9, 3->class0]], 3->class3], class9]]\", DefinitionId(12))],
+        def_id: DefinitionId(8),
+        ancestors: [CustomClassKind { id: DefinitionId(8), params: [] }, CustomClassKind { id: DefinitionId(5), params: [PrimitiveKind(UnificationKey(1)), PrimitiveKind(UnificationKey(3))] }],
+        fields: [(\"a\", \"class5[2->class2, 3->class3]\"), (\"b\", \"class8\")],
+        methods: [(\"__init__\", \"fn[[], class4]\", DefinitionId(9)), (\"fun\", \"fn[[a=class5[2->class2, 3->class3]], class5[2->class3, 3->class0]]\", DefinitionId(7)), (\"foo\", \"fn[[b=class8], class8]\", DefinitionId(10)), (\"bar\", \"fn[[a=class5[2->list[class8], 3->class0]], tuple[class5[2->virtual[class5[2->class8, 3->class0]], 3->class3], class8]]\", DefinitionId(11))],
         type_vars: []
         }"},
         
-        indoc! {"10: Function {
+        indoc! {"9: Function {
         name: \"B.__init__\",
         sig: \"fn[[], class4]\",
         var_id: []
         }"},
         
-        indoc! {"11: Function {
+        indoc! {"10: Function {
         name: \"B.foo\",
-        sig: \"fn[[b=class9], class9]\",
+        sig: \"fn[[b=class8], class8]\",
         var_id: []
         }"},
         
-        indoc! {"12: Function {
+        indoc! {"11: Function {
         name: \"B.bar\",
-        sig: \"fn[[a=class5[2->list[class9], 3->class0]], tuple[class5[2->virtual[class5[2->class9, 3->class0]], 3->class3], class9]]\",
+        sig: \"fn[[a=class5[2->list[class8], 3->class0]], tuple[class5[2->virtual[class5[2->class8, 3->class0]], 3->class3], class8]]\",
         var_id: []
         }"},
-        
-        indoc! {"13: Initializer { DefinitionId(9) }"},
     ];
     "self1"
 )]
@@ -545,7 +527,7 @@ fn test_simple_function_analyze(source: Vec<&str>, tys: Vec<&str>, names: Vec<&s
         def_id: DefinitionId(5),
         ancestors: [CustomClassKind { id: DefinitionId(5), params: [TypeVarKind(UnificationKey(100))] }],
         fields: [(\"a\", \"class0\"), (\"b\", \"tvar2\"), (\"c\", \"class5[2->class1]\")],
-        methods: [(\"__init__\", \"fn[[t=tvar2], class4]\", DefinitionId(6)), (\"fun\", \"fn[[a=class0, b=tvar2], list[virtual[class10[3->class3]]]]\", DefinitionId(7)), (\"foo\", \"fn[[c=class14], class4]\", DefinitionId(8))],
+        methods: [(\"__init__\", \"fn[[t=tvar2], class4]\", DefinitionId(6)), (\"fun\", \"fn[[a=class0, b=tvar2], list[virtual[class9[3->class3]]]]\", DefinitionId(7)), (\"foo\", \"fn[[c=class12], class4]\", DefinitionId(8))],
         type_vars: [UnificationKey(100)]
         }"},
 
@@ -557,57 +539,51 @@ fn test_simple_function_analyze(source: Vec<&str>, tys: Vec<&str>, names: Vec<&s
 
         indoc! {"7: Function {
         name: \"A.fun\",
-        sig: \"fn[[a=class0, b=tvar2], list[virtual[class10[3->class3]]]]\",
+        sig: \"fn[[a=class0, b=tvar2], list[virtual[class9[3->class3]]]]\",
         var_id: [2]
         }"},
 
         indoc! {"8: Function {
         name: \"A.foo\",
-        sig: \"fn[[c=class14], class4]\",
+        sig: \"fn[[c=class12], class4]\",
         var_id: [2]
         }"},
 
-        indoc! {"9: Initializer { DefinitionId(5) }"},
-
-        indoc! {"10: Class {
+        indoc! {"9: Class {
         name: \"B\",
-        def_id: DefinitionId(10),
-        ancestors: [CustomClassKind { id: DefinitionId(10), params: [TypeVarKind(UnificationKey(101))] }, CustomClassKind { id: DefinitionId(5), params: [PrimitiveKind(UnificationKey(2))] }],
-        fields: [(\"a\", \"class0\"), (\"b\", \"tvar2\"), (\"c\", \"class5[2->class1]\"), (\"d\", \"class14\")],
-        methods: [(\"__init__\", \"fn[[], class4]\", DefinitionId(11)), (\"fun\", \"fn[[a=class0, b=tvar2], list[virtual[class10[3->class3]]]]\", DefinitionId(12)), (\"foo\", \"fn[[c=class14], class4]\", DefinitionId(8))],
+        def_id: DefinitionId(9),
+        ancestors: [CustomClassKind { id: DefinitionId(9), params: [TypeVarKind(UnificationKey(101))] }, CustomClassKind { id: DefinitionId(5), params: [PrimitiveKind(UnificationKey(2))] }],
+        fields: [(\"a\", \"class0\"), (\"b\", \"tvar2\"), (\"c\", \"class5[2->class1]\"), (\"d\", \"class12\")],
+        methods: [(\"__init__\", \"fn[[], class4]\", DefinitionId(10)), (\"fun\", \"fn[[a=class0, b=tvar2], list[virtual[class9[3->class3]]]]\", DefinitionId(11)), (\"foo\", \"fn[[c=class12], class4]\", DefinitionId(8))],
         type_vars: [UnificationKey(101)]
         }"},
 
-        indoc! {"11: Function {
+        indoc! {"10: Function {
         name: \"B.__init__\",
         sig: \"fn[[], class4]\",
         var_id: [3]
         }"},
 
-        indoc! {"12: Function {
+        indoc! {"11: Function {
         name: \"B.fun\",
-        sig: \"fn[[a=class0, b=tvar2], list[virtual[class10[3->class3]]]]\",
+        sig: \"fn[[a=class0, b=tvar2], list[virtual[class9[3->class3]]]]\",
         var_id: [2, 3]
         }"},
 
-        indoc! {"13: Initializer { DefinitionId(10) }"},
-
-        indoc! {"14: Class {
+        indoc! {"12: Class {
         name: \"C\",
-        def_id: DefinitionId(14),
-        ancestors: [CustomClassKind { id: DefinitionId(14), params: [] }, CustomClassKind { id: DefinitionId(10), params: [PrimitiveKind(UnificationKey(3))] }, CustomClassKind { id: DefinitionId(5), params: [PrimitiveKind(UnificationKey(2))] }],
-        fields: [(\"a\", \"class0\"), (\"b\", \"tvar2\"), (\"c\", \"class5[2->class1]\"), (\"d\", \"class14\"), (\"e\", \"class1\")],
-        methods: [(\"__init__\", \"fn[[], class4]\", DefinitionId(15)), (\"fun\", \"fn[[a=class0, b=tvar2], list[virtual[class10[3->class3]]]]\", DefinitionId(12)), (\"foo\", \"fn[[c=class14], class4]\", DefinitionId(8))],
+        def_id: DefinitionId(12),
+        ancestors: [CustomClassKind { id: DefinitionId(12), params: [] }, CustomClassKind { id: DefinitionId(9), params: [PrimitiveKind(UnificationKey(3))] }, CustomClassKind { id: DefinitionId(5), params: [PrimitiveKind(UnificationKey(2))] }],
+        fields: [(\"a\", \"class0\"), (\"b\", \"tvar2\"), (\"c\", \"class5[2->class1]\"), (\"d\", \"class12\"), (\"e\", \"class1\")],
+        methods: [(\"__init__\", \"fn[[], class4]\", DefinitionId(13)), (\"fun\", \"fn[[a=class0, b=tvar2], list[virtual[class9[3->class3]]]]\", DefinitionId(11)), (\"foo\", \"fn[[c=class12], class4]\", DefinitionId(8))],
         type_vars: []
         }"},
 
-        indoc! {"15: Function {
+        indoc! {"13: Function {
         name: \"C.__init__\",
         sig: \"fn[[], class4]\",
         var_id: []
         }"},
-
-        indoc! {"16: Initializer { DefinitionId(14) }"},
     ];
     "inheritance_override"
 )]
