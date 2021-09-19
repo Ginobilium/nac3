@@ -11,7 +11,8 @@ int output(int x) {
         if(x < strlen(chars)) {
             putchar(chars[x]);
         } else {
-            printf("ERROR\n");
+            // printf("ERROR\n");
+            printf("%d", x);
         }
     }
     return 0;
