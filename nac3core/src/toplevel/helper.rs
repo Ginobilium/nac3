@@ -93,7 +93,7 @@ impl TopLevelComposer {
         index: usize,
         resolver: Option<Arc<Box<dyn SymbolResolver + Send + Sync>>>,
         name: &str,
-        constructor: Option<Type>
+        constructor: Option<Type>,
     ) -> TopLevelDef {
         TopLevelDef::Class {
             name: name.to_string(),

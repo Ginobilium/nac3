@@ -94,7 +94,7 @@ fn test_simple_register(source: Vec<&str>) {
         let ast = parse_program(s).unwrap();
         let ast = ast[0].clone();
 
-        composer.register_top_level(ast, None, "__main__".into()).unwrap();
+        composer.register_top_level(ast, None, "".into()).unwrap();
     }
 }
 
@@ -142,7 +142,7 @@ fn test_simple_function_analyze(source: Vec<&str>, tys: Vec<&str>, names: Vec<&s
         let ast = ast[0].clone();
 
         let (id, def_id, ty) =
-            composer.register_top_level(ast, Some(resolver.clone()), "__main__".into()).unwrap();
+            composer.register_top_level(ast, Some(resolver.clone()), "".into()).unwrap();
         internal_resolver.add_id_def(id.clone(), def_id);
         if let Some(ty) = ty {
             internal_resolver.add_id_type(id, ty);
@@ -151,7 +151,8 @@ fn test_simple_function_analyze(source: Vec<&str>, tys: Vec<&str>, names: Vec<&s
 
     composer.start_analysis(true).unwrap();
 
-    for (i, (def, _)) in composer.definition_ast_list.iter().skip(composer.built_in_num).enumerate() {
+    for (i, (def, _)) in composer.definition_ast_list.iter().skip(composer.built_in_num).enumerate()
+    {
         let def = &*def.read();
         if let TopLevelDef::Function { signature, name, .. } = def {
             let ty_str =
@@ -638,12 +639,23 @@ fn test_simple_function_analyze(source: Vec<&str>, tys: Vec<&str>, names: Vec<&s
     "cyclic2"
 )]
 #[test_case(
+    vec![
+        indoc! {"
+            class A:
+                pass
+        "}
+    ],
+    vec!["5: Class {\nname: \"A\",\ndef_id: DefinitionId(5),\nancestors: [CustomClassKind { id: DefinitionId(5), params: [] }],\nfields: [],\nmethods: [],\ntype_vars: []\n}"];
+    "simple pass in class"
+)]
+#[test_case(
     vec![indoc! {"
         class A:
-            pass
+            def fun3(self):
+                pass
     "}],
-    vec!["class def must have __init__ method defined"];
-    "err no __init__"
+    vec!["function name `fun3` must not end with numbers"];
+    "err fun end with number"
 )]
 #[test_case(
     vec![indoc! {"
@@ -749,13 +761,13 @@ fn test_analyze(source: Vec<&str>, res: Vec<&str>) {
     let mut composer: TopLevelComposer = Default::default();
 
     let internal_resolver = make_internal_resolver_with_tvar(
-    vec![
+        vec![
             ("T".into(), vec![]),
             ("V".into(), vec![composer.primitives_ty.bool, composer.primitives_ty.int32]),
             ("G".into(), vec![composer.primitives_ty.bool, composer.primitives_ty.int64]),
         ],
         &mut composer.unifier,
-        print
+        print,
     );
     let resolver = Arc::new(
         Box::new(Resolver(internal_resolver.clone())) as Box<dyn SymbolResolver + Send + Sync>
@@ -766,7 +778,7 @@ fn test_analyze(source: Vec<&str>, res: Vec<&str>) {
         let ast = ast[0].clone();
 
         let (id, def_id, ty) = {
-            match composer.register_top_level(ast, Some(resolver.clone()), "__main__".into()) {
+            match composer.register_top_level(ast, Some(resolver.clone()), "".into()) {
                 Ok(x) => x,
                 Err(msg) => {
                     if print {
@@ -792,7 +804,9 @@ fn test_analyze(source: Vec<&str>, res: Vec<&str>) {
         }
     } else {
         // skip 5 to skip primitives
-        for (i, (def, _)) in composer.definition_ast_list.iter().skip(composer.built_in_num).enumerate() {
+        for (i, (def, _)) in
+            composer.definition_ast_list.iter().skip(composer.built_in_num).enumerate()
+        {
             let def = &*def.read();
 
             if print {
@@ -921,13 +935,20 @@ fn test_inference(source: Vec<&str>, res: Vec<&str>) {
     let mut composer: TopLevelComposer = Default::default();
 
     let internal_resolver = make_internal_resolver_with_tvar(
-    vec![
+        vec![
             ("T".into(), vec![]),
-            ("V".into(), vec![composer.primitives_ty.float, composer.primitives_ty.int32, composer.primitives_ty.int64]),
+            (
+                "V".into(),
+                vec![
+                    composer.primitives_ty.float,
+                    composer.primitives_ty.int32,
+                    composer.primitives_ty.int64,
+                ],
+            ),
             ("G".into(), vec![composer.primitives_ty.bool, composer.primitives_ty.int64]),
         ],
         &mut composer.unifier,
-        print
+        print,
     );
     let resolver = Arc::new(
         Box::new(Resolver(internal_resolver.clone())) as Box<dyn SymbolResolver + Send + Sync>
@@ -938,7 +959,7 @@ fn test_inference(source: Vec<&str>, res: Vec<&str>) {
         let ast = ast[0].clone();
 
         let (id, def_id, ty) = {
-            match composer.register_top_level(ast, Some(resolver.clone()), "__main__".into()) {
+            match composer.register_top_level(ast, Some(resolver.clone()), "".into()) {
                 Ok(x) => x,
                 Err(msg) => {
                     if print {
@@ -964,12 +985,18 @@ fn test_inference(source: Vec<&str>, res: Vec<&str>) {
         }
     } else {
         // skip 5 to skip primitives
-        let mut stringify_folder = TypeToStringFolder { unifier: &mut composer.unifier};
-        for (i, (def, _)) in composer.definition_ast_list.iter().skip(composer.built_in_num).enumerate() {
+        let mut stringify_folder = TypeToStringFolder { unifier: &mut composer.unifier };
+        for (_i, (def, _)) in
+            composer.definition_ast_list.iter().skip(composer.built_in_num).enumerate()
+        {
             let def = &*def.read();
 
             if let TopLevelDef::Function { instance_to_stmt, name, .. } = def {
-                println!("=========`{}`: number of instances: {}===========", name, instance_to_stmt.len());
+                println!(
+                    "=========`{}`: number of instances: {}===========",
+                    name,
+                    instance_to_stmt.len()
+                );
                 for inst in instance_to_stmt.iter() {
                     let ast = &inst.1.body;
                     for b in ast {
@@ -983,25 +1010,29 @@ fn test_inference(source: Vec<&str>, res: Vec<&str>) {
     }
 }
 
-fn make_internal_resolver_with_tvar(tvars: Vec<(String, Vec<Type>)>, unifier: &mut Unifier, print: bool) -> Arc<ResolverInternal> {
+fn make_internal_resolver_with_tvar(
+    tvars: Vec<(String, Vec<Type>)>,
+    unifier: &mut Unifier,
+    print: bool,
+) -> Arc<ResolverInternal> {
     let res: Arc<ResolverInternal> = ResolverInternal {
         id_to_def: Default::default(),
         id_to_type: tvars
             .into_iter()
-            .map(|(name, range)| (
-                name.clone(),
-                {
+            .map(|(name, range)| {
+                (name.clone(), {
                     let (ty, id) = unifier.get_fresh_var_with_range(range.as_slice());
                     if print {
                         println!("{}: {:?}, tvar{}", name, ty, id);
                     }
                     ty
-                }
-            ))
+                })
+            })
             .collect::<HashMap<_, _>>()
             .into(),
-        class_names: Default::default()
-    }.into();
+        class_names: Default::default(),
+    }
+    .into();
     if print {
         println!();
     }
@@ -1009,7 +1040,7 @@ fn make_internal_resolver_with_tvar(tvars: Vec<(String, Vec<Type>)>, unifier: &m
 }
 
 struct TypeToStringFolder<'a> {
-    unifier: &'a mut Unifier
+    unifier: &'a mut Unifier,
 }
 
 impl<'a> Fold<Option<Type>> for TypeToStringFolder<'a> {
@@ -1017,14 +1048,11 @@ impl<'a> Fold<Option<Type>> for TypeToStringFolder<'a> {
     type Error = String;
     fn map_user(&mut self, user: Option<Type>) -> Result<Self::TargetU, Self::Error> {
         Ok(if let Some(ty) = user {
-                self.unifier.stringify(
-                    ty,
-                    &mut |id| format!("class{}", id.to_string()),
-                    &mut |id| format!("tvar{}", id.to_string()),
-                ) 
-            } else {
-                "None".into()
-            }
-        )
+            self.unifier.stringify(ty, &mut |id| format!("class{}", id.to_string()), &mut |id| {
+                format!("tvar{}", id.to_string())
+            })
+        } else {
+            "None".into()
+        })
     }
 }

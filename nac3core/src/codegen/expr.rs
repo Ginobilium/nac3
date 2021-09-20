@@ -684,7 +684,11 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
                                 unreachable!()
                             }
                         };
-                        return self.gen_call(Some((value.custom.unwrap(), val)), (&signature, fun_id), params);
+                        return self.gen_call(
+                            Some((value.custom.unwrap(), val)),
+                            (&signature, fun_id),
+                            params,
+                        );
                     }
                     _ => unimplemented!(),
                 }

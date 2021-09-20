@@ -797,7 +797,12 @@ impl Unifier {
         self.subst_impl(a, mapping, &mut HashMap::new())
     }
 
-    fn subst_impl(&mut self, a: Type, mapping: &VarMap, cache: &mut HashMap<Type, Option<Type>>) -> Option<Type> {
+    fn subst_impl(
+        &mut self,
+        a: Type,
+        mapping: &VarMap,
+        cache: &mut HashMap<Type, Option<Type>>,
+    ) -> Option<Type> {
         use TypeVarMeta::*;
         let cached = cache.get_mut(&a);
         if let Some(cached) = cached {
@@ -831,9 +836,9 @@ impl Unifier {
             TypeEnum::TList { ty } => {
                 self.subst_impl(*ty, mapping, cache).map(|t| self.add_ty(TypeEnum::TList { ty: t }))
             }
-            TypeEnum::TVirtual { ty } => {
-                self.subst_impl(*ty, mapping, cache).map(|t| self.add_ty(TypeEnum::TVirtual { ty: t }))
-            }
+            TypeEnum::TVirtual { ty } => self
+                .subst_impl(*ty, mapping, cache)
+                .map(|t| self.add_ty(TypeEnum::TVirtual { ty: t })),
             TypeEnum::TObj { obj_id, fields, params } => {
                 // Type variables in field types must be present in the type parameter.
                 // If the mapping does not contain any type variables in the
@@ -851,7 +856,8 @@ impl Unifier {
                 if need_subst {
                     cache.insert(a, None);
                     let obj_id = *obj_id;
-                    let params = self.subst_map(&params, mapping, cache).unwrap_or_else(|| params.clone());
+                    let params =
+                        self.subst_map(&params, mapping, cache).unwrap_or_else(|| params.clone());
                     let fields = self
                         .subst_map(&fields.borrow(), mapping, cache)
                         .unwrap_or_else(|| fields.borrow().clone());
@@ -897,7 +903,12 @@ impl Unifier {
         }
     }
 
-    fn subst_map<K>(&mut self, map: &Mapping<K>, mapping: &VarMap, cache: &mut HashMap<Type, Option<Type>>) -> Option<Mapping<K>>
+    fn subst_map<K>(
+        &mut self,
+        map: &Mapping<K>,
+        mapping: &VarMap,
+        cache: &mut HashMap<Type, Option<Type>>,
+    ) -> Option<Mapping<K>>
     where
         K: std::hash::Hash + std::cmp::Eq + std::clone::Clone,
     {

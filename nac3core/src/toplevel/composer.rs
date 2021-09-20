@@ -17,11 +17,10 @@ pub struct TopLevelComposer {
     // keyword list to prevent same user-defined name
     pub keyword_list: HashSet<String>,
     // to prevent duplicate definition
-    pub defined_class_name: HashSet<String>,
-    pub defined_class_method_name: HashSet<String>,
-    pub defined_function_name: HashSet<String>,
+    pub defined_names: HashSet<String>,
     // get the class def id of a class method
     pub method_class: HashMap<DefinitionId, DefinitionId>,
+    // number of built-in function and classes in the definition list, later skip
     pub built_in_num: usize,
 }
 
@@ -52,7 +51,7 @@ impl TopLevelComposer {
         };
         let primitives_ty = primitives.0;
         let mut unifier = primitives.1;
-        let keyword_list: HashSet<String> = HashSet::from_iter(vec![
+        let mut keyword_list: HashSet<String> = HashSet::from_iter(vec![
             "Generic".into(),
             "virtual".into(),
             "list".into(),
@@ -67,9 +66,7 @@ impl TopLevelComposer {
             "Kernel".into(),
             "KernelImmutable".into(),
         ]);
-        let mut defined_class_method_name: HashSet<String> = Default::default();
-        let mut defined_class_name: HashSet<String> = Default::default();
-        let mut defined_function_name: HashSet<String> = Default::default();
+        let defined_names: HashSet<String> = Default::default();
         let method_class: HashMap<DefinitionId, DefinitionId> = Default::default();
 
         let mut built_in_id: HashMap<String, DefinitionId> = Default::default();
@@ -91,9 +88,7 @@ impl TopLevelComposer {
                 })),
                 None,
             ));
-            defined_class_method_name.insert(name.clone());
-            defined_class_name.insert(name.clone());
-            defined_function_name.insert(name);
+            keyword_list.insert(name);
         }
 
         (
@@ -103,9 +98,7 @@ impl TopLevelComposer {
                 primitives_ty,
                 unifier,
                 keyword_list,
-                defined_class_method_name,
-                defined_class_name,
-                defined_function_name,
+                defined_names,
                 method_class,
             },
             built_in_id,
@@ -119,7 +112,7 @@ impl TopLevelComposer {
                 self.definition_ast_list.iter().map(|(x, ..)| x.clone()).collect_vec(),
             )
             .into(),
-            // FIXME: all the big unifier or?
+            // NOTE: only one for now
             unifiers: Arc::new(RwLock::new(vec![(
                 self.unifier.get_shared_unifier(),
                 self.primitives_ty,
@@ -139,23 +132,21 @@ impl TopLevelComposer {
         resolver: Option<Arc<Box<dyn SymbolResolver + Send + Sync>>>,
         mod_path: String,
     ) -> Result<(String, DefinitionId, Option<Type>), String> {
-        let defined_class_name = &mut self.defined_class_name;
-        let defined_class_method_name = &mut self.defined_class_method_name;
-        let defined_function_name = &mut self.defined_function_name;
+        let defined_names = &mut self.defined_names;
         match &ast.node {
-            ast::StmtKind::ClassDef { name, body, .. } => {
-                if self.keyword_list.contains(name) {
+            ast::StmtKind::ClassDef { name: class_name, body, .. } => {
+                if self.keyword_list.contains(class_name) {
                     return Err("cannot use keyword as a class name".into());
                 }
-                if !defined_class_name.insert({
+                if !defined_names.insert({
                     let mut n = mod_path.clone();
-                    n.push_str(name.as_str());
+                    n.push_str(class_name.as_str());
                     n
                 }) {
                     return Err("duplicate definition of class".into());
                 }
 
-                let class_name = name.to_string();
+                let class_name = class_name.clone();
                 let class_def_id = self.definition_ast_list.len();
 
                 // since later when registering class method, ast will still be used,
@@ -165,8 +156,8 @@ impl TopLevelComposer {
                     Arc::new(RwLock::new(Self::make_top_level_class_def(
                         class_def_id,
                         resolver.clone(),
-                        name,
-                        Some(constructor_ty)
+                        class_name.as_str(),
+                        Some(constructor_ty),
                     ))),
                     None,
                 );
@@ -187,23 +178,27 @@ impl TopLevelComposer {
                 // we do not push anything to the def list, so we keep track of the index
                 // and then push in the correct order after the for loop
                 let mut class_method_index_offset = 0;
-                let mut has_init = false;
                 for b in body {
                     if let ast::StmtKind::FunctionDef { name: method_name, .. } = &b.node {
-                        if self.keyword_list.contains(name) {
+                        if self.keyword_list.contains(method_name) {
                             return Err("cannot use keyword as a method name".into());
                         }
-                        let global_class_method_name =
-                            Self::make_class_method_name(class_name.clone(), method_name);
-                        if !defined_class_method_name.insert({
-                            let mut n = mod_path.clone();
-                            n.push_str(global_class_method_name.as_str());
-                            n
-                        }) {
-                            return Err("duplicate class method definition".into());
+                        if method_name.ends_with(|x: char| x.is_ascii_digit()) {
+                            return Err(format!(
+                                "function name `{}` must not end with numbers",
+                                method_name
+                            ));
                         }
-                        if method_name == "__init__" {
-                            has_init = true;
+                        let global_class_method_name = {
+                            let mut n = mod_path.clone();
+                            n.push_str(
+                                Self::make_class_method_name(class_name.clone(), method_name)
+                                    .as_str(),
+                            );
+                            n
+                        };
+                        if !defined_names.insert(global_class_method_name.clone()) {
+                            return Err("duplicate class method definition".into());
                         }
                         let method_def_id = self.definition_ast_list.len() + {
                             // plus 1 here since we already have the class def
@@ -232,9 +227,6 @@ impl TopLevelComposer {
                         continue;
                     }
                 }
-                if !has_init {
-                    return Err("class def must have __init__ method defined".into());
-                }
 
                 // move the ast to the entry of the class in the ast_list
                 class_def_ast.1 = Some(ast);
@@ -261,12 +253,16 @@ impl TopLevelComposer {
                 if self.keyword_list.contains(name) {
                     return Err("cannot use keyword as a top level function name".into());
                 }
+                if name.ends_with(|x: char| x.is_ascii_digit()) {
+                    return Err(format!("function name `{}` must not end with numbers", name));
+                }
                 let fun_name = name.to_string();
-                if !defined_function_name.insert({
+                let global_fun_name = {
                     let mut n = mod_path;
                     n.push_str(name.as_str());
                     n
-                }) {
+                };
+                if !defined_names.insert(global_fun_name.clone()) {
                     return Err("duplicate top level function define".into());
                 }
 
@@ -274,8 +270,7 @@ impl TopLevelComposer {
                 // add to the definition list
                 self.definition_ast_list.push((
                     RwLock::new(Self::make_top_level_function_def(
-                        // TODO: is this fun_name or the above name with mod_path?
-                        name.into(),
+                        global_fun_name,
                         name.into(),
                         // dummy here, unify with correct type later
                         ty_to_be_unified,
@@ -824,66 +819,110 @@ impl TopLevelComposer {
 
         let mut defined_fields: HashSet<String> = HashSet::new();
         for b in class_body_ast {
-            if let ast::StmtKind::FunctionDef { args, returns, name, .. } = &b.node {
-                let (method_dummy_ty, method_id) =
-                    Self::get_class_method_def_info(class_methods_def, name)?;
+            match &b.node {
+                ast::StmtKind::FunctionDef { args, returns, name, .. } => {
+                    let (method_dummy_ty, method_id) =
+                        Self::get_class_method_def_info(class_methods_def, name)?;
 
-                // the method var map can surely include the class's generic parameters
-                let mut method_var_map: HashMap<u32, Type> = class_type_vars_def
-                    .iter()
-                    .map(|ty| {
-                        if let TypeEnum::TVar { id, .. } = unifier.get_ty(*ty).as_ref() {
-                            (*id, *ty)
-                        } else {
-                            unreachable!("must be type var here")
+                    // the method var map can surely include the class's generic parameters
+                    let mut method_var_map: HashMap<u32, Type> = class_type_vars_def
+                        .iter()
+                        .map(|ty| {
+                            if let TypeEnum::TVar { id, .. } = unifier.get_ty(*ty).as_ref() {
+                                (*id, *ty)
+                            } else {
+                                unreachable!("must be type var here")
+                            }
+                        })
+                        .collect();
+
+                    let arg_types: Vec<FuncArg> = {
+                        // check method parameters cannot have same name
+                        let mut defined_paramter_name: HashSet<String> = HashSet::new();
+                        let have_unique_fuction_parameter_name = args.args.iter().all(|x| {
+                            defined_paramter_name.insert(x.node.arg.clone())
+                                && (!keyword_list.contains(&x.node.arg) || x.node.arg == "self")
+                        });
+                        if !have_unique_fuction_parameter_name {
+                            return Err("class method must have unique parameter names \
+                            and names thould not be the same as the keywords"
+                                .into());
                         }
-                    })
-                    .collect();
+                        if name == "__init__" && !defined_paramter_name.contains("self") {
+                            return Err("__init__ function must have a `self` parameter".into());
+                        }
+                        if !defined_paramter_name.contains("self") {
+                            return Err("currently does not support static method".into());
+                        }
 
-                let arg_types: Vec<FuncArg> = {
-                    // check method parameters cannot have same name
-                    let mut defined_paramter_name: HashSet<String> = HashSet::new();
-                    let have_unique_fuction_parameter_name = args.args.iter().all(|x| {
-                        defined_paramter_name.insert(x.node.arg.clone())
-                            && (!keyword_list.contains(&x.node.arg) || x.node.arg == "self")
-                    });
-                    if !have_unique_fuction_parameter_name {
-                        return Err("class method must have unique parameter names \
-                        and names thould not be the same as the keywords"
-                            .into());
-                    }
-                    if name == "__init__" && !defined_paramter_name.contains("self") {
-                        return Err("__init__ function must have a `self` parameter".into());
-                    }
-                    if !defined_paramter_name.contains("self") {
-                        return Err("currently does not support static method".into());
-                    }
+                        let mut result = Vec::new();
+                        for x in &args.args {
+                            let name = x.node.arg.clone();
+                            if name != "self" {
+                                let type_ann = {
+                                    let annotation_expr = x
+                                        .node
+                                        .annotation
+                                        .as_ref()
+                                        .ok_or_else(|| "type annotation needed".to_string())?
+                                        .as_ref();
+                                    parse_ast_to_type_annotation_kinds(
+                                        class_resolver.as_ref(),
+                                        temp_def_list,
+                                        unifier,
+                                        primitives,
+                                        annotation_expr,
+                                        vec![(class_id, class_type_vars_def.clone())]
+                                            .into_iter()
+                                            .collect(),
+                                    )?
+                                };
+                                // find type vars within this method parameter type annotation
+                                let type_vars_within =
+                                    get_type_var_contained_in_type_annotation(&type_ann);
+                                // handle the class type var and the method type var
+                                for type_var_within in type_vars_within {
+                                    if let TypeAnnotation::TypeVarKind(ty) = type_var_within {
+                                        let id = Self::get_var_id(ty, unifier)?;
+                                        if let Some(prev_ty) = method_var_map.insert(id, ty) {
+                                            // if already in the list, make sure they are the same?
+                                            assert_eq!(prev_ty, ty);
+                                        }
+                                    } else {
+                                        unreachable!("must be type var annotation");
+                                    }
+                                }
+                                // finish handling type vars
+                                let dummy_func_arg = FuncArg {
+                                    name,
+                                    ty: unifier.get_fresh_var().0,
+                                    // TODO: default value?
+                                    default_value: None,
+                                };
+                                // push the dummy type and the type annotation
+                                // into the list for later unification
+                                type_var_to_concrete_def
+                                    .insert(dummy_func_arg.ty, type_ann.clone());
+                                result.push(dummy_func_arg)
+                            }
+                        }
+                        result
+                    };
 
-                    let mut result = Vec::new();
-                    for x in &args.args {
-                        let name = x.node.arg.clone();
-                        if name != "self" {
-                            let type_ann = {
-                                let annotation_expr = x
-                                    .node
-                                    .annotation
-                                    .as_ref()
-                                    .ok_or_else(|| "type annotation needed".to_string())?
-                                    .as_ref();
-                                parse_ast_to_type_annotation_kinds(
-                                    class_resolver.as_ref(),
-                                    temp_def_list,
-                                    unifier,
-                                    primitives,
-                                    annotation_expr,
-                                    vec![(class_id, class_type_vars_def.clone())]
-                                        .into_iter()
-                                        .collect(),
-                                )?
-                            };
-                            // find type vars within this method parameter type annotation
+                    let ret_type = {
+                        if let Some(result) = returns {
+                            let result = result.as_ref();
+                            let annotation = parse_ast_to_type_annotation_kinds(
+                                class_resolver.as_ref(),
+                                temp_def_list,
+                                unifier,
+                                primitives,
+                                result,
+                                vec![(class_id, class_type_vars_def.clone())].into_iter().collect(),
+                            )?;
+                            // find type vars within this return type annotation
                             let type_vars_within =
-                                get_type_var_contained_in_type_annotation(&type_ann);
+                                get_type_var_contained_in_type_annotation(&annotation);
                             // handle the class type var and the method type var
                             for type_var_within in type_vars_within {
                                 if let TypeAnnotation::TypeVarKind(ty) = type_var_within {
@@ -896,128 +935,90 @@ impl TopLevelComposer {
                                     unreachable!("must be type var annotation");
                                 }
                             }
-                            // finish handling type vars
-                            let dummy_func_arg = FuncArg {
-                                name,
-                                ty: unifier.get_fresh_var().0,
-                                // TODO: default value?
-                                default_value: None,
-                            };
-                            // push the dummy type and the type annotation
-                            // into the list for later unification
-                            type_var_to_concrete_def.insert(dummy_func_arg.ty, type_ann.clone());
-                            result.push(dummy_func_arg)
+                            let dummy_return_type = unifier.get_fresh_var().0;
+                            type_var_to_concrete_def.insert(dummy_return_type, annotation.clone());
+                            dummy_return_type
+                        } else {
+                            // if do not have return annotation, return none
+                            // for uniform handling, still use type annoatation
+                            let dummy_return_type = unifier.get_fresh_var().0;
+                            type_var_to_concrete_def.insert(
+                                dummy_return_type,
+                                TypeAnnotation::PrimitiveKind(primitives.none),
+                            );
+                            dummy_return_type
                         }
-                    }
-                    result
-                };
+                    };
 
-                let ret_type = {
-                    if let Some(result) = returns {
-                        let result = result.as_ref();
-                        let annotation = parse_ast_to_type_annotation_kinds(
-                            class_resolver.as_ref(),
-                            temp_def_list,
-                            unifier,
-                            primitives,
-                            result,
-                            vec![(class_id, class_type_vars_def.clone())].into_iter().collect(),
-                        )?;
-                        // find type vars within this return type annotation
-                        let type_vars_within =
-                            get_type_var_contained_in_type_annotation(&annotation);
-                        // handle the class type var and the method type var
-                        for type_var_within in type_vars_within {
-                            if let TypeAnnotation::TypeVarKind(ty) = type_var_within {
-                                let id = Self::get_var_id(ty, unifier)?;
-                                if let Some(prev_ty) = method_var_map.insert(id, ty) {
-                                    // if already in the list, make sure they are the same?
-                                    assert_eq!(prev_ty, ty);
-                                }
-                            } else {
-                                unreachable!("must be type var annotation");
-                            }
-                        }
-                        let dummy_return_type = unifier.get_fresh_var().0;
-                        type_var_to_concrete_def.insert(dummy_return_type, annotation.clone());
-                        dummy_return_type
-                    } else {
-                        // if do not have return annotation, return none
-                        // for uniform handling, still use type annoatation
-                        let dummy_return_type = unifier.get_fresh_var().0;
-                        type_var_to_concrete_def.insert(
-                            dummy_return_type,
-                            TypeAnnotation::PrimitiveKind(primitives.none),
+                    if let TopLevelDef::Function { var_id, .. } =
+                        temp_def_list.get(method_id.0).unwrap().write().deref_mut()
+                    {
+                        var_id.extend_from_slice(
+                            method_var_map.keys().into_iter().copied().collect_vec().as_slice(),
                         );
-                        dummy_return_type
                     }
-                };
+                    let method_type = unifier.add_ty(TypeEnum::TFunc(
+                        FunSignature { args: arg_types, ret: ret_type, vars: method_var_map }
+                            .into(),
+                    ));
 
-                if let TopLevelDef::Function { var_id, .. } =
-                    temp_def_list.get(method_id.0).unwrap().write().deref_mut()
-                {
-                    var_id.extend_from_slice(
-                        method_var_map.keys().into_iter().copied().collect_vec().as_slice(),
-                    );
+                    // unify now since function type is not in type annotation define
+                    // which should be fine since type within method_type will be subst later
+                    unifier.unify(method_dummy_ty, method_type)?;
                 }
-                let method_type = unifier.add_ty(TypeEnum::TFunc(
-                    FunSignature { args: arg_types, ret: ret_type, vars: method_var_map }.into(),
-                ));
+                ast::StmtKind::AnnAssign { target, annotation, value: None, .. } => {
+                    if let ast::ExprKind::Name { id: attr, .. } = &target.node {
+                        if defined_fields.insert(attr.to_string()) {
+                            let dummy_field_type = unifier.get_fresh_var().0;
+                            class_fields_def.push((attr.to_string(), dummy_field_type));
 
-                // unify now since function type is not in type annotation define
-                // which should be fine since type within method_type will be subst later
-                unifier.unify(method_dummy_ty, method_type)?;
-            } else if let ast::StmtKind::AnnAssign { target, annotation, value: None, .. } = &b.node
-            {
-                if let ast::ExprKind::Name { id: attr, .. } = &target.node {
-                    if defined_fields.insert(attr.to_string()) {
-                        let dummy_field_type = unifier.get_fresh_var().0;
-                        class_fields_def.push((attr.to_string(), dummy_field_type));
-
-                        // handle Kernel[T], KernelImmutable[T]
-                        let annotation = {
-                            match &annotation.as_ref().node {
-                                ast::ExprKind::Subscript { value, slice, .. }
-                                    if {
-                                        matches!(&value.node, ast::ExprKind::Name { id, .. } if id == "Kernel" || id == "KernelImmutable")
-                                    } =>
-                                {
-                                    slice
+                            // handle Kernel[T], KernelImmutable[T]
+                            let annotation = {
+                                match &annotation.as_ref().node {
+                                    ast::ExprKind::Subscript { value, slice, .. }
+                                        if {
+                                            matches!(&value.node, ast::ExprKind::Name { id, .. } if id == "Kernel" || id == "KernelImmutable")
+                                        } =>
+                                    {
+                                        slice
+                                    }
+                                    _ => annotation,
                                 }
-                                _ => annotation,
-                            }
-                        };
+                            };
 
-                        let annotation = parse_ast_to_type_annotation_kinds(
-                            class_resolver.as_ref(),
-                            &temp_def_list,
-                            unifier,
-                            primitives,
-                            annotation.as_ref(),
-                            vec![(class_id, class_type_vars_def.clone())].into_iter().collect(),
-                        )?;
-                        // find type vars within this return type annotation
-                        let type_vars_within =
-                            get_type_var_contained_in_type_annotation(&annotation);
-                        // handle the class type var and the method type var
-                        for type_var_within in type_vars_within {
-                            if let TypeAnnotation::TypeVarKind(t) = type_var_within {
-                                if !class_type_vars_def.contains(&t) {
-                                    return Err("class fields can only use type \
-                                    vars declared as class generic type vars"
-                                        .into());
+                            let annotation = parse_ast_to_type_annotation_kinds(
+                                class_resolver.as_ref(),
+                                &temp_def_list,
+                                unifier,
+                                primitives,
+                                annotation.as_ref(),
+                                vec![(class_id, class_type_vars_def.clone())].into_iter().collect(),
+                            )?;
+                            // find type vars within this return type annotation
+                            let type_vars_within =
+                                get_type_var_contained_in_type_annotation(&annotation);
+                            // handle the class type var and the method type var
+                            for type_var_within in type_vars_within {
+                                if let TypeAnnotation::TypeVarKind(t) = type_var_within {
+                                    if !class_type_vars_def.contains(&t) {
+                                        return Err("class fields can only use type \
+                                        vars declared as class generic type vars"
+                                            .into());
+                                    }
+                                } else {
+                                    unreachable!("must be type var annotation");
                                 }
-                            } else {
-                                unreachable!("must be type var annotation");
                             }
+                            type_var_to_concrete_def.insert(dummy_field_type, annotation);
+                        } else {
+                            return Err("same class fields defined twice".into());
                         }
-                        type_var_to_concrete_def.insert(dummy_field_type, annotation);
                     } else {
-                        return Err("same class fields defined twice".into());
+                        return Err("unsupported statement type in class definition body".into());
                     }
                 }
-            } else {
-                return Err("unsupported statement type in class definition body".into());
+                ast::StmtKind::Pass => {}
+                _ => return Err("unsupported statement type in class definition body".into()),
             }
         }
         Ok(())
@@ -1162,10 +1163,16 @@ impl TopLevelComposer {
         for (id, (def, ast)) in self.definition_ast_list.iter().enumerate().skip(self.built_in_num)
         {
             let mut function_def = def.write();
-            if let TopLevelDef::Function { instance_to_stmt, name, simple_name, signature, resolver, .. } =
-                &mut *function_def
+            if let TopLevelDef::Function {
+                instance_to_stmt,
+                name,
+                simple_name,
+                signature,
+                resolver,
+                ..
+            } = &mut *function_def
             {
-               if let TypeEnum::TFunc(func_sig) = self.unifier.get_ty(*signature).as_ref() {
+                if let TypeEnum::TFunc(func_sig) = self.unifier.get_ty(*signature).as_ref() {
                     let FunSignature { args, ret, vars } = &*func_sig.borrow();
                     // None if is not class method
                     let self_type = {
@@ -1181,11 +1188,13 @@ impl TopLevelComposer {
                                     &ty_ann,
                                 )?;
                                 if simple_name == "__init__" {
-                                    let fn_type = self.unifier.add_ty(TypeEnum::TFunc(RefCell::new(FunSignature {
-                                        args: args.clone(),
-                                        ret: self_ty,
-                                        vars: vars.clone()
-                                    })));
+                                    let fn_type = self.unifier.add_ty(TypeEnum::TFunc(
+                                        RefCell::new(FunSignature {
+                                            args: args.clone(),
+                                            ret: self_ty,
+                                            vars: vars.clone(),
+                                        }),
+                                    ));
                                     self.unifier.unify(fn_type, constructor.unwrap())?;
                                 }
                                 Some(self_ty)
