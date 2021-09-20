@@ -268,4 +268,73 @@ impl TopLevelComposer {
             unifier,
         )
     }
+
+    pub fn get_all_assigned_field(stmts: &[ast::Stmt<()>]) -> Result<HashSet<String>, String> {
+        let mut result: HashSet<String> = HashSet::new();
+        for s in stmts {
+            match &s.node {
+                ast::StmtKind::AnnAssign { target, .. }
+                    if {
+                        if let ast::ExprKind::Attribute { value, .. } = &target.node {
+                            if let ast::ExprKind::Name { id, .. } = &value.node {
+                                id == "self"
+                            } else {
+                                false
+                            }
+                        } else {
+                            false
+                        }
+                    } =>
+                {
+                    return Err(format!(
+                        "redundant type annotation for class fields at {}",
+                        s.location
+                    ))
+                }
+                ast::StmtKind::Assign { targets, .. } => {
+                    for t in targets {
+                        if let ast::ExprKind::Attribute { value, attr, .. } = &t.node {
+                            if let ast::ExprKind::Name { id, .. } = &value.node {
+                                if id == "self" {
+                                    result.insert(attr.clone());
+                                }
+                            }
+                        }
+                    }
+                }
+                // TODO: do not check for For and While?
+                ast::StmtKind::For { body, orelse, .. }
+                | ast::StmtKind::While { body, orelse, .. } => {
+                    result.extend(Self::get_all_assigned_field(body.as_slice())?);
+                    result.extend(Self::get_all_assigned_field(orelse.as_slice())?);
+                }
+                ast::StmtKind::If { body, orelse, .. } => {
+                    let inited_for_sure = Self::get_all_assigned_field(body.as_slice())?
+                        .intersection(&Self::get_all_assigned_field(orelse.as_slice())?)
+                        .cloned()
+                        .collect::<HashSet<String>>();
+                    result.extend(inited_for_sure);
+                }
+                ast::StmtKind::Try { body, orelse, finalbody, .. } => {
+                    let inited_for_sure = Self::get_all_assigned_field(body.as_slice())?
+                        .intersection(&Self::get_all_assigned_field(orelse.as_slice())?)
+                        .cloned()
+                        .collect::<HashSet<String>>();
+                    result.extend(inited_for_sure);
+                    result.extend(Self::get_all_assigned_field(finalbody.as_slice())?);
+                }
+                ast::StmtKind::With { body, .. } => {
+                    result.extend(Self::get_all_assigned_field(body.as_slice())?);
+                }
+                ast::StmtKind::Pass => {}
+                ast::StmtKind::Assert { .. } => {}
+                ast::StmtKind::Expr { .. } => {}
+
+                _ => {
+                    unimplemented!()
+                }
+            }
+        }
+        Ok(result)
+    }
 }

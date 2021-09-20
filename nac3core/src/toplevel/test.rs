@@ -870,7 +870,7 @@ fn test_analyze(source: Vec<&str>, res: Vec<&str>) {
                     return SELF
                 def sum(self) -> int32:
                     if self.a == 0:
-                        return self.a + self
+                        return self.a
                     else:
                         a = self.a
                         self.a = self.a - 1
@@ -898,7 +898,7 @@ fn test_analyze(source: Vec<&str>, res: Vec<&str>) {
                 return ret * ret
         "},
         indoc! {"
-            def sum3(l: list[V]) -> V:
+            def sum_three(l: list[V]) -> V:
                 return l[0] + l[1] + l[2]
         "},
         indoc! {"
@@ -921,7 +921,11 @@ fn test_analyze(source: Vec<&str>, res: Vec<&str>) {
                 b: bool
                 def __init__(self, aa: G):
                     self.a = aa
-                    self.b = True
+                    if 2 > 1:
+                        self.b = True
+                    else:
+                        # self.b = False
+                        pass
                 def fun(self, a: G) -> list[G]:
                     ret = [a, self.a]
                     return ret if self.b else self.fun(self.a)
@@ -929,6 +933,30 @@ fn test_analyze(source: Vec<&str>, res: Vec<&str>) {
     ],
     vec![];
     "type var class"
+)]
+#[test_case(
+    vec![
+        indoc! {"
+            class A:
+                def fun(self):
+                    1 + 2
+        "},
+        indoc!{"
+            class B:
+                a: int32
+                b: bool
+                def __init__(self):
+                    # self.b = False
+                    if 3 > 2:
+                        self.a = 3
+                        self.b = False
+                    else:
+                        self.a = 4
+                        self.b = True
+        "}
+    ],
+    vec![];
+    "no_init_inst_check"
 )]
 fn test_inference(source: Vec<&str>, res: Vec<&str>) {
     let print = true;

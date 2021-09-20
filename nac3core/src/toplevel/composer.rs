@@ -1169,20 +1169,20 @@ impl TopLevelComposer {
                 methods,
                 fields,
                 type_vars,
-                name,
+                name: class_name,
                 object_id,
                 resolver: _,
                 ..
             } = &*class_def
             {
-                let mut has_init = false;
+                let mut init_id: Option<DefinitionId> = None;
                 // get the class contructor type correct
                 let (contor_args, contor_type_vars) = {
                     let mut constructor_args: Vec<FuncArg> = Vec::new();
                     let mut type_vars: HashMap<u32, Type> = HashMap::new();
-                    for (name, func_sig, ..) in methods {
+                    for (name, func_sig, id) in methods {
                         if name == "__init__" {
-                            has_init = true;
+                            init_id = Some(*id);
                             if let TypeEnum::TFunc(sig) = self.unifier.get_ty(*func_sig).as_ref() {
                                 let FunSignature { args, vars, .. } = &*sig.borrow();
                                 constructor_args.extend_from_slice(args);
@@ -1207,11 +1207,22 @@ impl TopLevelComposer {
                 self.unifier.unify(constructor.unwrap(), contor_type)?;
 
                 // class field instantiation check
-                // TODO: this is a really simple one, more check later
-                if !has_init && !fields.is_empty() {
-                    return Err(format!("fields of class {} not fully initialized", name))
+                if let (Some(init_id), false) = (init_id, fields.is_empty()) {
+                    let init_ast =
+                        self.definition_ast_list.get(init_id.0).unwrap().1.as_ref().unwrap();
+                    if let ast::StmtKind::FunctionDef { name, body, .. } = &init_ast.node {
+                        if name != "__init__" {
+                            unreachable!("must be init function here")
+                        }
+                        let all_inited = Self::get_all_assigned_field(body.as_slice())?;
+                        if fields.iter().any(|(x, _)| !all_inited.contains(x)) {
+                            return Err(format!(
+                                "fields of class {} not fully initialized",
+                                class_name
+                            ));
+                        }
+                    }
                 }
-
             }
         }
 
