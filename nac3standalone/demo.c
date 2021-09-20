@@ -9,10 +9,11 @@ int output(int x) {
         putchar('\n');
     } else {
         if(x < strlen(chars)) {
-            putchar(chars[x]);
+            // putchar(chars[x]);
+            printf("%d\n", x);
         } else {
             // printf("ERROR\n");
-            printf("%d", x);
+            printf("%d\n", x);
         }
     }
     return 0;

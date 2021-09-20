@@ -1160,13 +1160,69 @@ impl TopLevelComposer {
 
     /// step 5, analyze and call type inferecer to fill the `instance_to_stmt` of topleveldef::function
     fn analyze_function_instance(&mut self) -> Result<(), String> {
+        // first get the class contructor type correct for the following type check in function body
+        // also do class field instantiation check
+        for (def, _) in self.definition_ast_list.iter().skip(self.built_in_num) {
+            let class_def = def.read();
+            if let TopLevelDef::Class {
+                constructor,
+                methods,
+                fields,
+                type_vars,
+                name,
+                object_id,
+                resolver: _,
+                ..
+            } = &*class_def
+            {
+                let mut has_init = false;
+                // get the class contructor type correct
+                let (contor_args, contor_type_vars) = {
+                    let mut constructor_args: Vec<FuncArg> = Vec::new();
+                    let mut type_vars: HashMap<u32, Type> = HashMap::new();
+                    for (name, func_sig, ..) in methods {
+                        if name == "__init__" {
+                            has_init = true;
+                            if let TypeEnum::TFunc(sig) = self.unifier.get_ty(*func_sig).as_ref() {
+                                let FunSignature { args, vars, .. } = &*sig.borrow();
+                                constructor_args.extend_from_slice(args);
+                                type_vars.extend(vars);
+                            } else {
+                                unreachable!("must be typeenum::tfunc")
+                            }
+                        }
+                    }
+                    (constructor_args, type_vars)
+                };
+                let self_type = get_type_from_type_annotation_kinds(
+                    self.extract_def_list().as_slice(),
+                    &mut self.unifier,
+                    &self.primitives_ty,
+                    &make_self_type_annotation(type_vars, *object_id),
+                )?;
+                let contor_type = self.unifier.add_ty(TypeEnum::TFunc(
+                    FunSignature { args: contor_args, ret: self_type, vars: contor_type_vars }
+                        .into(),
+                ));
+                self.unifier.unify(constructor.unwrap(), contor_type)?;
+
+                // class field instantiation check
+                // TODO: this is a really simple one, more check later
+                if !has_init && !fields.is_empty() {
+                    return Err(format!("fields of class {} not fully initialized", name))
+                }
+
+            }
+        }
+
+        // type inference inside function body
         for (id, (def, ast)) in self.definition_ast_list.iter().enumerate().skip(self.built_in_num)
         {
             let mut function_def = def.write();
             if let TopLevelDef::Function {
                 instance_to_stmt,
                 name,
-                simple_name,
+                simple_name: _,
                 signature,
                 resolver,
                 ..
@@ -1179,7 +1235,7 @@ impl TopLevelComposer {
                         if let Some(class_id) = self.method_class.get(&DefinitionId(id)) {
                             let class_def = self.definition_ast_list.get(class_id.0).unwrap();
                             let class_def = class_def.0.read();
-                            if let TopLevelDef::Class { type_vars, constructor, .. } = &*class_def {
+                            if let TopLevelDef::Class { type_vars, .. } = &*class_def {
                                 let ty_ann = make_self_type_annotation(type_vars, *class_id);
                                 let self_ty = get_type_from_type_annotation_kinds(
                                     self.extract_def_list().as_slice(),
@@ -1187,16 +1243,6 @@ impl TopLevelComposer {
                                     &self.primitives_ty,
                                     &ty_ann,
                                 )?;
-                                if simple_name == "__init__" {
-                                    let fn_type = self.unifier.add_ty(TypeEnum::TFunc(
-                                        RefCell::new(FunSignature {
-                                            args: args.clone(),
-                                            ret: self_ty,
-                                            vars: vars.clone(),
-                                        }),
-                                    ));
-                                    self.unifier.unify(fn_type, constructor.unwrap())?;
-                                }
                                 Some(self_ty)
                             } else {
                                 unreachable!("must be class def")
