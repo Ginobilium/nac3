@@ -180,7 +180,7 @@ impl<'a> fold::Fold<()> for Inferencer<'a> {
                 Some(self.infer_attribute(value, attr)?)
             }
             ast::ExprKind::BoolOp { values, .. } => Some(self.infer_bool_ops(values)?),
-            ast::ExprKind::BinOp { left, op, right } => Some(self.infer_bin_ops(left, op, right)?),
+            ast::ExprKind::BinOp { left, op, right } => Some(self.infer_bin_ops(expr.location, left, op, right)?),
             ast::ExprKind::UnaryOp { op, operand } => Some(self.infer_unary_ops(op, operand)?),
             ast::ExprKind::Compare { left, ops, comparators } => {
                 Some(self.infer_compare(left, ops, comparators)?)
@@ -547,6 +547,7 @@ impl<'a> Inferencer<'a> {
 
     fn infer_bin_ops(
         &mut self,
+        location: Location,
         left: &ast::Expr<Option<Type>>,
         op: &ast::Operator,
         right: &ast::Expr<Option<Type>>,
@@ -554,7 +555,7 @@ impl<'a> Inferencer<'a> {
         let method = binop_name(op);
         let ret = self.unifier.get_fresh_var().0;
         self.build_method_call(
-            left.location,
+            location,
             method.to_string(),
             left.custom.unwrap(),
             vec![right.custom.unwrap()],
