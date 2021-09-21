@@ -126,14 +126,15 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
                             fun_id = Some(*id);
                         }
                     }
-                    let fun_id = fun_id.unwrap();
-
                     let ty = self.get_llvm_type(fun.0.ret).into_pointer_type();
                     let zelf_ty: BasicTypeEnum = ty.get_element_type().try_into().unwrap();
                     let zelf = self.builder.build_alloca(zelf_ty, "alloca").into();
-                    let mut sign = fun.0.clone();
-                    sign.ret = self.primitives.none;
-                    self.gen_call(Some((fun.0.ret, zelf)), (&sign, fun_id), params);
+                    // call `__init__` if there is one
+                    if let Some(fun_id) = fun_id {
+                        let mut sign = fun.0.clone();
+                        sign.ret = self.primitives.none;
+                        self.gen_call(Some((fun.0.ret, zelf)), (&sign, fun_id), params);
+                    }
                     return Some(zelf);
                 }
             }
