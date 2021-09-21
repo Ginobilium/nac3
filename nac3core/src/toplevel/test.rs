@@ -939,7 +939,7 @@ fn test_analyze(source: Vec<&str>, res: Vec<&str>) {
         indoc! {"
             class A:
                 def fun(self):
-                    1 + 2
+                    pass
         "},
         indoc!{"
             class B:

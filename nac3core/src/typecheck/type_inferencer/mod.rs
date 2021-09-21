@@ -128,7 +128,7 @@ impl<'a> fold::Fold<()> for Inferencer<'a> {
                 }
             }
             ast::StmtKind::AnnAssign { .. } | ast::StmtKind::Expr { .. } => {}
-            ast::StmtKind::Break | ast::StmtKind::Continue => {}
+            ast::StmtKind::Break | ast::StmtKind::Continue | ast::StmtKind::Pass => {}
             ast::StmtKind::Return { value } => match (value, self.function_data.return_type) {
                 (Some(v), Some(v1)) => {
                     self.unify(v.custom.unwrap(), v1, &v.location)?;
