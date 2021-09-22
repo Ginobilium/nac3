@@ -141,7 +141,7 @@ fn main() {
             )
             .expect("couldn't create target machine");
         target_machine
-            .write_to_file(module, FileType::Object, Path::new(&(demo_name.to_owned() + ".o")))
+            .write_to_file(module, FileType::Object, Path::new(&format!("{}.o", module.get_name().to_str().unwrap())))
             .expect("couldn't write module to file");
 
         // println!("IR:\n{}", module.print_to_string().to_str().unwrap());
