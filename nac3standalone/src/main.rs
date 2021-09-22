@@ -6,7 +6,7 @@ use inkwell::{
 };
 use nac3core::typecheck::type_inferencer::PrimitiveStore;
 use rustpython_parser::parser;
-use std::{collections::HashMap, path::Path, sync::Arc};
+use std::{collections::HashMap, path::Path, sync::Arc, time::SystemTime};
 
 use nac3core::{
     codegen::{CodeGenTask, WithCall, WorkerRegistry},
@@ -19,6 +19,7 @@ mod basic_symbol_resolver;
 use basic_symbol_resolver::*;
 
 fn main() {
+    let start = SystemTime::now();
     Target::initialize_all(&InitializationConfig::default());
 
     let program = match fs::read_to_string("mandelbrot.py") {
@@ -27,7 +28,7 @@ fn main() {
             println!("Cannot open input file: {}", err);
             return;
         }
-    };
+   };
 
     let primitive: PrimitiveStore = TopLevelComposer::make_primitives().0;
     let (mut composer, builtins_def, builtins_ty) = TopLevelComposer::new(vec![
@@ -50,8 +51,14 @@ fn main() {
     let resolver = Arc::new(
         Box::new(Resolver(internal_resolver.clone())) as Box<dyn SymbolResolver + Send + Sync>
     );
+    let setup_time = SystemTime::now();
+    println!("setup time: {}ms", setup_time.duration_since(start).unwrap().as_millis());
 
-    for stmt in parser::parse_program(&program).unwrap().into_iter() {
+    let parser_result = parser::parse_program(&program).unwrap();
+    let parse_time = SystemTime::now();
+    println!("parse time: {}ms", parse_time.duration_since(setup_time).unwrap().as_millis());
+
+    for stmt in parser_result.into_iter() {
         let (name, def_id, ty) = composer.register_top_level(
             stmt,
             Some(resolver.clone()),
@@ -65,6 +72,8 @@ fn main() {
     }
 
     composer.start_analysis(true).unwrap();
+    let analysis_time = SystemTime::now();
+    println!("analysis time: {}ms", analysis_time.duration_since(parse_time).unwrap().as_millis());
 
     let top_level = Arc::new(composer.make_top_level_context());
 
@@ -119,15 +128,18 @@ fn main() {
             )
             .expect("couldn't create target machine");
         target_machine
-            .write_to_file(module, FileType::Object, Path::new("mandelbrot.o"))
+            .write_to_file(module, FileType::Object, Path::new(&format!("{}.o", module.get_name().to_str().unwrap())))
             .expect("couldn't write module to file");
 
-        println!("IR:\n{}", module.print_to_string().to_str().unwrap());
+        // println!("IR:\n{}", module.print_to_string().to_str().unwrap());
 
     })));
-    let threads = ["test"];
+    let threads: Vec<String> = (0..4).map(|i| format!("module{}", i)).collect();
+    let threads: Vec<_> = threads.iter().map(|s| s.as_str()).collect();
     let (registry, handles) = WorkerRegistry::create_workers(&threads, top_level, f);
     registry.add_task(task);
     registry.wait_tasks_complete(handles);
-    println!("object file is in mandelbrot.o");
+    let final_time = SystemTime::now();
+    println!("codegen time (including LLVM): {}ms", final_time.duration_since(analysis_time).unwrap().as_millis());
+    println!("total time: {}ms", final_time.duration_since(start).unwrap().as_millis());
 }
