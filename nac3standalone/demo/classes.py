@@ -22,10 +22,10 @@ class B:
 
 def run() -> int32:
     a = A(10)
-    output(a.a)
+    output_int(a.a)
 
     a = A(20)
-    output(a.a)
-    output(a.get_a())
-    output(a.get_b().b)
+    output_int(a.a)
+    output_int(a.get_a())
+    output_int(a.get_b().b)
     return 0
