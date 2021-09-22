@@ -15,7 +15,7 @@ pub struct TopLevelComposer {
     // primitive store
     pub primitives_ty: PrimitiveStore,
     // keyword list to prevent same user-defined name
-    pub keyword_list: HashSet<String>,
+    pub keyword_list: HashSet<StrRef>,
     // to prevent duplicate definition
     pub defined_names: HashSet<String>,
     // get the class def id of a class method
@@ -34,24 +34,39 @@ impl TopLevelComposer {
     /// return a composer and things to make a "primitive" symbol resolver, so that the symbol
     /// resolver can later figure out primitive type definitions when passed a primitive type name
     pub fn new(
-        builtins: Vec<(String, FunSignature)>,
-    ) -> (Self, HashMap<String, DefinitionId>, HashMap<String, Type>) {
+        builtins: Vec<(StrRef, FunSignature)>,
+    ) -> (Self, HashMap<StrRef, DefinitionId>, HashMap<StrRef, Type>) {
         let primitives = Self::make_primitives();
 
         let mut definition_ast_list = {
             let top_level_def_list = vec![
-                Arc::new(RwLock::new(Self::make_top_level_class_def(0, None, "int32", None))),
-                Arc::new(RwLock::new(Self::make_top_level_class_def(1, None, "int64", None))),
-                Arc::new(RwLock::new(Self::make_top_level_class_def(2, None, "float", None))),
-                Arc::new(RwLock::new(Self::make_top_level_class_def(3, None, "bool", None))),
-                Arc::new(RwLock::new(Self::make_top_level_class_def(4, None, "none", None))),
+                Arc::new(RwLock::new(Self::make_top_level_class_def(
+                    0,
+                    None,
+                    "int32".into(),
+                    None,
+                ))),
+                Arc::new(RwLock::new(Self::make_top_level_class_def(
+                    1,
+                    None,
+                    "int64".into(),
+                    None,
+                ))),
+                Arc::new(RwLock::new(Self::make_top_level_class_def(
+                    2,
+                    None,
+                    "float".into(),
+                    None,
+                ))),
+                Arc::new(RwLock::new(Self::make_top_level_class_def(3, None, "bool".into(), None))),
+                Arc::new(RwLock::new(Self::make_top_level_class_def(4, None, "none".into(), None))),
             ];
             let ast_list: Vec<Option<ast::Stmt<()>>> = vec![None, None, None, None, None];
             izip!(top_level_def_list, ast_list).collect_vec()
         };
         let primitives_ty = primitives.0;
         let mut unifier = primitives.1;
-        let mut keyword_list: HashSet<String> = HashSet::from_iter(vec![
+        let mut keyword_list: HashSet<StrRef> = HashSet::from_iter(vec![
             "Generic".into(),
             "virtual".into(),
             "list".into(),
@@ -69,8 +84,8 @@ impl TopLevelComposer {
         let defined_names: HashSet<String> = Default::default();
         let method_class: HashMap<DefinitionId, DefinitionId> = Default::default();
 
-        let mut built_in_id: HashMap<String, DefinitionId> = Default::default();
-        let mut built_in_ty: HashMap<String, Type> = Default::default();
+        let mut built_in_id: HashMap<StrRef, DefinitionId> = Default::default();
+        let mut built_in_ty: HashMap<StrRef, Type> = Default::default();
 
         for (name, sig) in builtins {
             let fun_sig = unifier.add_ty(TypeEnum::TFunc(RefCell::new(sig)));
@@ -78,11 +93,11 @@ impl TopLevelComposer {
             built_in_id.insert(name.clone(), DefinitionId(definition_ast_list.len()));
             definition_ast_list.push((
                 Arc::new(RwLock::new(TopLevelDef::Function {
-                    name: name.clone(),
-                    simple_name: name.clone(),
+                    name: name.into(),
+                    simple_name: name,
                     signature: fun_sig,
                     instance_to_stmt: HashMap::new(),
-                    instance_to_symbol: [("".to_string(), name.clone())].iter().cloned().collect(),
+                    instance_to_symbol: [("".into(), name.into())].iter().cloned().collect(),
                     var_id: Default::default(),
                     resolver: None,
                 })),
@@ -131,7 +146,7 @@ impl TopLevelComposer {
         ast: ast::Stmt<()>,
         resolver: Option<Arc<Box<dyn SymbolResolver + Send + Sync>>>,
         mod_path: String,
-    ) -> Result<(String, DefinitionId, Option<Type>), String> {
+    ) -> Result<(StrRef, DefinitionId, Option<Type>), String> {
         let defined_names = &mut self.defined_names;
         match &ast.node {
             ast::StmtKind::ClassDef { name: class_name, body, .. } => {
@@ -140,7 +155,7 @@ impl TopLevelComposer {
                 }
                 if !defined_names.insert({
                     let mut n = mod_path.clone();
-                    n.push_str(class_name.as_str());
+                    n.push_str(&class_name.to_string());
                     n
                 }) {
                     return Err("duplicate definition of class".into());
@@ -156,7 +171,7 @@ impl TopLevelComposer {
                     Arc::new(RwLock::new(Self::make_top_level_class_def(
                         class_def_id,
                         resolver.clone(),
-                        class_name.as_str(),
+                        class_name,
                         Some(constructor_ty),
                     ))),
                     None,
@@ -167,7 +182,7 @@ impl TopLevelComposer {
                 // thus cannot return their definition_id
                 type MethodInfo = (
                     // the simple method name without class name
-                    String,
+                    StrRef,
                     // in this top level def, method name is prefixed with the class name
                     Arc<RwLock<TopLevelDef>>,
                     DefinitionId,
@@ -186,8 +201,11 @@ impl TopLevelComposer {
                         let global_class_method_name = {
                             let mut n = mod_path.clone();
                             n.push_str(
-                                Self::make_class_method_name(class_name.clone(), method_name)
-                                    .as_str(),
+                                Self::make_class_method_name(
+                                    class_name.into(),
+                                    &method_name.to_string(),
+                                )
+                                .as_str(),
                             );
                             n
                         };
@@ -247,22 +265,22 @@ impl TopLevelComposer {
                 // if self.keyword_list.contains(name) {
                 //     return Err("cannot use keyword as a top level function name".into());
                 // }
-                let fun_name = name.to_string();
                 let global_fun_name = {
                     let mut n = mod_path;
-                    n.push_str(name.as_str());
+                    n.push_str(&name.to_string());
                     n
                 };
                 if !defined_names.insert(global_fun_name.clone()) {
                     return Err("duplicate top level function define".into());
                 }
 
+                let fun_name = *name;
                 let ty_to_be_unified = self.unifier.get_fresh_var().0;
                 // add to the definition list
                 self.definition_ast_list.push((
                     RwLock::new(Self::make_top_level_function_def(
                         global_fun_name,
-                        name.into(),
+                        *name,
                         // dummy here, unify with correct type later
                         ty_to_be_unified,
                         resolver,
@@ -334,7 +352,7 @@ impl TopLevelComposer {
                         if {
                             matches!(
                                 &value.node,
-                                ast::ExprKind::Name { id, .. } if id == "Generic"
+                                ast::ExprKind::Name { id, .. } if id == &"Generic".into()
                             )
                         } =>
                     {
@@ -432,7 +450,7 @@ impl TopLevelComposer {
                     ast::ExprKind::Subscript { value, .. }
                         if matches!(
                             &value.node,
-                            ast::ExprKind::Name { id, .. } if id == "Generic"
+                            ast::ExprKind::Name { id, .. } if id == &"Generic".into()
                         )
                 ) {
                     continue;
@@ -627,9 +645,9 @@ impl TopLevelComposer {
                     let mut function_var_map: HashMap<u32, Type> = HashMap::new();
                     let arg_types = {
                         // make sure no duplicate parameter
-                        let mut defined_paramter_name: HashSet<String> = HashSet::new();
+                        let mut defined_paramter_name: HashSet<_> = HashSet::new();
                         let have_unique_fuction_parameter_name = args.args.iter().all(|x| {
-                            defined_paramter_name.insert(x.node.arg.clone())
+                            defined_paramter_name.insert(x.node.arg)
                                 && !keyword_list.contains(&x.node.arg)
                         });
                         if !have_unique_fuction_parameter_name {
@@ -765,7 +783,7 @@ impl TopLevelComposer {
         unifier: &mut Unifier,
         primitives: &PrimitiveStore,
         type_var_to_concrete_def: &mut HashMap<Type, TypeAnnotation>,
-        keyword_list: &HashSet<String>,
+        keyword_list: &HashSet<StrRef>,
     ) -> Result<(), String> {
         let mut class_def = class_def.write();
         let (
@@ -809,12 +827,12 @@ impl TopLevelComposer {
         let class_resolver = class_resolver.as_ref().unwrap();
         let class_resolver = class_resolver.as_ref();
 
-        let mut defined_fields: HashSet<String> = HashSet::new();
+        let mut defined_fields: HashSet<_> = HashSet::new();
         for b in class_body_ast {
             match &b.node {
                 ast::StmtKind::FunctionDef { args, returns, name, .. } => {
                     let (method_dummy_ty, method_id) =
-                        Self::get_class_method_def_info(class_methods_def, name)?;
+                        Self::get_class_method_def_info(class_methods_def, *name)?;
 
                     // the method var map can surely include the class's generic parameters
                     let mut method_var_map: HashMap<u32, Type> = class_type_vars_def
@@ -830,27 +848,28 @@ impl TopLevelComposer {
 
                     let arg_types: Vec<FuncArg> = {
                         // check method parameters cannot have same name
-                        let mut defined_paramter_name: HashSet<String> = HashSet::new();
+                        let mut defined_paramter_name: HashSet<_> = HashSet::new();
+                        let zelf: StrRef = "self".into();
                         let have_unique_fuction_parameter_name = args.args.iter().all(|x| {
                             defined_paramter_name.insert(x.node.arg.clone())
-                                && (!keyword_list.contains(&x.node.arg) || x.node.arg == "self")
+                                && (!keyword_list.contains(&x.node.arg) || x.node.arg == zelf)
                         });
                         if !have_unique_fuction_parameter_name {
                             return Err("class method must have unique parameter names \
                             and names thould not be the same as the keywords"
                                 .into());
                         }
-                        if name == "__init__" && !defined_paramter_name.contains("self") {
+                        if name == &"__init__".into() && !defined_paramter_name.contains(&zelf) {
                             return Err("__init__ function must have a `self` parameter".into());
                         }
-                        if !defined_paramter_name.contains("self") {
+                        if !defined_paramter_name.contains(&zelf) {
                             return Err("currently does not support static method".into());
                         }
 
                         let mut result = Vec::new();
                         for x in &args.args {
-                            let name = x.node.arg.clone();
-                            if name != "self" {
+                            let name = x.node.arg;
+                            if name != zelf {
                                 let type_ann = {
                                     let annotation_expr = x
                                         .node
@@ -962,14 +981,15 @@ impl TopLevelComposer {
                     if let ast::ExprKind::Name { id: attr, .. } = &target.node {
                         if defined_fields.insert(attr.to_string()) {
                             let dummy_field_type = unifier.get_fresh_var().0;
-                            class_fields_def.push((attr.to_string(), dummy_field_type));
+                            class_fields_def.push((*attr, dummy_field_type));
 
                             // handle Kernel[T], KernelImmutable[T]
                             let annotation = {
                                 match &annotation.as_ref().node {
                                     ast::ExprKind::Subscript { value, slice, .. }
                                         if {
-                                            matches!(&value.node, ast::ExprKind::Name { id, .. } if id == "Kernel" || id == "KernelImmutable")
+                                            matches!(&value.node, ast::ExprKind::Name { id, .. }
+                                                if id == &"Kernel".into() || id == &"KernelImmutable".into())
                                         } =>
                                     {
                                         slice
@@ -1054,19 +1074,19 @@ impl TopLevelComposer {
             if let TopLevelDef::Class { methods, fields, .. } = &*base {
                 // handle methods override
                 // since we need to maintain the order, create a new list
-                let mut new_child_methods: Vec<(String, Type, DefinitionId)> = Vec::new();
-                let mut is_override: HashSet<String> = HashSet::new();
+                let mut new_child_methods: Vec<(StrRef, Type, DefinitionId)> = Vec::new();
+                let mut is_override: HashSet<StrRef> = HashSet::new();
                 for (anc_method_name, anc_method_ty, anc_method_def_id) in methods {
                     // find if there is a method with same name in the child class
                     let mut to_be_added =
-                        (anc_method_name.to_string(), *anc_method_ty, *anc_method_def_id);
+                        (*anc_method_name, *anc_method_ty, *anc_method_def_id);
                     for (class_method_name, class_method_ty, class_method_defid) in
                         class_methods_def.iter()
                     {
                         if class_method_name == anc_method_name {
                             // ignore and handle self
                             // if is __init__ method, no need to check return type
-                            let ok = class_method_name == "__init__"
+                            let ok = class_method_name == &"__init__".into()
                                 || Self::check_overload_function_type(
                                     *class_method_ty,
                                     *anc_method_ty,
@@ -1077,9 +1097,9 @@ impl TopLevelComposer {
                                 return Err("method has same name as ancestors' method, but incompatible type".into());
                             }
                             // mark it as added
-                            is_override.insert(class_method_name.to_string());
+                            is_override.insert(*class_method_name);
                             to_be_added = (
-                                class_method_name.to_string(),
+                                *class_method_name,
                                 *class_method_ty,
                                 *class_method_defid,
                             );
@@ -1094,7 +1114,7 @@ impl TopLevelComposer {
                 {
                     if !is_override.contains(class_method_name) {
                         new_child_methods.push((
-                            class_method_name.to_string(),
+                            *class_method_name,
                             *class_method_ty,
                             *class_method_defid,
                         ));
@@ -1105,10 +1125,10 @@ impl TopLevelComposer {
                 class_methods_def.extend(new_child_methods);
 
                 // handle class fields
-                let mut new_child_fields: Vec<(String, Type)> = Vec::new();
-                // let mut is_override: HashSet<String> = HashSet::new();
+                let mut new_child_fields: Vec<(StrRef, Type)> = Vec::new();
+                // let mut is_override: HashSet<_> = HashSet::new();
                 for (anc_field_name, anc_field_ty) in fields {
-                    let to_be_added = (anc_field_name.to_string(), *anc_field_ty);
+                    let to_be_added = (*anc_field_name, *anc_field_ty);
                     // find if there is a fields with the same name in the child class
                     for (class_field_name, ..) in class_fields_def.iter() {
                         if class_field_name == anc_field_name {
@@ -1135,7 +1155,7 @@ impl TopLevelComposer {
                 }
                 for (class_field_name, class_field_ty) in class_fields_def.iter() {
                     if !is_override.contains(class_field_name) {
-                        new_child_fields.push((class_field_name.to_string(), *class_field_ty));
+                        new_child_fields.push((*class_field_name, *class_field_ty));
                     }
                 }
                 class_fields_def.drain(..);
@@ -1173,7 +1193,7 @@ impl TopLevelComposer {
                     let mut constructor_args: Vec<FuncArg> = Vec::new();
                     let mut type_vars: HashMap<u32, Type> = HashMap::new();
                     for (name, func_sig, id) in methods {
-                        if name == "__init__" {
+                        if name == &"__init__".into() {
                             init_id = Some(*id);
                             if let TypeEnum::TFunc(sig) = self.unifier.get_ty(*func_sig).as_ref() {
                                 let FunSignature { args, vars, .. } = &*sig.borrow();
@@ -1203,7 +1223,7 @@ impl TopLevelComposer {
                     let init_ast =
                         self.definition_ast_list.get(init_id.0).unwrap().1.as_ref().unwrap();
                     if let ast::StmtKind::FunctionDef { name, body, .. } = &init_ast.node {
-                        if name != "__init__" {
+                        if name != &"__init__".into() {
                             unreachable!("must be init function here")
                         }
                         let all_inited = Self::get_all_assigned_field(body.as_slice())?;
@@ -1303,7 +1323,7 @@ impl TopLevelComposer {
 
                         let mut identifiers = {
                             // NOTE: none and function args?
-                            let mut result: HashSet<String> = HashSet::new();
+                            let mut result: HashSet<_> = HashSet::new();
                             result.insert("None".into());
                             if self_type.is_some() {
                                 result.insert("self".into());
@@ -1331,7 +1351,7 @@ impl TopLevelComposer {
                             unifier: &mut self.unifier,
                             variable_mapping: {
                                 // NOTE: none and function args?
-                                let mut result: HashMap<String, Type> = HashMap::new();
+                                let mut result: HashMap<StrRef, Type> = HashMap::new();
                                 result.insert("None".into(), self.primitives_ty.none);
                                 if let Some(self_ty) = self_type {
                                     result.insert("self".into(), self_ty);
@@ -1350,9 +1370,9 @@ impl TopLevelComposer {
                             {
                                 if !decorator_list.is_empty()
                                     && matches!(&decorator_list[0].node,
-                                        ast::ExprKind::Name{ id, .. } if id == "syscall")
+                                        ast::ExprKind::Name{ id, .. } if id == &"syscall".into())
                                 {
-                                    instance_to_symbol.insert("".to_string(), simple_name.clone());
+                                    instance_to_symbol.insert("".into(), simple_name.to_string());
                                     continue;
                                 }
                                 body

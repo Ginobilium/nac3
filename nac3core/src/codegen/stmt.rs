@@ -30,7 +30,7 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
                 })
             }
             ExprKind::Attribute { value, attr, .. } => {
-                let index = self.get_attr_index(value.custom.unwrap(), attr);
+                let index = self.get_attr_index(value.custom.unwrap(), *attr);
                 let val = self.gen_expr(value).unwrap();
                 let ptr = if let BasicValueEnum::PointerValue(v) = val {
                     v

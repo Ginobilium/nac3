@@ -2,14 +2,14 @@ use crate::typecheck::typedef::TypeEnum;
 
 use super::type_inferencer::Inferencer;
 use super::typedef::Type;
-use rustpython_parser::ast::{self, Expr, ExprKind, Stmt, StmtKind};
+use rustpython_parser::ast::{self, Expr, ExprKind, Stmt, StmtKind, StrRef};
 use std::{collections::HashSet, iter::once};
 
 impl<'a> Inferencer<'a> {
     fn check_pattern(
         &mut self,
         pattern: &Expr<Option<Type>>,
-        defined_identifiers: &mut HashSet<String>,
+        defined_identifiers: &mut HashSet<StrRef>,
     ) -> Result<(), String> {
         match &pattern.node {
             ExprKind::Name { id, .. } => {
@@ -42,7 +42,7 @@ impl<'a> Inferencer<'a> {
     fn check_expr(
         &mut self,
         expr: &Expr<Option<Type>>,
-        defined_identifiers: &mut HashSet<String>,
+        defined_identifiers: &mut HashSet<StrRef>,
     ) -> Result<(), String> {
         // there are some cases where the custom field is None
         if let Some(ty) = &expr.custom {
@@ -57,7 +57,7 @@ impl<'a> Inferencer<'a> {
         match &expr.node {
             ExprKind::Name { id, .. } => {
                 if !defined_identifiers.contains(id) {
-                    if self.function_data.resolver.get_identifier_def(id).is_some() {
+                    if self.function_data.resolver.get_identifier_def(*id).is_some() {
                         defined_identifiers.insert(id.clone());
                     } else {
                         return Err(format!(
@@ -143,7 +143,7 @@ impl<'a> Inferencer<'a> {
     fn check_stmt(
         &mut self,
         stmt: &Stmt<Option<Type>>,
-        defined_identifiers: &mut HashSet<String>,
+        defined_identifiers: &mut HashSet<StrRef>,
     ) -> Result<bool, String> {
         match &stmt.node {
             StmtKind::For { target, iter, body, orelse, .. } => {
@@ -217,7 +217,7 @@ impl<'a> Inferencer<'a> {
     pub fn check_block(
         &mut self,
         block: &[Stmt<Option<Type>>],
-        defined_identifiers: &mut HashSet<String>,
+        defined_identifiers: &mut HashSet<StrRef>,
     ) -> Result<bool, String> {
         let mut ret = false;
         for stmt in block {

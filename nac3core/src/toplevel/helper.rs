@@ -92,11 +92,11 @@ impl TopLevelComposer {
     pub fn make_top_level_class_def(
         index: usize,
         resolver: Option<Arc<Box<dyn SymbolResolver + Send + Sync>>>,
-        name: &str,
+        name: StrRef,
         constructor: Option<Type>,
     ) -> TopLevelDef {
         TopLevelDef::Class {
-            name: name.to_string(),
+            name,
             object_id: DefinitionId(index),
             type_vars: Default::default(),
             fields: Default::default(),
@@ -110,7 +110,7 @@ impl TopLevelComposer {
     /// when first registering, the type is a invalid value
     pub fn make_top_level_function_def(
         name: String,
-        simple_name: String,
+        simple_name: StrRef,
         ty: Type,
         resolver: Option<Arc<Box<dyn SymbolResolver + Send + Sync>>>,
     ) -> TopLevelDef {
@@ -132,11 +132,11 @@ impl TopLevelComposer {
     }
 
     pub fn get_class_method_def_info(
-        class_methods_def: &[(String, Type, DefinitionId)],
-        method_name: &str,
+        class_methods_def: &[(StrRef, Type, DefinitionId)],
+        method_name: StrRef,
     ) -> Result<(Type, DefinitionId), String> {
         for (name, ty, def_id) in class_methods_def {
-            if name == method_name {
+            if name == &method_name {
                 return Ok((*ty, *def_id));
             }
         }
@@ -234,7 +234,7 @@ impl TopLevelComposer {
                     (name, type_var_to_concrete_def.get(ty).unwrap())
                 }))
                 .all(|(this, other)| {
-                    if this.0 == "self" && this.0 == other.0 {
+                    if this.0 == &"self".into() && this.0 == other.0 {
                         true
                     } else {
                         this.0 == other.0
@@ -269,15 +269,15 @@ impl TopLevelComposer {
         )
     }
 
-    pub fn get_all_assigned_field(stmts: &[ast::Stmt<()>]) -> Result<HashSet<String>, String> {
-        let mut result: HashSet<String> = HashSet::new();
+    pub fn get_all_assigned_field(stmts: &[ast::Stmt<()>]) -> Result<HashSet<StrRef>, String> {
+        let mut result = HashSet::new();
         for s in stmts {
             match &s.node {
                 ast::StmtKind::AnnAssign { target, .. }
                     if {
                         if let ast::ExprKind::Attribute { value, .. } = &target.node {
                             if let ast::ExprKind::Name { id, .. } = &value.node {
-                                id == "self"
+                                id == &"self".into()
                             } else {
                                 false
                             }
@@ -295,7 +295,7 @@ impl TopLevelComposer {
                     for t in targets {
                         if let ast::ExprKind::Attribute { value, attr, .. } = &t.node {
                             if let ast::ExprKind::Name { id, .. } = &value.node {
-                                if id == "self" {
+                                if id == &"self".into() {
                                     result.insert(attr.clone());
                                 }
                             }
@@ -312,14 +312,14 @@ impl TopLevelComposer {
                     let inited_for_sure = Self::get_all_assigned_field(body.as_slice())?
                         .intersection(&Self::get_all_assigned_field(orelse.as_slice())?)
                         .cloned()
-                        .collect::<HashSet<String>>();
+                        .collect::<HashSet<_>>();
                     result.extend(inited_for_sure);
                 }
                 ast::StmtKind::Try { body, orelse, finalbody, .. } => {
                     let inited_for_sure = Self::get_all_assigned_field(body.as_slice())?
                         .intersection(&Self::get_all_assigned_field(orelse.as_slice())?)
                         .cloned()
-                        .collect::<HashSet<String>>();
+                        .collect::<HashSet<_>>();
                     result.extend(inited_for_sure);
                     result.extend(Self::get_all_assigned_field(finalbody.as_slice())?);
                 }

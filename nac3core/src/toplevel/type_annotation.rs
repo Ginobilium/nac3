@@ -30,49 +30,54 @@ pub fn parse_ast_to_type_annotation_kinds<T>(
     mut locked: HashMap<DefinitionId, Vec<Type>>,
 ) -> Result<TypeAnnotation, String> {
     match &expr.node {
-        ast::ExprKind::Name { id, .. } => match id.as_str() {
-            "int32" => Ok(TypeAnnotation::PrimitiveKind(primitives.int32)),
-            "int64" => Ok(TypeAnnotation::PrimitiveKind(primitives.int64)),
-            "float" => Ok(TypeAnnotation::PrimitiveKind(primitives.float)),
-            "bool" => Ok(TypeAnnotation::PrimitiveKind(primitives.bool)),
-            "None" => Ok(TypeAnnotation::PrimitiveKind(primitives.none)),
-            x => {
-                if let Some(obj_id) = resolver.get_identifier_def(x) {
-                    let type_vars = {
-                        let def_read = top_level_defs[obj_id.0].try_read();
-                        if let Some(def_read) = def_read {
-                            if let TopLevelDef::Class { type_vars, .. } = &*def_read {
-                                type_vars.clone()
-                            } else {
-                                return Err("function cannot be used as a type".into());
-                            }
+        ast::ExprKind::Name { id, .. } => {
+            if id == &"int32".into() {
+                Ok(TypeAnnotation::PrimitiveKind(primitives.int32))
+            } else if id == &"int64".into() {
+                Ok(TypeAnnotation::PrimitiveKind(primitives.int64))
+            } else if id == &"float".into() {
+                Ok(TypeAnnotation::PrimitiveKind(primitives.float))
+            } else if id == &"bool".into() {
+                Ok(TypeAnnotation::PrimitiveKind(primitives.bool))
+            } else if id == &"None".into() {
+                Ok(TypeAnnotation::PrimitiveKind(primitives.none))
+            } else if let Some(obj_id) = resolver.get_identifier_def(*id) {
+                let type_vars = {
+                    let def_read = top_level_defs[obj_id.0].try_read();
+                    if let Some(def_read) = def_read {
+                        if let TopLevelDef::Class { type_vars, .. } = &*def_read {
+                            type_vars.clone()
                         } else {
-                            locked.get(&obj_id).unwrap().clone()
+                            return Err("function cannot be used as a type".into());
                         }
-                    };
-                    // check param number here
-                    if !type_vars.is_empty() {
-                        return Err(format!(
-                            "expect {} type variable parameter but got 0",
-                            type_vars.len()
-                        ));
-                    }
-                    Ok(TypeAnnotation::CustomClassKind { id: obj_id, params: vec![] })
-                } else if let Some(ty) = resolver.get_symbol_type(unifier, primitives, id) {
-                    if let TypeEnum::TVar { .. } = unifier.get_ty(ty).as_ref() {
-                        Ok(TypeAnnotation::TypeVarKind(ty))
                     } else {
-                        Err("not a type variable identifier".into())
+                        locked.get(&obj_id).unwrap().clone()
                     }
-                } else {
-                    Err("name cannot be parsed as a type annotation".into())
+                };
+                // check param number here
+                if !type_vars.is_empty() {
+                    return Err(format!(
+                        "expect {} type variable parameter but got 0",
+                        type_vars.len()
+                    ));
                 }
+                Ok(TypeAnnotation::CustomClassKind { id: obj_id, params: vec![] })
+            } else if let Some(ty) = resolver.get_symbol_type(unifier, primitives, *id) {
+                if let TypeEnum::TVar { .. } = unifier.get_ty(ty).as_ref() {
+                    Ok(TypeAnnotation::TypeVarKind(ty))
+                } else {
+                    Err("not a type variable identifier".into())
+                }
+            } else {
+                Err("name cannot be parsed as a type annotation".into())
             }
-        },
+        }
 
         // virtual
         ast::ExprKind::Subscript { value, slice, .. }
-            if { matches!(&value.node, ast::ExprKind::Name { id, .. } if id == "virtual") } =>
+            if {
+                matches!(&value.node, ast::ExprKind::Name { id, .. } if id == &"virtual".into())
+            } =>
         {
             let def = parse_ast_to_type_annotation_kinds(
                 resolver,
@@ -90,7 +95,9 @@ pub fn parse_ast_to_type_annotation_kinds<T>(
 
         // list
         ast::ExprKind::Subscript { value, slice, .. }
-            if { matches!(&value.node, ast::ExprKind::Name { id, .. } if id == "list") } =>
+            if {
+                matches!(&value.node, ast::ExprKind::Name { id, .. } if id == &"list".into())
+            } =>
         {
             let def_ann = parse_ast_to_type_annotation_kinds(
                 resolver,
@@ -105,7 +112,9 @@ pub fn parse_ast_to_type_annotation_kinds<T>(
 
         // tuple
         ast::ExprKind::Subscript { value, slice, .. }
-            if { matches!(&value.node, ast::ExprKind::Name { id, .. } if id == "tuple") } =>
+            if {
+                matches!(&value.node, ast::ExprKind::Name { id, .. } if id == &"tuple".into())
+            } =>
         {
             if let ast::ExprKind::Tuple { elts, .. } = &slice.node {
                 let type_annotations = elts
@@ -130,11 +139,13 @@ pub fn parse_ast_to_type_annotation_kinds<T>(
         // custom class
         ast::ExprKind::Subscript { value, slice, .. } => {
             if let ast::ExprKind::Name { id, .. } = &value.node {
-                if vec!["virtual", "Generic", "list", "tuple"].contains(&id.as_str()) {
+                if vec!["virtual".into(), "Generic".into(), "list".into(), "tuple".into()]
+                    .contains(id)
+                {
                     return Err("keywords cannot be class name".into());
                 }
                 let obj_id = resolver
-                    .get_identifier_def(id)
+                    .get_identifier_def(*id)
                     .ok_or_else(|| "unknown class name".to_string())?;
                 let type_vars = {
                     let def_read = top_level_defs[obj_id.0].try_read();
@@ -272,12 +283,12 @@ pub fn get_type_from_type_annotation_kinds(
                         .iter()
                         .map(|(name, ty, _)| {
                             let subst_ty = unifier.subst(*ty, &subst).unwrap_or(*ty);
-                            (name.clone(), subst_ty)
+                            (*name, subst_ty)
                         })
-                        .collect::<HashMap<String, Type>>();
+                        .collect::<HashMap<_, Type>>();
                     tobj_fields.extend(fields.iter().map(|(name, ty)| {
                         let subst_ty = unifier.subst(*ty, &subst).unwrap_or(*ty);
-                        (name.clone(), subst_ty)
+                        (*name, subst_ty)
                     }));
 
                     // println!("tobj_fields: {:?}", tobj_fields);

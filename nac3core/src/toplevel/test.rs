@@ -16,17 +16,17 @@ use test_case::test_case;
 use super::*;
 
 struct ResolverInternal {
-    id_to_type: Mutex<HashMap<String, Type>>,
-    id_to_def: Mutex<HashMap<String, DefinitionId>>,
-    class_names: Mutex<HashMap<String, Type>>,
+    id_to_type: Mutex<HashMap<StrRef, Type>>,
+    id_to_def: Mutex<HashMap<StrRef, DefinitionId>>,
+    class_names: Mutex<HashMap<StrRef, Type>>,
 }
 
 impl ResolverInternal {
-    fn add_id_def(&self, id: String, def: DefinitionId) {
+    fn add_id_def(&self, id: StrRef, def: DefinitionId) {
         self.id_to_def.lock().insert(id, def);
     }
 
-    fn add_id_type(&self, id: String, ty: Type) {
+    fn add_id_type(&self, id: StrRef, ty: Type) {
         self.id_to_type.lock().insert(id, ty);
     }
 }
@@ -34,24 +34,24 @@ impl ResolverInternal {
 struct Resolver(Arc<ResolverInternal>);
 
 impl SymbolResolver for Resolver {
-    fn get_symbol_type(&self, _: &mut Unifier, _: &PrimitiveStore, str: &str) -> Option<Type> {
-        let ret = self.0.id_to_type.lock().get(str).cloned();
+    fn get_symbol_type(&self, _: &mut Unifier, _: &PrimitiveStore, str: StrRef) -> Option<Type> {
+        let ret = self.0.id_to_type.lock().get(&str).cloned();
         if ret.is_none() {
             // println!("unknown here resolver {}", str);
         }
         ret
     }
 
-    fn get_symbol_value(&self, _: &str) -> Option<SymbolValue> {
+    fn get_symbol_value(&self, _: StrRef) -> Option<SymbolValue> {
         unimplemented!()
     }
 
-    fn get_symbol_location(&self, _: &str) -> Option<Location> {
+    fn get_symbol_location(&self, _: StrRef) -> Option<Location> {
         unimplemented!()
     }
 
-    fn get_identifier_def(&self, id: &str) -> Option<DefinitionId> {
-        self.0.id_to_def.lock().get(id).cloned()
+    fn get_identifier_def(&self, id: StrRef) -> Option<DefinitionId> {
+        self.0.id_to_def.lock().get(&id).cloned()
     }
 }
 
@@ -70,7 +70,7 @@ impl SymbolResolver for Resolver {
             class B:
                 def __init__(self):
                     self.b: float = 4.3
-                
+
                 def fun(self):
                     self.b = self.b + 3.0
         "},
@@ -449,19 +449,19 @@ fn test_simple_function_analyze(source: Vec<&str>, tys: Vec<&str>, names: Vec<&s
         methods: [(\"__init__\", \"fn[[a=class5[2->class2, 3->class3], b=class8], class4]\", DefinitionId(6)), (\"fun\", \"fn[[a=class5[2->class2, 3->class3]], class5[2->class3, 3->class0]]\", DefinitionId(7))],
         type_vars: [UnificationKey(100), UnificationKey(101)]
         }"},
-        
+
         indoc! {"6: Function {
         name: \"A.__init__\",
         sig: \"fn[[a=class5[2->class2, 3->class3], b=class8], class4]\",
         var_id: [2, 3]
         }"},
-        
+
         indoc! {"7: Function {
         name: \"A.fun\",
         sig: \"fn[[a=class5[2->class2, 3->class3]], class5[2->class3, 3->class0]]\",
         var_id: [2, 3]
         }"},
-        
+
         indoc! {"8: Class {
         name: \"B\",
         def_id: DefinitionId(8),
@@ -470,19 +470,19 @@ fn test_simple_function_analyze(source: Vec<&str>, tys: Vec<&str>, names: Vec<&s
         methods: [(\"__init__\", \"fn[[], class4]\", DefinitionId(9)), (\"fun\", \"fn[[a=class5[2->class2, 3->class3]], class5[2->class3, 3->class0]]\", DefinitionId(7)), (\"foo\", \"fn[[b=class8], class8]\", DefinitionId(10)), (\"bar\", \"fn[[a=class5[2->list[class8], 3->class0]], tuple[class5[2->virtual[class5[2->class8, 3->class0]], 3->class3], class8]]\", DefinitionId(11))],
         type_vars: []
         }"},
-        
+
         indoc! {"9: Function {
         name: \"B.__init__\",
         sig: \"fn[[], class4]\",
         var_id: []
         }"},
-        
+
         indoc! {"10: Function {
         name: \"B.foo\",
         sig: \"fn[[b=class8], class8]\",
         var_id: []
         }"},
-        
+
         indoc! {"11: Function {
         name: \"B.bar\",
         sig: \"fn[[a=class5[2->list[class8], 3->class0]], tuple[class5[2->virtual[class5[2->class8, 3->class0]], 3->class3], class8]]\",
@@ -651,15 +651,6 @@ fn test_simple_function_analyze(source: Vec<&str>, tys: Vec<&str>, names: Vec<&s
 #[test_case(
     vec![indoc! {"
         class A:
-            def fun3(self):
-                pass
-    "}],
-    vec!["function name `fun3` must not end with numbers"];
-    "err fun end with number"
-)]
-#[test_case(
-    vec![indoc! {"
-        class A:
             def __init__():
                 pass
     "}],
@@ -790,7 +781,7 @@ fn test_analyze(source: Vec<&str>, res: Vec<&str>) {
                 }
             }
         };
-        internal_resolver.add_id_def(id.clone(), def_id);
+        internal_resolver.add_id_def(id, def_id);
         if let Some(ty) = ty {
             internal_resolver.add_id_type(id, ty);
         }
@@ -1027,7 +1018,7 @@ fn test_inference(source: Vec<&str>, res: Vec<&str>) {
                 );
                 for inst in instance_to_stmt.iter() {
                     let ast = &inst.1.body;
-                    for b in ast {
+                    for b in ast.iter() {
                         println!("{:?}", stringify_folder.fold_stmt(b.clone()).unwrap());
                         println!("--------------------");
                     }
@@ -1039,7 +1030,7 @@ fn test_inference(source: Vec<&str>, res: Vec<&str>) {
 }
 
 fn make_internal_resolver_with_tvar(
-    tvars: Vec<(String, Vec<Type>)>,
+    tvars: Vec<(StrRef, Vec<Type>)>,
     unifier: &mut Unifier,
     print: bool,
 ) -> Arc<ResolverInternal> {

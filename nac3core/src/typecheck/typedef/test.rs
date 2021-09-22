@@ -149,7 +149,7 @@ impl TestEnvironment {
                 let mut fields = HashMap::new();
                 while &s[0..1] != "]" {
                     let eq = s.find('=').unwrap();
-                    let key = s[1..eq].to_string();
+                    let key = s[1..eq].into();
                     let result = self.internal_parse(&s[eq + 1..], mapping);
                     fields.insert(key, result.0);
                     s = result.1;
@@ -342,8 +342,8 @@ fn test_recursive_subst() {
     let instantiated_ty = env.unifier.get_ty(instantiated);
     if let TypeEnum::TObj { fields, .. } = &*instantiated_ty {
         let fields = fields.borrow();
-        assert!(env.unifier.unioned(*fields.get("a").unwrap(), int));
-        assert!(env.unifier.unioned(*fields.get("rec").unwrap(), instantiated));
+        assert!(env.unifier.unioned(*fields.get(&"a".into()).unwrap(), int));
+        assert!(env.unifier.unioned(*fields.get(&"rec".into()).unwrap(), instantiated));
     } else {
         unreachable!()
     }
@@ -358,10 +358,10 @@ fn test_virtual() {
     ));
     let bar = env.unifier.add_ty(TypeEnum::TObj {
         obj_id: DefinitionId(5),
-        fields: [("f".to_string(), fun), ("a".to_string(), int)]
+        fields: [("f".into(), fun), ("a".into(), int)]
             .iter()
             .cloned()
-            .collect::<HashMap<_, _>>()
+            .collect::<HashMap<StrRef, _>>()
             .into(),
         params: HashMap::new().into(),
     });
@@ -370,15 +370,15 @@ fn test_virtual() {
 
     let a = env.unifier.add_ty(TypeEnum::TVirtual { ty: bar });
     let b = env.unifier.add_ty(TypeEnum::TVirtual { ty: v0 });
-    let c = env.unifier.add_record([("f".to_string(), v1)].iter().cloned().collect());
+    let c = env.unifier.add_record([("f".into(), v1)].iter().cloned().collect());
     env.unifier.unify(a, b).unwrap();
     env.unifier.unify(b, c).unwrap();
     assert!(env.unifier.eq(v1, fun));
 
-    let d = env.unifier.add_record([("a".to_string(), v1)].iter().cloned().collect());
+    let d = env.unifier.add_record([("a".into(), v1)].iter().cloned().collect());
     assert_eq!(env.unifier.unify(b, d), Err("Cannot access field a for virtual type".to_string()));
 
-    let d = env.unifier.add_record([("b".to_string(), v1)].iter().cloned().collect());
+    let d = env.unifier.add_record([("b".into(), v1)].iter().cloned().collect());
     assert_eq!(env.unifier.unify(b, d), Err("No such attribute b".to_string()));
 }
 

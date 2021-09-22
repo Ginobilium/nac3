@@ -10,7 +10,7 @@ use itertools::izip;
 use rustpython_parser::ast::{
     self,
     fold::{self, Fold},
-    Arguments, Comprehension, ExprKind, Located, Location,
+    Arguments, Comprehension, ExprKind, Located, Location, StrRef,
 };
 
 #[cfg(test)]
@@ -45,12 +45,12 @@ pub struct FunctionData {
 
 pub struct Inferencer<'a> {
     pub top_level: &'a TopLevelContext,
-    pub defined_identifiers: HashSet<String>,
+    pub defined_identifiers: HashSet<StrRef>,
     pub function_data: &'a mut FunctionData,
     pub unifier: &'a mut Unifier,
     pub primitives: &'a PrimitiveStore,
     pub virtual_checks: &'a mut Vec<(Type, Type)>,
-    pub variable_mapping: HashMap<String, Type>,
+    pub variable_mapping: HashMap<StrRef, Type>,
     pub calls: &'a mut HashMap<CodeLocation, CallId>,
 }
 
@@ -163,7 +163,7 @@ impl<'a> fold::Fold<()> for Inferencer<'a> {
             ast::ExprKind::Constant { value, .. } => Some(self.infer_constant(value)?),
             ast::ExprKind::Name { id, .. } => {
                 if !self.defined_identifiers.contains(id) {
-                    if self.function_data.resolver.get_identifier_def(id.as_str()).is_some() {
+                    if self.function_data.resolver.get_identifier_def(*id).is_some() {
                         self.defined_identifiers.insert(id.clone());
                     } else {
                         return Err(format!(
@@ -172,12 +172,12 @@ impl<'a> fold::Fold<()> for Inferencer<'a> {
                         ));
                     }
                 }
-                Some(self.infer_identifier(id)?)
+                Some(self.infer_identifier(*id)?)
             }
             ast::ExprKind::List { elts, .. } => Some(self.infer_list(elts)?),
             ast::ExprKind::Tuple { elts, .. } => Some(self.infer_tuple(elts)?),
             ast::ExprKind::Attribute { value, attr, ctx: _ } => {
-                Some(self.infer_attribute(value, attr)?)
+                Some(self.infer_attribute(value, *attr)?)
             }
             ast::ExprKind::BoolOp { values, .. } => Some(self.infer_bool_ops(values)?),
             ast::ExprKind::BinOp { left, op, right } => {
@@ -237,7 +237,7 @@ impl<'a> Inferencer<'a> {
     fn build_method_call(
         &mut self,
         location: Location,
-        method: String,
+        method: StrRef,
         obj: Type,
         params: Vec<Type>,
         ret: Option<Type>,
@@ -413,7 +413,7 @@ impl<'a> Inferencer<'a> {
                 func
             {
                 // handle special functions that cannot be typed in the usual way...
-                if id == "virtual" {
+                if id == "virtual".into() {
                     if args.is_empty() || args.len() > 2 || !keywords.is_empty() {
                         return Err(
                             "`virtual` can only accept 1/2 positional arguments.".to_string()
@@ -448,7 +448,7 @@ impl<'a> Inferencer<'a> {
                     });
                 }
                 // int64 is special because its argument can be a constant larger than int32
-                if id == "int64" && args.len() == 1 {
+                if id == "int64".into() && args.len() == 1 {
                     if let ExprKind::Constant { value: ast::Constant::Int(val), kind } =
                         &args[0].node
                     {
@@ -508,8 +508,8 @@ impl<'a> Inferencer<'a> {
         Ok(Located { location, custom: Some(ret), node: ExprKind::Call { func, args, keywords } })
     }
 
-    fn infer_identifier(&mut self, id: &str) -> InferenceResult {
-        if let Some(ty) = self.variable_mapping.get(id) {
+    fn infer_identifier(&mut self, id: StrRef) -> InferenceResult {
+        if let Some(ty) = self.variable_mapping.get(&id) {
             Ok(*ty)
         } else {
             let variable_mapping = &mut self.variable_mapping;
@@ -520,7 +520,7 @@ impl<'a> Inferencer<'a> {
                 .get_symbol_type(unifier, self.primitives, id)
                 .unwrap_or_else(|| {
                     let ty = unifier.get_fresh_var().0;
-                    variable_mapping.insert(id.to_string(), ty);
+                    variable_mapping.insert(id, ty);
                     ty
                 }))
         }
@@ -560,9 +560,13 @@ impl<'a> Inferencer<'a> {
         Ok(self.unifier.add_ty(TypeEnum::TTuple { ty }))
     }
 
-    fn infer_attribute(&mut self, value: &ast::Expr<Option<Type>>, attr: &str) -> InferenceResult {
+    fn infer_attribute(
+        &mut self,
+        value: &ast::Expr<Option<Type>>,
+        attr: StrRef,
+    ) -> InferenceResult {
         let (attr_ty, _) = self.unifier.get_fresh_var();
-        let fields = once((attr.to_string(), attr_ty)).collect();
+        let fields = once((attr, attr_ty)).collect();
         let record = self.unifier.add_record(fields);
         self.constrain(value.custom.unwrap(), record, &value.location)?;
         Ok(attr_ty)
@@ -583,10 +587,10 @@ impl<'a> Inferencer<'a> {
         op: &ast::Operator,
         right: &ast::Expr<Option<Type>>,
     ) -> InferenceResult {
-        let method = binop_name(op);
+        let method = binop_name(op).into();
         self.build_method_call(
             location,
-            method.to_string(),
+            method,
             left.custom.unwrap(),
             vec![right.custom.unwrap()],
             None,
@@ -598,14 +602,8 @@ impl<'a> Inferencer<'a> {
         op: &ast::Unaryop,
         operand: &ast::Expr<Option<Type>>,
     ) -> InferenceResult {
-        let method = unaryop_name(op);
-        self.build_method_call(
-            operand.location,
-            method.to_string(),
-            operand.custom.unwrap(),
-            vec![],
-            None,
-        )
+        let method = unaryop_name(op).into();
+        self.build_method_call(operand.location, method, operand.custom.unwrap(), vec![], None)
     }
 
     fn infer_compare(
@@ -617,7 +615,7 @@ impl<'a> Inferencer<'a> {
         let boolean = self.primitives.bool;
         for (a, b, c) in izip!(once(left).chain(comparators), comparators, ops) {
             let method =
-                comparison_name(c).ok_or_else(|| "unsupported comparator".to_string())?.to_string();
+                comparison_name(c).ok_or_else(|| "unsupported comparator".to_string())?.into();
             self.build_method_call(
                 a.location,
                 method,

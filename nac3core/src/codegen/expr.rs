@@ -12,7 +12,7 @@ use inkwell::{
     AddressSpace,
 };
 use itertools::{chain, izip, zip, Itertools};
-use rustpython_parser::ast::{self, Boolop, Constant, Expr, ExprKind, Operator};
+use rustpython_parser::ast::{self, Boolop, Constant, Expr, ExprKind, Operator, StrRef};
 
 pub fn assert_int_val<'ctx>(val: BasicValueEnum<'ctx>) -> IntValue<'ctx> {
     if let BasicValueEnum::IntValue(v) = val {
@@ -56,7 +56,7 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
             .join(", ")
     }
 
-    pub fn get_attr_index(&mut self, ty: Type, attr: &str) -> usize {
+    pub fn get_attr_index(&mut self, ty: Type, attr: StrRef) -> usize {
         let obj_id = match &*self.unifier.get_ty(ty) {
             TypeEnum::TObj { obj_id, .. } => *obj_id,
             // we cannot have other types, virtual type should be handled by function calls
@@ -106,7 +106,7 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
         &mut self,
         obj: Option<(Type, BasicValueEnum<'ctx>)>,
         fun: (&FunSignature, DefinitionId),
-        params: Vec<(Option<String>, BasicValueEnum<'ctx>)>,
+        params: Vec<(Option<StrRef>, BasicValueEnum<'ctx>)>,
     ) -> Option<BasicValueEnum<'ctx>> {
         let key = self.get_subst_key(obj.map(|a| a.0), fun.0, None);
         let definition = self.top_level.definitions.read().get(fun.1.0).cloned().unwrap();
@@ -122,7 +122,7 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
                     // TODO: what about other fields that require alloca?
                     let mut fun_id = None;
                     for (name, _, id) in methods.iter() {
-                        if name == "__init__" {
+                        if name == &"__init__".into() {
                             fun_id = Some(*id);
                         }
                     }
@@ -449,7 +449,7 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
             }
             ExprKind::Attribute { value, attr, .. } => {
                 // note that we would handle class methods directly in calls
-                let index = self.get_attr_index(value.custom.unwrap(), attr);
+                let index = self.get_attr_index(value.custom.unwrap(), *attr);
                 let val = self.gen_expr(value).unwrap();
                 let ptr = assert_pointer_val(val);
                 unsafe {
@@ -666,7 +666,7 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
                     ExprKind::Name { id, .. } => {
                         // TODO: handle primitive casts and function pointers
                         let fun =
-                            self.resolver.get_identifier_def(&id).expect("Unknown identifier");
+                            self.resolver.get_identifier_def(*id).expect("Unknown identifier");
                         return self.gen_call(None, (&signature, fun), params);
                     }
                     ExprKind::Attribute { value, attr, .. } => {

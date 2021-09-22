@@ -6,6 +6,8 @@ use std::iter::once;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
+use rustpython_parser::ast::StrRef;
+
 use super::unification_table::{UnificationKey, UnificationTable};
 use crate::symbol_resolver::SymbolValue;
 use crate::toplevel::{DefinitionId, TopLevelContext, TopLevelDef};
@@ -25,14 +27,14 @@ type VarMap = Mapping<u32>;
 #[derive(Clone)]
 pub struct Call {
     pub posargs: Vec<Type>,
-    pub kwargs: HashMap<String, Type>,
+    pub kwargs: HashMap<StrRef, Type>,
     pub ret: Type,
     pub fun: RefCell<Option<Type>>,
 }
 
 #[derive(Clone)]
 pub struct FuncArg {
-    pub name: String,
+    pub name: StrRef,
     pub ty: Type,
     pub default_value: Option<SymbolValue>,
 }
@@ -48,7 +50,7 @@ pub struct FunSignature {
 pub enum TypeVarMeta {
     Generic,
     Sequence(RefCell<Mapping<i32>>),
-    Record(RefCell<Mapping<String>>),
+    Record(RefCell<Mapping<StrRef>>),
 }
 
 #[derive(Clone)]
@@ -70,7 +72,7 @@ pub enum TypeEnum {
     },
     TObj {
         obj_id: DefinitionId,
-        fields: RefCell<Mapping<String>>,
+        fields: RefCell<Mapping<StrRef>>,
         params: RefCell<VarMap>,
     },
     TVirtual {
@@ -141,7 +143,7 @@ impl Unifier {
                             .borrow()
                             .iter()
                             .map(|(name, ty)| {
-                                (name.clone(), self.copy_from(unifier, *ty, type_cache))
+                                (*name, self.copy_from(unifier, *ty, type_cache))
                             })
                             .collect(),
                     ),
@@ -163,7 +165,7 @@ impl Unifier {
                             .args
                             .iter()
                             .map(|arg| FuncArg {
-                                name: arg.name.clone(),
+                                name: arg.name,
                                 ty: self.copy_from(unifier, arg.ty, type_cache),
                                 default_value: arg.default_value.clone(),
                             })
@@ -219,7 +221,7 @@ impl Unifier {
         self.unification_table.new_key(Rc::new(a))
     }
 
-    pub fn add_record(&mut self, fields: Mapping<String>) -> Type {
+    pub fn add_record(&mut self, fields: Mapping<StrRef>) -> Type {
         let id = self.var_id + 1;
         self.var_id += 1;
         self.add_ty(TypeEnum::TVar {
@@ -563,12 +565,12 @@ impl Unifier {
             }
             (TCall(calls), TFunc(signature)) => {
                 self.occur_check(a, b)?;
-                let required: Vec<String> = signature
+                let required: Vec<StrRef> = signature
                     .borrow()
                     .args
                     .iter()
                     .filter(|v| v.default_value.is_none())
-                    .map(|v| v.name.clone())
+                    .map(|v| v.name)
                     .rev()
                     .collect();
                 // we unify every calls to the function signature.
@@ -590,7 +592,7 @@ impl Unifier {
                         .borrow()
                         .args
                         .iter()
-                        .map(|v| (v.name.clone(), v.ty))
+                        .map(|v| (v.name, v.ty))
                         .rev()
                         .collect();
                     for (i, t) in posargs.iter().enumerate() {
@@ -662,7 +664,7 @@ impl Unifier {
                         if let TopLevelDef::Class { name, .. } =
                             &*top_level.definitions.read()[id].read()
                         {
-                            name.clone()
+                            name.to_string()
                         } else {
                             unreachable!("expected class definition")
                         }

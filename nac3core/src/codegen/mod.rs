@@ -18,7 +18,7 @@ use inkwell::{
 };
 use itertools::Itertools;
 use parking_lot::{Condvar, Mutex};
-use rustpython_parser::ast::Stmt;
+use rustpython_parser::ast::{Stmt, StrRef};
 use std::collections::HashMap;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
@@ -39,7 +39,7 @@ pub struct CodeGenContext<'ctx, 'a> {
     pub top_level: &'a TopLevelContext,
     pub unifier: Unifier,
     pub resolver: Arc<Box<dyn SymbolResolver + Send + Sync>>,
-    pub var_assignment: HashMap<String, PointerValue<'ctx>>,
+    pub var_assignment: HashMap<StrRef, PointerValue<'ctx>>,
     pub type_cache: HashMap<Type, BasicTypeEnum<'ctx>>,
     pub primitives: PrimitiveStore,
     pub calls: Arc<HashMap<CodeLocation, CallId>>,
@@ -317,7 +317,7 @@ pub fn gen_func<'ctx>(
         let param = fn_val.get_nth_param(n as u32).unwrap();
         let alloca = builder.build_alloca(
             get_llvm_type(&context, &mut unifier, top_level_ctx.as_ref(), &mut type_cache, arg.ty),
-            &arg.name,
+            &arg.name.to_string(),
         );
         builder.build_store(alloca, param);
         var_assignment.insert(arg.name.clone(), alloca);
