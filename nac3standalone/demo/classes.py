@@ -29,4 +29,3 @@ def run() -> int32:
     output(a.get_a())
     output(a.get_b().b)
     return 0
-

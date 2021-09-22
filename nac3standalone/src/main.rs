@@ -1,4 +1,5 @@
 use std::fs;
+use std::env;
 use inkwell::{
     passes::{PassManager, PassManagerBuilder},
     targets::*,
@@ -19,10 +20,13 @@ mod basic_symbol_resolver;
 use basic_symbol_resolver::*;
 
 fn main() {
+    let demo_name = env::args().nth(1).unwrap();
+
     let start = SystemTime::now();
+
     Target::initialize_all(&InitializationConfig::default());
 
-    let program = match fs::read_to_string("mandelbrot.py") {
+    let program = match fs::read_to_string(demo_name.to_owned() + ".py") {
         Ok(program) => program,
         Err(err) => {
             println!("Cannot open input file: {}", err);
@@ -32,9 +36,18 @@ fn main() {
 
     let primitive: PrimitiveStore = TopLevelComposer::make_primitives().0;
     let (mut composer, builtins_def, builtins_ty) = TopLevelComposer::new(vec![
-        ("output".into(), FunSignature {
+        ("output_int".into(), FunSignature {
             args: vec![FuncArg {
-                name: "c".into(),
+                name: "x".into(),
+                ty: primitive.int32,
+                default_value: None,
+            }],
+            ret: primitive.none,
+            vars: HashMap::new(),
+        }),
+        ("output_asciiart".into(), FunSignature {
+            args: vec![FuncArg {
+                name: "x".into(),
                 ty: primitive.int32,
                 default_value: None,
             }],
@@ -128,7 +141,7 @@ fn main() {
             )
             .expect("couldn't create target machine");
         target_machine
-            .write_to_file(module, FileType::Object, Path::new(&format!("{}.o", module.get_name().to_str().unwrap())))
+            .write_to_file(module, FileType::Object, Path::new(&(demo_name.to_owned() + ".o")))
             .expect("couldn't write module to file");
 
         // println!("IR:\n{}", module.print_to_string().to_str().unwrap());
@@ -139,6 +152,7 @@ fn main() {
     let (registry, handles) = WorkerRegistry::create_workers(&threads, top_level, f);
     registry.add_task(task);
     registry.wait_tasks_complete(handles);
+
     let final_time = SystemTime::now();
     println!("codegen time (including LLVM): {}ms", final_time.duration_since(analysis_time).unwrap().as_millis());
     println!("total time: {}ms", final_time.duration_since(start).unwrap().as_millis());

@@ -1,22 +1,21 @@
-// clang -Wall -o demo demo.c mandelbrot.o
-
 #include <stdio.h>
 #include <string.h>
 
-int output(int x) {
+void output_int(int x) {
+    printf("%d\n", x);
+}
+
+void output_asciiart(int x) {
     static char chars[] = " .,-:;i+hHM$*#@  ";
     if(x < 0) {
         putchar('\n');
     } else {
         if(x < strlen(chars)) {
-            // putchar(chars[x]);
-            printf("%d\n", x);
+            putchar(chars[x]);
         } else {
-            // printf("ERROR\n");
-            printf("%d\n", x);
+            printf("ERROR\n");
         }
     }
-    return 0;
 }
 
 extern int run();
