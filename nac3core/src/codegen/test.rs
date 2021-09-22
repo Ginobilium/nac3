@@ -328,14 +328,14 @@ fn test_simple_call() {
 
             body:                                             ; preds = %init
               %load = load i32, i32* %a, align 4
-              %call = call i32 @foo_0(i32 %load)
+              %call = call i32 @foo.0(i32 %load)
               store i32 %call, i32* %a, align 4
               %load1 = load i32, i32* %a, align 4
               %mul = mul i32 %load1, 2
               ret i32 %mul
             }
 
-            define i32 @foo_0(i32 %0) {
+            define i32 @foo.0(i32 %0) {
             init:
               %a = alloca i32, align 4
               store i32 %0, i32* %a, align 4
