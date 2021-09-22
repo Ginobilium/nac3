@@ -42,7 +42,7 @@ pub struct CodeGenContext<'ctx, 'a> {
     pub var_assignment: HashMap<String, PointerValue<'ctx>>,
     pub type_cache: HashMap<Type, BasicTypeEnum<'ctx>>,
     pub primitives: PrimitiveStore,
-    pub calls: HashMap<CodeLocation, CallId>,
+    pub calls: Arc<HashMap<CodeLocation, CallId>>,
     pub registry: &'a WorkerRegistry,
     // stores the alloca for variables
     pub init_bb: BasicBlock<'ctx>,
@@ -187,8 +187,8 @@ pub struct CodeGenTask {
     pub subst: Vec<(Type, Type)>,
     pub symbol_name: String,
     pub signature: FunSignature,
-    pub body: Vec<Stmt<Option<Type>>>,
-    pub calls: HashMap<CodeLocation, CallId>,
+    pub body: Arc<Vec<Stmt<Option<Type>>>>,
+    pub calls: Arc<HashMap<CodeLocation, CallId>>,
     pub unifier: (SharedUnifier, PrimitiveStore),
     pub resolver: Arc<Box<dyn SymbolResolver + Send + Sync>>,
 }

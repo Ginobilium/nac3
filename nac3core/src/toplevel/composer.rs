@@ -1344,22 +1344,24 @@ impl TopLevelComposer {
                             calls: &mut calls,
                         };
 
-                        let fun_body = if let ast::StmtKind::FunctionDef { body, decorator_list, .. } =
-                            ast.clone().unwrap().node
-                        {
-                            if !decorator_list.is_empty() &&
-                                    matches!(&decorator_list[0].node,
-                                        ast::ExprKind::Name{ id, .. } if id == "syscall") {
-                                instance_to_symbol.insert("".to_string(), simple_name.clone());
-                                continue
+                        let fun_body =
+                            if let ast::StmtKind::FunctionDef { body, decorator_list, .. } =
+                                ast.clone().unwrap().node
+                            {
+                                if !decorator_list.is_empty()
+                                    && matches!(&decorator_list[0].node,
+                                        ast::ExprKind::Name{ id, .. } if id == "syscall")
+                                {
+                                    instance_to_symbol.insert("".to_string(), simple_name.clone());
+                                    continue;
+                                }
+                                body
+                            } else {
+                                unreachable!("must be function def ast")
                             }
-                            body
-                        } else {
-                            unreachable!("must be function def ast")
-                        }
-                        .into_iter()
-                        .map(|b| inferencer.fold_stmt(b))
-                        .collect::<Result<Vec<_>, _>>()?;
+                            .into_iter()
+                            .map(|b| inferencer.fold_stmt(b))
+                            .collect::<Result<Vec<_>, _>>()?;
 
                         let returned =
                             inferencer.check_block(fun_body.as_slice(), &mut identifiers)?;
@@ -1393,7 +1395,12 @@ impl TopLevelComposer {
                                     })
                                     .join(", ")
                             },
-                            FunInstance { body: fun_body, unifier_id: 0, calls, subst },
+                            FunInstance {
+                                body: Arc::new(fun_body),
+                                unifier_id: 0,
+                                calls: Arc::new(calls),
+                                subst,
+                            },
                         );
                     }
                 } else {

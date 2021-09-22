@@ -30,8 +30,8 @@ mod test;
 
 #[derive(Clone, Debug)]
 pub struct FunInstance {
-    pub body: Vec<Stmt<Option<Type>>>,
-    pub calls: HashMap<CodeLocation, CallId>,
+    pub body: Arc<Vec<Stmt<Option<Type>>>>,
+    pub calls: Arc<HashMap<CodeLocation, CallId>>,
     pub subst: HashMap<u32, Type>,
     pub unifier_id: usize,
 }
