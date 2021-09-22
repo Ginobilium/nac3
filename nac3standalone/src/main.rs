@@ -78,7 +78,7 @@ fn main() {
             "__main__".into(),
         ).unwrap();
 
-        internal_resolver.add_id_def(name.clone(), def_id);
+        internal_resolver.add_id_def(name, def_id);
         if let Some(ty) = ty {
             internal_resolver.add_id_type(name, ty);
         }

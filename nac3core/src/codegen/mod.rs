@@ -320,7 +320,7 @@ pub fn gen_func<'ctx>(
             &arg.name.to_string(),
         );
         builder.build_store(alloca, param);
-        var_assignment.insert(arg.name.clone(), alloca);
+        var_assignment.insert(arg.name, alloca);
     }
     builder.build_unconditional_branch(body_bb);
     builder.position_at_end(body_bb);

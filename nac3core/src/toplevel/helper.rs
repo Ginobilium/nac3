@@ -296,7 +296,7 @@ impl TopLevelComposer {
                         if let ast::ExprKind::Attribute { value, attr, .. } = &t.node {
                             if let ast::ExprKind::Name { id, .. } = &value.node {
                                 if id == &"self".into() {
-                                    result.insert(attr.clone());
+                                    result.insert(*attr);
                                 }
                             }
                         }

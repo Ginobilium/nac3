@@ -14,7 +14,7 @@ impl<'a> Inferencer<'a> {
         match &pattern.node {
             ExprKind::Name { id, .. } => {
                 if !defined_identifiers.contains(id) {
-                    defined_identifiers.insert(id.clone());
+                    defined_identifiers.insert(*id);
                 }
                 Ok(())
             }
@@ -58,7 +58,7 @@ impl<'a> Inferencer<'a> {
             ExprKind::Name { id, .. } => {
                 if !defined_identifiers.contains(id) {
                     if self.function_data.resolver.get_identifier_def(*id).is_some() {
-                        defined_identifiers.insert(id.clone());
+                        defined_identifiers.insert(*id);
                     } else {
                         return Err(format!(
                             "unknown identifier {} (use before def?) at {}",
@@ -107,7 +107,7 @@ impl<'a> Inferencer<'a> {
                 let mut defined_identifiers = defined_identifiers.clone();
                 for arg in args.args.iter() {
                     if !defined_identifiers.contains(&arg.node.arg) {
-                        defined_identifiers.insert(arg.node.arg.clone());
+                        defined_identifiers.insert(arg.node.arg);
                     }
                 }
                 self.check_expr(body, &mut defined_identifiers)?;
@@ -167,7 +167,7 @@ impl<'a> Inferencer<'a> {
 
                 for ident in body_identifiers.iter() {
                     if !defined_identifiers.contains(ident) && orelse_identifiers.contains(ident) {
-                        defined_identifiers.insert(ident.clone());
+                        defined_identifiers.insert(*ident);
                     }
                 }
                 Ok(body_returned && orelse_returned)

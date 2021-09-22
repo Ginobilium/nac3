@@ -164,7 +164,7 @@ impl<'a> fold::Fold<()> for Inferencer<'a> {
             ast::ExprKind::Name { id, .. } => {
                 if !self.defined_identifiers.contains(id) {
                     if self.function_data.resolver.get_identifier_def(*id).is_some() {
-                        self.defined_identifiers.insert(id.clone());
+                        self.defined_identifiers.insert(*id);
                     } else {
                         return Err(format!(
                             "unknown identifier {} (use before def?) at {}",
@@ -220,7 +220,7 @@ impl<'a> Inferencer<'a> {
         match &pattern.node {
             ExprKind::Name { id, .. } => {
                 if !self.defined_identifiers.contains(id) {
-                    self.defined_identifiers.insert(id.clone());
+                    self.defined_identifiers.insert(*id);
                 }
                 Ok(())
             }
@@ -312,13 +312,13 @@ impl<'a> Inferencer<'a> {
         for arg in args.args.iter() {
             let name = &arg.node.arg;
             if !defined_identifiers.contains(name) {
-                defined_identifiers.insert(name.clone());
+                defined_identifiers.insert(*name);
             }
         }
         let fn_args: Vec<_> = args
             .args
             .iter()
-            .map(|v| (v.node.arg.clone(), self.unifier.get_fresh_var().0))
+            .map(|v| (v.node.arg, self.unifier.get_fresh_var().0))
             .collect();
         let mut variable_mapping = self.variable_mapping.clone();
         variable_mapping.extend(fn_args.iter().cloned());
@@ -337,7 +337,7 @@ impl<'a> Inferencer<'a> {
         let fun = FunSignature {
             args: fn_args
                 .iter()
-                .map(|(k, ty)| FuncArg { name: k.clone(), ty: *ty, default_value: None })
+                .map(|(k, ty)| FuncArg { name: *k, ty: *ty, default_value: None })
                 .collect(),
             ret,
             vars: Default::default(),
@@ -503,7 +503,7 @@ impl<'a> Inferencer<'a> {
                     posargs: args.iter().map(|v| v.custom.unwrap()).collect(),
                     kwargs: keywords
                         .iter()
-                        .map(|v| (v.node.arg.as_ref().unwrap().clone(), v.custom.unwrap()))
+                        .map(|v| (*v.node.arg.as_ref().unwrap(), v.custom.unwrap()))
                         .collect(),
                     fun: RefCell::new(None),
                     ret: sign.ret,
@@ -531,7 +531,7 @@ impl<'a> Inferencer<'a> {
             posargs: args.iter().map(|v| v.custom.unwrap()).collect(),
             kwargs: keywords
                 .iter()
-                .map(|v| (v.node.arg.as_ref().unwrap().clone(), v.custom.unwrap()))
+                .map(|v| (*v.node.arg.as_ref().unwrap(), v.custom.unwrap()))
                 .collect(),
             fun: RefCell::new(None),
             ret,

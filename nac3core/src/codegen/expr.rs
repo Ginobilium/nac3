@@ -14,7 +14,7 @@ use inkwell::{
 use itertools::{chain, izip, zip, Itertools};
 use rustpython_parser::ast::{self, Boolop, Constant, Expr, ExprKind, Operator, StrRef};
 
-pub fn assert_int_val<'ctx>(val: BasicValueEnum<'ctx>) -> IntValue<'ctx> {
+pub fn assert_int_val(val: BasicValueEnum<'_>) -> IntValue<'_> {
     if let BasicValueEnum::IntValue(v) = val {
         v
     } else {
@@ -22,7 +22,7 @@ pub fn assert_int_val<'ctx>(val: BasicValueEnum<'ctx>) -> IntValue<'ctx> {
     }
 }
 
-pub fn assert_pointer_val<'ctx>(val: BasicValueEnum<'ctx>) -> PointerValue<'ctx> {
+pub fn assert_pointer_val(val: BasicValueEnum<'_>) -> PointerValue<'_> {
     if let BasicValueEnum::PointerValue(v) = val {
         v
     } else {
@@ -189,7 +189,7 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
                             .args
                             .iter()
                             .map(|arg| FuncArg {
-                                name: arg.name.clone(),
+                                name: arg.name,
                                 ty: unifier.copy_from(&mut self.unifier, arg.ty, &mut type_cache),
                                 default_value: arg.default_value.clone(),
                             })
@@ -645,7 +645,7 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
                     args.iter().map(|arg| (None, self.gen_expr(arg).unwrap())).collect_vec();
                 let kw_iter = keywords.iter().map(|kw| {
                     (
-                        Some(kw.node.arg.as_ref().unwrap().clone()),
+                        Some(*kw.node.arg.as_ref().unwrap()),
                         self.gen_expr(&kw.node.value).unwrap(),
                     )
                 });

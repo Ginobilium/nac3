@@ -107,6 +107,12 @@ pub struct Unifier {
     var_id: u32,
 }
 
+impl Default for Unifier {
+    fn default() -> Self {
+        Unifier::new()
+    }
+}
+
 impl Unifier {
     /// Get an empty unifier
     pub fn new() -> Unifier {
@@ -454,7 +460,7 @@ impl Unifier {
                             if let Some(ty) = fields2.get(key) {
                                 self.unify(*ty, *value)?;
                             } else {
-                                fields2.insert(key.clone(), *value);
+                                fields2.insert(*key, *value);
                             }
                         }
                     }

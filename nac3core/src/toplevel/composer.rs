@@ -89,8 +89,8 @@ impl TopLevelComposer {
 
         for (name, sig) in builtins {
             let fun_sig = unifier.add_ty(TypeEnum::TFunc(RefCell::new(sig)));
-            built_in_ty.insert(name.clone(), fun_sig);
-            built_in_id.insert(name.clone(), DefinitionId(definition_ast_list.len()));
+            built_in_ty.insert(name, fun_sig);
+            built_in_id.insert(name, DefinitionId(definition_ast_list.len()));
             definition_ast_list.push((
                 Arc::new(RwLock::new(TopLevelDef::Function {
                     name: name.into(),
@@ -161,7 +161,7 @@ impl TopLevelComposer {
                     return Err("duplicate definition of class".into());
                 }
 
-                let class_name = class_name.clone();
+                let class_name = *class_name;
                 let class_def_id = self.definition_ast_list.len();
 
                 // since later when registering class method, ast will still be used,
@@ -221,10 +221,10 @@ impl TopLevelComposer {
                         // dummy method define here
                         let dummy_method_type = self.unifier.get_fresh_var();
                         class_method_name_def_ids.push((
-                            method_name.clone(),
+                            *method_name,
                             RwLock::new(Self::make_top_level_function_def(
                                 global_class_method_name,
-                                method_name.clone(),
+                                *method_name,
                                 // later unify with parsed type
                                 dummy_method_type.0,
                                 resolver.clone(),
@@ -246,7 +246,7 @@ impl TopLevelComposer {
                 for (name, _, id, ty, ..) in &class_method_name_def_ids {
                     let mut class_def = class_def_ast.0.write();
                     if let TopLevelDef::Class { methods, .. } = class_def.deref_mut() {
-                        methods.push((name.clone(), *ty, *id));
+                        methods.push((*name, *ty, *id));
                         self.method_class.insert(*id, DefinitionId(class_def_id));
                     } else {
                         unreachable!()
@@ -705,7 +705,7 @@ impl TopLevelComposer {
                                 )?;
 
                                 Ok(FuncArg {
-                                    name: x.node.arg.clone(),
+                                    name: x.node.arg,
                                     ty,
                                     default_value: Default::default(),
                                 })
@@ -809,7 +809,7 @@ impl TopLevelComposer {
             if let ast::StmtKind::ClassDef { name, bases, body, .. } = &class_ast {
                 (
                     *object_id,
-                    name.clone(),
+                    *name,
                     bases,
                     body,
                     ancestors,
@@ -851,7 +851,7 @@ impl TopLevelComposer {
                         let mut defined_paramter_name: HashSet<_> = HashSet::new();
                         let zelf: StrRef = "self".into();
                         let have_unique_fuction_parameter_name = args.args.iter().all(|x| {
-                            defined_paramter_name.insert(x.node.arg.clone())
+                            defined_paramter_name.insert(x.node.arg)
                                 && (!keyword_list.contains(&x.node.arg) || x.node.arg == zelf)
                         });
                         if !have_unique_fuction_parameter_name {
@@ -1310,7 +1310,7 @@ impl TopLevelComposer {
                             let unifier = &mut self.unifier;
                             args.iter()
                                 .map(|a| FuncArg {
-                                    name: a.name.clone(),
+                                    name: a.name,
                                     ty: unifier.subst(a.ty, &subst).unwrap_or(a.ty),
                                     default_value: a.default_value.clone(),
                                 })
@@ -1328,7 +1328,7 @@ impl TopLevelComposer {
                             if self_type.is_some() {
                                 result.insert("self".into());
                             }
-                            result.extend(inst_args.iter().map(|x| x.name.clone()));
+                            result.extend(inst_args.iter().map(|x| x.name));
                             result
                         };
                         let mut calls: HashMap<CodeLocation, CallId> = HashMap::new();
@@ -1356,7 +1356,7 @@ impl TopLevelComposer {
                                 if let Some(self_ty) = self_type {
                                     result.insert("self".into(), self_ty);
                                 }
-                                result.extend(inst_args.iter().map(|x| (x.name.clone(), x.ty)));
+                                result.extend(inst_args.iter().map(|x| (x.name, x.ty)));
                                 result
                             },
                             primitives: &self.primitives_ty,
