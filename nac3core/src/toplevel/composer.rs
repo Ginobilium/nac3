@@ -244,9 +244,9 @@ impl TopLevelComposer {
             }
 
             ast::StmtKind::FunctionDef { name, .. } => {
-                if self.keyword_list.contains(name) {
-                    return Err("cannot use keyword as a top level function name".into());
-                }
+                // if self.keyword_list.contains(name) {
+                //     return Err("cannot use keyword as a top level function name".into());
+                // }
                 let fun_name = name.to_string();
                 let global_fun_name = {
                     let mut n = mod_path;
@@ -608,6 +608,7 @@ impl TopLevelComposer {
             let function_ast = if let Some(x) = function_ast.as_ref() {
                 x
             } else {
+                // if let TopLevelDef::Function { name, .. } = ``
                 continue;
             };
 
@@ -1223,8 +1224,9 @@ impl TopLevelComposer {
             let mut function_def = def.write();
             if let TopLevelDef::Function {
                 instance_to_stmt,
+                instance_to_symbol,
                 name,
-                simple_name: _,
+                simple_name,
                 signature,
                 resolver,
                 ..
@@ -1342,9 +1344,15 @@ impl TopLevelComposer {
                             calls: &mut calls,
                         };
 
-                        let fun_body = if let ast::StmtKind::FunctionDef { body, .. } =
+                        let fun_body = if let ast::StmtKind::FunctionDef { body, decorator_list, .. } =
                             ast.clone().unwrap().node
                         {
+                            if !decorator_list.is_empty() &&
+                                    matches!(&decorator_list[0].node,
+                                        ast::ExprKind::Name{ id, .. } if id == "syscall") {
+                                instance_to_symbol.insert("".to_string(), simple_name.clone());
+                                continue
+                            }
                             body
                         } else {
                             unreachable!("must be function def ast")
