@@ -183,12 +183,6 @@ impl TopLevelComposer {
                         if self.keyword_list.contains(method_name) {
                             return Err("cannot use keyword as a method name".into());
                         }
-                        if method_name.ends_with(|x: char| x.is_ascii_digit()) {
-                            return Err(format!(
-                                "function name `{}` must not end with numbers",
-                                method_name
-                            ));
-                        }
                         let global_class_method_name = {
                             let mut n = mod_path.clone();
                             n.push_str(
@@ -252,9 +246,6 @@ impl TopLevelComposer {
             ast::StmtKind::FunctionDef { name, .. } => {
                 if self.keyword_list.contains(name) {
                     return Err("cannot use keyword as a top level function name".into());
-                }
-                if name.ends_with(|x: char| x.is_ascii_digit()) {
-                    return Err(format!("function name `{}` must not end with numbers", name));
                 }
                 let fun_name = name.to_string();
                 let global_fun_name = {

@@ -150,7 +150,7 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
             } = &mut *definition.write()
             {
                 instance_to_symbol.get(&key).cloned().unwrap_or_else(|| {
-                    let symbol = format!("{}_{}", name, instance_to_symbol.len());
+                    let symbol = format!("{}.{}", name, instance_to_symbol.len());
                     instance_to_symbol.insert(key, symbol.clone());
                     let key = self.get_subst_key(obj.map(|a| a.0), fun.0, Some(var_id));
                     let instance = instance_to_stmt.get(&key).unwrap();

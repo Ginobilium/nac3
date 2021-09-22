@@ -57,7 +57,7 @@ pub enum TopLevelDef {
         constructor: Option<Type>,
     },
     Function {
-        // prefix for symbol, should be unique globally, and not ending with numbers
+        // prefix for symbol, should be unique globally
         name: String,
         // simple name, the same as in method/function definition
         simple_name: String,
