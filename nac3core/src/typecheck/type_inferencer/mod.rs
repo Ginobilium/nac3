@@ -248,17 +248,25 @@ impl<'a> Inferencer<'a> {
                     if let TypeEnum::TFunc(sign) = &*self.unifier.get_ty(*ty) {
                         let sign = sign.borrow();
                         if sign.vars.is_empty() {
-                            let call = self.unifier.add_call(Call {
+                            let call = Call {
                                 posargs: params,
                                 kwargs: HashMap::new(),
                                 ret: sign.ret,
                                 fun: RefCell::new(None),
-                            });
-                            let call = self.unifier.add_ty(TypeEnum::TCall(vec![call].into()));
+                            };
                             if let Some(ret) = ret {
                                 self.unifier.unify(sign.ret, ret).unwrap();
                             }
-                            self.constrain(call, *ty, &location)?;
+                            let required: Vec<_> = sign
+                                .args
+                                .iter()
+                                .filter(|v| v.default_value.is_none())
+                                .map(|v| v.name)
+                                .rev()
+                                .collect();
+                            self.unifier
+                                .unify_call(&call, *ty, &sign, &required)
+                                .map_err(|old| format!("{} at {}", old, location))?;
                             return Ok(sign.ret);
                         }
                     }
@@ -491,7 +499,7 @@ impl<'a> Inferencer<'a> {
         if let TypeEnum::TFunc(sign) = &*self.unifier.get_ty(func.custom.unwrap()) {
             let sign = sign.borrow();
             if sign.vars.is_empty() {
-                let call = self.unifier.add_call(Call {
+                let call = Call {
                     posargs: args.iter().map(|v| v.custom.unwrap()).collect(),
                     kwargs: keywords
                         .iter()
@@ -499,9 +507,17 @@ impl<'a> Inferencer<'a> {
                         .collect(),
                     fun: RefCell::new(None),
                     ret: sign.ret,
-                });
-                let call = self.unifier.add_ty(TypeEnum::TCall(vec![call].into()));
-                self.unify(func.custom.unwrap(), call, &func.location)?;
+                };
+                let required: Vec<_> = sign
+                    .args
+                    .iter()
+                    .filter(|v| v.default_value.is_none())
+                    .map(|v| v.name)
+                    .rev()
+                    .collect();
+                self.unifier
+                    .unify_call(&call, func.custom.unwrap(), &sign, &required)
+                    .map_err(|old| format!("{} at {}", old, location))?;
                 return Ok(Located {
                     location,
                     custom: Some(sign.ret),
