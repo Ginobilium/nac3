@@ -94,6 +94,7 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
     // return true if it contains terminator
     pub fn gen_stmt(&mut self, stmt: &Stmt<Option<Type>>) -> bool {
         match &stmt.node {
+            StmtKind::Pass => {},
             StmtKind::Expr { value } => {
                 self.gen_expr(&value);
             }
