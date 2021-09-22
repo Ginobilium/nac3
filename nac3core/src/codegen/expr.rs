@@ -650,10 +650,18 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
                     )
                 });
                 params.extend(kw_iter);
-                let signature = self
-                    .unifier
-                    .get_call_signature(*self.calls.get(&expr.location.into()).unwrap())
-                    .unwrap();
+                let call = self.calls.get(&expr.location.into());
+                let signature = match call {
+                    Some(call) => self.unifier.get_call_signature(*call).unwrap(),
+                    None => {
+                        let ty = func.custom.unwrap();
+                        if let TypeEnum::TFunc(sign) = &*self.unifier.get_ty(ty) {
+                            sign.borrow().clone()
+                        } else {
+                            unreachable!()
+                        }
+                    }
+                };
                 match &func.as_ref().node {
                     ExprKind::Name { id, .. } => {
                         // TODO: handle primitive casts and function pointers

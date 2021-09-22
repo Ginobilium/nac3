@@ -180,7 +180,9 @@ impl<'a> fold::Fold<()> for Inferencer<'a> {
                 Some(self.infer_attribute(value, attr)?)
             }
             ast::ExprKind::BoolOp { values, .. } => Some(self.infer_bool_ops(values)?),
-            ast::ExprKind::BinOp { left, op, right } => Some(self.infer_bin_ops(expr.location, left, op, right)?),
+            ast::ExprKind::BinOp { left, op, right } => {
+                Some(self.infer_bin_ops(expr.location, left, op, right)?)
+            }
             ast::ExprKind::UnaryOp { op, operand } => Some(self.infer_unary_ops(op, operand)?),
             ast::ExprKind::Compare { left, ops, comparators } => {
                 Some(self.infer_compare(left, ops, comparators)?)
@@ -246,17 +248,10 @@ impl<'a> Inferencer<'a> {
                     if let TypeEnum::TFunc(sign) = &*self.unifier.get_ty(*ty) {
                         let sign = sign.borrow();
                         if sign.vars.is_empty() {
-                            let call = self.unifier.add_call(Call {
-                                posargs: params,
-                                kwargs: HashMap::new(),
-                                fun: RefCell::new(Some(*ty)),
-                                ret: sign.ret,
-                            });
                             if let Some(ret) = ret {
                                 self.unifier.unify(sign.ret, ret).unwrap();
                             }
-                            self.calls.insert(location.into(), call);
-                            return Ok(sign.ret)
+                            return Ok(sign.ret);
                         }
                     }
                 }
@@ -488,17 +483,11 @@ impl<'a> Inferencer<'a> {
         if let TypeEnum::TFunc(sign) = &*self.unifier.get_ty(func.custom.unwrap()) {
             let sign = sign.borrow();
             if sign.vars.is_empty() {
-                let call = self.unifier.add_call(Call {
-                    posargs: args.iter().map(|v| v.custom.unwrap()).collect(),
-                    kwargs: keywords
-                        .iter()
-                        .map(|v| (v.node.arg.as_ref().unwrap().clone(), v.custom.unwrap()))
-                        .collect(),
-                    fun: RefCell::new(func.custom),
-                    ret: sign.ret,
+                return Ok(Located {
+                    location,
+                    custom: Some(sign.ret),
+                    node: ExprKind::Call { func, args, keywords },
                 });
-                self.calls.insert(location.into(), call);
-                return Ok(Located { location, custom: Some(sign.ret), node: ExprKind::Call { func, args, keywords } })
             }
         }
 
