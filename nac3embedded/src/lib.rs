@@ -146,24 +146,22 @@ impl Nac3 {
             builder.populate_module_pass_manager(&passes);
             passes.run_on(module);
 
-            let triple = TargetMachine::get_default_triple();
+            let triple = TargetTriple::create("riscv32-unknown-linux");
             let target =
                 Target::from_triple(&triple).expect("couldn't create target from target triple");
             let target_machine = target
                 .create_target_machine(
                     &triple,
                     "",
-                    "",
+                    "+a,+m",
                     OptimizationLevel::Default,
-                    RelocMode::Default,
+                    RelocMode::PIC,
                     CodeModel::Default,
                 )
                 .expect("couldn't create target machine");
             target_machine
                 .write_to_file(module, FileType::Object, Path::new(&format!("{}.o", module.get_name().to_str().unwrap())))
                 .expect("couldn't write module to file");
-
-            // println!("IR:\n{}", module.print_to_string().to_str().unwrap());
         })));
         let threads: Vec<String> = (0..4).map(|i| format!("module{}", i)).collect();
         let threads: Vec<_> = threads.iter().map(|s| s.as_str()).collect();
