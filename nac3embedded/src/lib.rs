@@ -1,110 +1,176 @@
 use std::collections::HashMap;
-use std::collections::hash_map::Entry;
+use std::sync::Arc;
+use std::path::Path;
 
 use pyo3::prelude::*;
 use pyo3::exceptions;
-use rustpython_parser::{ast, parser};
-use inkwell::context::Context;
-use inkwell::targets::*;
+use rustpython_parser::parser;
+use inkwell::{
+    passes::{PassManager, PassManagerBuilder},
+    targets::*,
+    OptimizationLevel,
+};
 
-use nac3core::CodeGen;
+use nac3core::typecheck::type_inferencer::PrimitiveStore;
+use nac3core::{
+    codegen::{CodeGenTask, WithCall, WorkerRegistry},
+    symbol_resolver::SymbolResolver,
+    toplevel::{composer::TopLevelComposer, TopLevelContext, TopLevelDef},
+    typecheck::typedef::{FunSignature, FuncArg},
+};
 
-fn runs_on_core(decorator_list: &[ast::Expression]) -> bool {
-    for decorator in decorator_list.iter() {
-        if let ast::ExpressionType::Identifier { name } = &decorator.node {
-            if name == "kernel" || name == "portable" {
-                return true
-            }
-        }
-    }
-    false
-}
+mod symbol_resolver;
+use symbol_resolver::*;
 
-#[pyclass(name=NAC3)]
+// TODO: do we really want unsendable?
+// TopLevelComposer causes a lot of problems for Send.
+#[pyclass(unsendable,name="NAC3")]
 struct Nac3 {
-    type_definitions: HashMap<i64, ast::Program>,
-    host_objects: HashMap<i64, i64>,
+    primitive: PrimitiveStore,
+    internal_resolver: Arc<ResolverInternal>,
+    resolver: Arc<Box<dyn SymbolResolver + Send + Sync>>,
+    composer: TopLevelComposer,
+    top_level: Option<Arc<TopLevelContext>>
 }
 
 #[pymethods]
 impl Nac3 {
     #[new]
     fn new() -> Self {
+        let primitive: PrimitiveStore = TopLevelComposer::make_primitives().0;
+        let (composer, builtins_def, builtins_ty) = TopLevelComposer::new(vec![
+            ("output_int".into(), FunSignature {
+                args: vec![FuncArg {
+                    name: "x".into(),
+                    ty: primitive.int32,
+                    default_value: None,
+                }],
+                ret: primitive.none,
+                vars: HashMap::new(),
+            }),
+        ]);
+        let internal_resolver: Arc<ResolverInternal> = ResolverInternal {
+            id_to_type: builtins_ty.into(),
+            id_to_def: builtins_def.into(),
+            class_names: Default::default(),
+        }.into();
+        let resolver = Arc::new(
+            Box::new(Resolver(internal_resolver.clone())) as Box<dyn SymbolResolver + Send + Sync>
+        );
         Nac3 {
-            type_definitions: HashMap::new(),
-            host_objects: HashMap::new(),
+            primitive: primitive,
+            internal_resolver: internal_resolver,
+            resolver: resolver,
+            composer: composer,
+            top_level: None
         }
     }
 
-    fn register_host_object(&mut self, obj: PyObject) -> PyResult<()> {
+    fn register_class(&mut self, obj: PyObject) -> PyResult<()> {
         Python::with_gil(|py| -> PyResult<()> {
             let obj: &PyAny = obj.extract(py)?;
-            let obj_type = obj.get_type();
 
-            let builtins = PyModule::import(py, "builtins")?;
-            let type_id = builtins.call1("id", (obj_type, ))?.extract()?;
+            let source = PyModule::import(py, "inspect")?.getattr("getsource")?.call1((obj, ))?.extract()?;
+            let parser_result = parser::parse_program(source).map_err(|e|
+                exceptions::PySyntaxError::new_err(format!("failed to parse host object source: {}", e)))?;
 
-            let entry = self.type_definitions.entry(type_id);
-            if let Entry::Vacant(entry) = entry {
-                let source = PyModule::import(py, "inspect")?.call1("getsource", (obj_type, ))?;
-                let ast = parser::parse_program(source.extract()?).map_err(|e|
-                    exceptions::PySyntaxError::new_err(format!("failed to parse host object source: {}", e)))?;
-                entry.insert(ast);
-                // TODO: examine AST and recursively register dependencies
-            };
+            for stmt in parser_result.into_iter() {
+                let (name, def_id, ty) = self.composer.register_top_level(
+                    stmt,
+                    Some(self.resolver.clone()),
+                    "__main__".into(),
+                ).unwrap();
 
-            let obj_id = builtins.call1("id", (obj, ))?.extract()?;
-            match self.host_objects.entry(obj_id) {
-                Entry::Vacant(entry) => entry.insert(type_id),
-                Entry::Occupied(_) => return Err(
-                    exceptions::PyValueError::new_err("host object registered twice")),
-            };
-            // TODO: collect other information about host object, e.g. value of fields
-
-            Ok(())
-        })
-    }
-
-    fn compile_method(&self, obj: PyObject, name: String) -> PyResult<()> {
-        Python::with_gil(|py| -> PyResult<()> {
-            let obj: &PyAny = obj.extract(py)?;
-            let builtins = PyModule::import(py, "builtins")?;
-            let obj_id = builtins.call1("id", (obj, ))?.extract()?;
-
-            let type_id = self.host_objects.get(&obj_id).ok_or_else(||
-                exceptions::PyKeyError::new_err("type of host object not found"))?;
-            let ast = self.type_definitions.get(&type_id).ok_or_else(||
-                exceptions::PyKeyError::new_err("type definition not found"))?;
-
-            if let ast::StatementType::ClassDef {
-                    name: _,
-                    body,
-                    bases: _,
-                    keywords: _,
-                    decorator_list: _ } = &ast.statements[0].node {
-                for statement in body.iter() {
-                    if let ast::StatementType::FunctionDef {
-                            is_async: _,
-                            name: funcdef_name,
-                            args: _,
-                            body: _,
-                            decorator_list,
-                            returns: _ } = &statement.node {
-                        if runs_on_core(decorator_list) && funcdef_name == &name {
-                            let context = Context::create();
-                            let mut codegen = CodeGen::new(&context);
-                            codegen.compile_toplevel(&body[0]).map_err(|e|
-                                exceptions::PyRuntimeError::new_err(format!("compilation failed: {}", e)))?;
-                            codegen.print_ir();
-                        }
-                    }
+                self.internal_resolver.add_id_def(name.clone(), def_id);
+                if let Some(ty) = ty {
+                    self.internal_resolver.add_id_type(name, ty);
                 }
-            } else {
-                return Err(exceptions::PyValueError::new_err("expected ClassDef for type definition"));
             }
 
             Ok(())
         })
+    }
+
+    fn analyze(&mut self) -> PyResult<()> {
+        self.composer.start_analysis(true).unwrap();
+        self.top_level = Some(Arc::new(self.composer.make_top_level_context()));
+        Ok(())
+    }
+
+    fn compile_method(&mut self, class_name: String, method_name: String) -> PyResult<()> {
+        let top_level = self.top_level.as_ref().unwrap();
+        let instance = {
+            let defs = top_level.definitions.read();
+            let class_def = defs[self.resolver.get_identifier_def(&class_name).unwrap().0].write();
+            let mut method_def = if let TopLevelDef::Class { methods, .. } = &*class_def {
+                if let Some((_name, _unification_key, definition_id)) = methods.iter().find(|method| method.0 == method_name) {
+                    defs[definition_id.0].write()
+                } else {
+                    return Err(exceptions::PyValueError::new_err("method not found"));
+                }
+            } else {
+                return Err(exceptions::PyTypeError::new_err("parent object is not a class"));
+            };
+
+            // FIXME: what is this for? What happens if the kernel is called twice?
+            if let TopLevelDef::Function {
+                instance_to_stmt,
+                instance_to_symbol,
+                ..
+            } = &mut *method_def
+            {
+                instance_to_symbol.insert("".to_string(), method_name.clone());
+                instance_to_stmt[""].clone()
+            } else {
+                unreachable!()
+            }
+        };
+        let signature = FunSignature {
+            args: vec![],
+            ret: self.primitive.none,
+            vars: HashMap::new(),
+        };
+        let task = CodeGenTask {
+            subst: Default::default(),
+            symbol_name: method_name,
+            body: instance.body,
+            signature,
+            resolver: self.resolver.clone(),
+            unifier: top_level.unifiers.read()[instance.unifier_id].clone(),
+            calls: instance.calls,
+        };
+        let f = Arc::new(WithCall::new(Box::new(move |module| {
+            let builder = PassManagerBuilder::create();
+            builder.set_optimization_level(OptimizationLevel::Aggressive);
+            let passes = PassManager::create(());
+            builder.populate_module_pass_manager(&passes);
+            passes.run_on(module);
+
+            let triple = TargetMachine::get_default_triple();
+            let target =
+                Target::from_triple(&triple).expect("couldn't create target from target triple");
+            let target_machine = target
+                .create_target_machine(
+                    &triple,
+                    "",
+                    "",
+                    OptimizationLevel::Default,
+                    RelocMode::Default,
+                    CodeModel::Default,
+                )
+                .expect("couldn't create target machine");
+            target_machine
+                .write_to_file(module, FileType::Object, Path::new(&format!("{}.o", module.get_name().to_str().unwrap())))
+                .expect("couldn't write module to file");
+
+            // println!("IR:\n{}", module.print_to_string().to_str().unwrap());
+        })));
+        let threads: Vec<String> = (0..4).map(|i| format!("module{}", i)).collect();
+        let threads: Vec<_> = threads.iter().map(|s| s.as_str()).collect();
+        let (registry, handles) = WorkerRegistry::create_workers(&threads, top_level.clone(), f);
+        registry.add_task(task);
+        registry.wait_tasks_complete(handles);
+        Ok(())
     }
 }
 
