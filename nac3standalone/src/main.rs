@@ -21,12 +21,13 @@ use basic_symbol_resolver::*;
 
 fn main() {
     let demo_name = env::args().nth(1).unwrap();
+    let threads: u32 = env::args().nth(2).map(|s| str::parse(&s).unwrap()).unwrap_or(1);
 
     let start = SystemTime::now();
 
     Target::initialize_all(&InitializationConfig::default());
 
-    let program = match fs::read_to_string(demo_name.to_owned() + ".py") {
+    let program = match fs::read_to_string(demo_name + ".py") {
         Ok(program) => program,
         Err(err) => {
             println!("Cannot open input file: {}", err);
@@ -147,7 +148,7 @@ fn main() {
         // println!("IR:\n{}", module.print_to_string().to_str().unwrap());
 
     })));
-    let threads: Vec<String> = (0..4).map(|i| format!("module{}", i)).collect();
+    let threads: Vec<String> = (0..threads).map(|i| format!("module{}", i)).collect();
     let threads: Vec<_> = threads.iter().map(|s| s.as_str()).collect();
     let (registry, handles) = WorkerRegistry::create_workers(&threads, top_level, f);
     registry.add_task(task);
