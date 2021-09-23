@@ -1,10 +1,11 @@
 from language import *
 
 
+@kernel
 class Demo:
     @kernel
-    def run(self: bool) -> bool:
-        return False
+    def run(self):
+        pass
 
 
 if __name__ == "__main__":
