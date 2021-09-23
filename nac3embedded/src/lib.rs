@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::path::Path;
+use std::process::Command;
 
 use pyo3::prelude::*;
 use pyo3::exceptions;
@@ -163,11 +164,20 @@ impl Nac3 {
                 .write_to_file(module, FileType::Object, Path::new(&format!("{}.o", module.get_name().to_str().unwrap())))
                 .expect("couldn't write module to file");
         })));
-        let threads: Vec<String> = (0..4).map(|i| format!("module{}", i)).collect();
-        let threads: Vec<_> = threads.iter().map(|s| s.as_str()).collect();
+        let thread_names: Vec<String> = (0..4).map(|i| format!("module{}", i)).collect();
+        let threads: Vec<_> = thread_names.iter().map(|s| s.as_str()).collect();
         let (registry, handles) = WorkerRegistry::create_workers(&threads, top_level.clone(), f);
         registry.add_task(task);
         registry.wait_tasks_complete(handles);
+
+        if let Ok(linker_status) = Command::new("ld.lld").args(&["-shared", "--eh-frame-hdr", "-Tkernel.ld"]).status() {
+            if !linker_status.success() {
+                return Err(exceptions::PyRuntimeError::new_err("failed to start linker"));
+            }
+        } else {
+            return Err(exceptions::PyRuntimeError::new_err("linker returned non-zero status code"));
+        }
+
         Ok(())
     }
 }
