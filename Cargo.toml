@@ -4,3 +4,7 @@ members = [
   "nac3standalone",
   "nac3embedded",
 ]
+
+[profile.release]
+debug = true
+

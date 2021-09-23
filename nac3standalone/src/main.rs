@@ -78,7 +78,7 @@ fn main() {
             "__main__".into(),
         ).unwrap();
 
-        internal_resolver.add_id_def(name.clone(), def_id);
+        internal_resolver.add_id_def(name, def_id);
         if let Some(ty) = ty {
             internal_resolver.add_id_type(name, ty);
         }
@@ -92,7 +92,7 @@ fn main() {
 
     let instance = {
         let defs = top_level.definitions.read();
-        let mut instance = defs[resolver.get_identifier_def("run").unwrap().0].write();
+        let mut instance = defs[resolver.get_identifier_def("run".into()).unwrap().0].write();
         if let TopLevelDef::Function {
             instance_to_stmt,
             instance_to_symbol,

@@ -12,6 +12,12 @@ pub struct UnificationTable<V> {
     values: Vec<Option<V>>,
 }
 
+impl<V> Default for UnificationTable<V> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<V> UnificationTable<V> {
     pub fn new() -> UnificationTable<V> {
         UnificationTable { parents: Vec::new(), ranks: Vec::new(), values: Vec::new() }

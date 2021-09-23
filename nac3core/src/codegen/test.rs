@@ -12,38 +12,38 @@ use crate::{
 };
 use indoc::indoc;
 use parking_lot::RwLock;
-use rustpython_parser::{ast::fold::Fold, parser::parse_program};
+use rustpython_parser::{ast::{StrRef, fold::Fold}, parser::parse_program};
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 struct Resolver {
-    id_to_type: HashMap<String, Type>,
-    id_to_def: RwLock<HashMap<String, DefinitionId>>,
-    class_names: HashMap<String, Type>,
+    id_to_type: HashMap<StrRef, Type>,
+    id_to_def: RwLock<HashMap<StrRef, DefinitionId>>,
+    class_names: HashMap<StrRef, Type>,
 }
 
 impl Resolver {
-    pub fn add_id_def(&self, id: String, def: DefinitionId) {
+    pub fn add_id_def(&self, id: StrRef, def: DefinitionId) {
         self.id_to_def.write().insert(id, def);
     }
 }
 
 impl SymbolResolver for Resolver {
-    fn get_symbol_type(&self, _: &mut Unifier, _: &PrimitiveStore, str: &str) -> Option<Type> {
-        self.id_to_type.get(str).cloned()
+    fn get_symbol_type(&self, _: &mut Unifier, _: &PrimitiveStore, str: StrRef) -> Option<Type> {
+        self.id_to_type.get(&str).cloned()
     }
 
-    fn get_symbol_value(&self, _: &str) -> Option<SymbolValue> {
+    fn get_symbol_value(&self, _: StrRef) -> Option<SymbolValue> {
         unimplemented!()
     }
 
-    fn get_symbol_location(&self, _: &str) -> Option<Location> {
+    fn get_symbol_location(&self, _: StrRef) -> Option<Location> {
         unimplemented!()
     }
 
-    fn get_identifier_def(&self, id: &str) -> Option<DefinitionId> {
-        self.id_to_def.read().get(id).cloned()
+    fn get_identifier_def(&self, id: StrRef) -> Option<DefinitionId> {
+        self.id_to_def.read().get(&id).cloned()
     }
 }
 
@@ -77,8 +77,8 @@ fn test_primitives() {
     let threads = ["test"];
     let signature = FunSignature {
         args: vec![
-            FuncArg { name: "a".to_string(), ty: primitives.int32, default_value: None },
-            FuncArg { name: "b".to_string(), ty: primitives.int32, default_value: None },
+            FuncArg { name: "a".into(), ty: primitives.int32, default_value: None },
+            FuncArg { name: "b".into(), ty: primitives.int32, default_value: None },
         ],
         ret: primitives.int32,
         vars: HashMap::new(),
@@ -91,7 +91,7 @@ fn test_primitives() {
     };
     let mut virtual_checks = Vec::new();
     let mut calls = HashMap::new();
-    let mut identifiers: HashSet<_> = ["a".to_string(), "b".to_string()].iter().cloned().collect();
+    let mut identifiers: HashSet<_> = ["a".into(), "b".into()].iter().cloned().collect();
     let mut inferencer = Inferencer {
         top_level: &top_level,
         function_data: &mut function_data,
@@ -121,11 +121,11 @@ fn test_primitives() {
 
     let task = CodeGenTask {
         subst: Default::default(),
-        symbol_name: "testing".to_string(),
-        body: statements,
+        symbol_name: "testing".into(),
+        body: Arc::new(statements),
         resolver,
         unifier,
-        calls,
+        calls: Arc::new(calls),
         signature,
     };
     let f = Arc::new(WithCall::new(Box::new(|module| {
@@ -212,7 +212,7 @@ fn test_simple_call() {
     unifier.top_level = Some(top_level.clone());
 
     let signature = FunSignature {
-        args: vec![FuncArg { name: "a".to_string(), ty: primitives.int32, default_value: None }],
+        args: vec![FuncArg { name: "a".into(), ty: primitives.int32, default_value: None }],
         ret: primitives.int32,
         vars: HashMap::new(),
     };
@@ -221,7 +221,7 @@ fn test_simple_call() {
     let foo_id = top_level.definitions.read().len();
     top_level.definitions.write().push(Arc::new(RwLock::new(TopLevelDef::Function {
         name: "foo".to_string(),
-        simple_name: "foo".to_string(),
+        simple_name: "foo".into(),
         signature: fun_ty,
         var_id: vec![],
         instance_to_stmt: HashMap::new(),
@@ -234,7 +234,7 @@ fn test_simple_call() {
         id_to_def: RwLock::new(HashMap::new()),
         class_names: Default::default(),
     });
-    resolver.add_id_def("foo".to_string(), DefinitionId(foo_id));
+    resolver.add_id_def("foo".into(), DefinitionId(foo_id));
     let resolver = Arc::new(resolver as Box<dyn SymbolResolver + Send + Sync>);
 
     if let TopLevelDef::Function { resolver: r, .. } =
@@ -253,7 +253,7 @@ fn test_simple_call() {
     };
     let mut virtual_checks = Vec::new();
     let mut calls = HashMap::new();
-    let mut identifiers: HashSet<_> = ["a".to_string(), "foo".into()].iter().cloned().collect();
+    let mut identifiers: HashSet<_> = ["a".into(), "foo".into()].iter().cloned().collect();
     let mut inferencer = Inferencer {
         top_level: &top_level,
         function_data: &mut function_data,
@@ -288,8 +288,8 @@ fn test_simple_call() {
         instance_to_stmt.insert(
             "".to_string(),
             FunInstance {
-                body: statements_2,
-                calls: inferencer.calls.clone(),
+                body: Arc::new(statements_2),
+                calls: Arc::new(inferencer.calls.clone()),
                 subst: Default::default(),
                 unifier_id: 0,
             },
@@ -309,10 +309,10 @@ fn test_simple_call() {
     let task = CodeGenTask {
         subst: Default::default(),
         symbol_name: "testing".to_string(),
-        body: statements_1,
+        body: Arc::new(statements_1),
         resolver,
         unifier,
-        calls: calls1,
+        calls: Arc::new(calls1),
         signature,
     };
     let f = Arc::new(WithCall::new(Box::new(|module| {
@@ -328,14 +328,14 @@ fn test_simple_call() {
 
             body:                                             ; preds = %init
               %load = load i32, i32* %a, align 4
-              %call = call i32 @foo_0(i32 %load)
+              %call = call i32 @foo.0(i32 %load)
               store i32 %call, i32* %a, align 4
               %load1 = load i32, i32* %a, align 4
               %mul = mul i32 %load1, 2
               ret i32 %mul
             }
 
-            define i32 @foo_0(i32 %0) {
+            define i32 @foo.0(i32 %0) {
             init:
               %a = alloca i32, align 4
               store i32 %0, i32* %a, align 4

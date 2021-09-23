@@ -25,12 +25,12 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
             ExprKind::Name { id, .. } => {
                 self.var_assignment.get(id).cloned().unwrap_or_else(|| {
                     let ptr = self.gen_var(pattern.custom.unwrap());
-                    self.var_assignment.insert(id.clone(), ptr);
+                    self.var_assignment.insert(*id, ptr);
                     ptr
                 })
             }
             ExprKind::Attribute { value, attr, .. } => {
-                let index = self.get_attr_index(value.custom.unwrap(), attr);
+                let index = self.get_attr_index(value.custom.unwrap(), *attr);
                 let val = self.gen_expr(value).unwrap();
                 let ptr = if let BasicValueEnum::PointerValue(v) = val {
                     v

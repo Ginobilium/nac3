@@ -15,7 +15,7 @@ use crate::{
 };
 use itertools::{izip, Itertools};
 use parking_lot::RwLock;
-use rustpython_parser::ast::{self, Stmt};
+use rustpython_parser::ast::{self, Stmt, StrRef};
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Hash, Debug)]
 pub struct DefinitionId(pub usize);
@@ -30,8 +30,8 @@ mod test;
 
 #[derive(Clone, Debug)]
 pub struct FunInstance {
-    pub body: Vec<Stmt<Option<Type>>>,
-    pub calls: HashMap<CodeLocation, CallId>,
+    pub body: Arc<Vec<Stmt<Option<Type>>>>,
+    pub calls: Arc<HashMap<CodeLocation, CallId>>,
     pub subst: HashMap<u32, Type>,
     pub unifier_id: usize,
 }
@@ -40,15 +40,15 @@ pub struct FunInstance {
 pub enum TopLevelDef {
     Class {
         // name for error messages and symbols
-        name: String,
+        name: StrRef,
         // object ID used for TypeEnum
         object_id: DefinitionId,
         /// type variables bounded to the class.
         type_vars: Vec<Type>,
         // class fields
-        fields: Vec<(String, Type)>,
+        fields: Vec<(StrRef, Type)>,
         // class methods, pointing to the corresponding function definition.
-        methods: Vec<(String, Type, DefinitionId)>,
+        methods: Vec<(StrRef, Type, DefinitionId)>,
         // ancestor classes, including itself.
         ancestors: Vec<TypeAnnotation>,
         // symbol resolver of the module defined the class, none if it is built-in type
@@ -60,7 +60,7 @@ pub enum TopLevelDef {
         // prefix for symbol, should be unique globally
         name: String,
         // simple name, the same as in method/function definition
-        simple_name: String,
+        simple_name: StrRef,
         // function signature.
         signature: Type,
         // instantiated type variable IDs

@@ -12,26 +12,26 @@ use rustpython_parser::parser::parse_program;
 use test_case::test_case;
 
 struct Resolver {
-    id_to_type: HashMap<String, Type>,
-    id_to_def: HashMap<String, DefinitionId>,
-    class_names: HashMap<String, Type>,
+    id_to_type: HashMap<StrRef, Type>,
+    id_to_def: HashMap<StrRef, DefinitionId>,
+    class_names: HashMap<StrRef, Type>,
 }
 
 impl SymbolResolver for Resolver {
-    fn get_symbol_type(&self, _: &mut Unifier, _: &PrimitiveStore, str: &str) -> Option<Type> {
-        self.id_to_type.get(str).cloned()
+    fn get_symbol_type(&self, _: &mut Unifier, _: &PrimitiveStore, str: StrRef) -> Option<Type> {
+        self.id_to_type.get(&str).cloned()
     }
 
-    fn get_symbol_value(&self, _: &str) -> Option<SymbolValue> {
+    fn get_symbol_value(&self, _: StrRef) -> Option<SymbolValue> {
         unimplemented!()
     }
 
-    fn get_symbol_location(&self, _: &str) -> Option<Location> {
+    fn get_symbol_location(&self, _: StrRef) -> Option<Location> {
         unimplemented!()
     }
 
-    fn get_identifier_def(&self, id: &str) -> Option<DefinitionId> {
-        self.id_to_def.get(id).cloned()
+    fn get_identifier_def(&self, id: StrRef) -> Option<DefinitionId> {
+        self.id_to_def.get(&id).cloned()
     }
 }
 
@@ -39,8 +39,8 @@ struct TestEnvironment {
     pub unifier: Unifier,
     pub function_data: FunctionData,
     pub primitives: PrimitiveStore,
-    pub id_to_name: HashMap<usize, String>,
-    pub identifier_mapping: HashMap<String, Type>,
+    pub id_to_name: HashMap<usize, StrRef>,
+    pub identifier_mapping: HashMap<StrRef, Type>,
     pub virtual_checks: Vec<(Type, Type)>,
     pub calls: HashMap<CodeLocation, CallId>,
     pub top_level: TopLevelContext,
@@ -79,11 +79,11 @@ impl TestEnvironment {
         set_primitives_magic_methods(&primitives, &mut unifier);
 
         let id_to_name = [
-            (0, "int32".to_string()),
-            (1, "int64".to_string()),
-            (2, "float".to_string()),
-            (3, "bool".to_string()),
-            (4, "none".to_string()),
+            (0, "int32".into()),
+            (1, "int64".into()),
+            (2, "float".into()),
+            (3, "bool".into()),
+            (4, "none".into()),
         ]
         .iter()
         .cloned()
@@ -150,7 +150,7 @@ impl TestEnvironment {
         for (i, name) in ["int32", "int64", "float", "bool", "none"].iter().enumerate() {
             top_level_defs.push(
                 RwLock::new(TopLevelDef::Class {
-                    name: name.to_string(),
+                    name: (*name).into(),
                     object_id: DefinitionId(i),
                     type_vars: Default::default(),
                     fields: Default::default(),
@@ -174,7 +174,7 @@ impl TestEnvironment {
         });
         top_level_defs.push(
             RwLock::new(TopLevelDef::Class {
-                name: "Foo".to_string(),
+                name: "Foo".into(),
                 object_id: DefinitionId(5),
                 type_vars: vec![v0],
                 fields: [("a".into(), v0)].into(),
@@ -212,7 +212,7 @@ impl TestEnvironment {
         });
         top_level_defs.push(
             RwLock::new(TopLevelDef::Class {
-                name: "Bar".to_string(),
+                name: "Bar".into(),
                 object_id: DefinitionId(6),
                 type_vars: Default::default(),
                 fields: [("a".into(), int32), ("b".into(), fun)].into(),
@@ -241,7 +241,7 @@ impl TestEnvironment {
         });
         top_level_defs.push(
             RwLock::new(TopLevelDef::Class {
-                name: "Bar2".to_string(),
+                name: "Bar2".into(),
                 object_id: DefinitionId(7),
                 type_vars: Default::default(),
                 fields: [("a".into(), bool), ("b".into(), fun)].into(),
@@ -261,14 +261,14 @@ impl TestEnvironment {
         let class_names = [("Bar".into(), bar), ("Bar2".into(), bar2)].iter().cloned().collect();
 
         let id_to_name = [
-            (0, "int32".to_string()),
-            (1, "int64".to_string()),
-            (2, "float".to_string()),
-            (3, "bool".to_string()),
-            (4, "none".to_string()),
-            (5, "Foo".to_string()),
-            (6, "Bar".to_string()),
-            (7, "Bar2".to_string()),
+            (0, "int32".into()),
+            (1, "int64".into()),
+            (2, "float".into()),
+            (3, "bool".into()),
+            (4, "none".into()),
+            (5, "Foo".into()),
+            (6, "Bar".into()),
+            (7, "Bar2".into()),
         ]
         .iter()
         .cloned()
@@ -385,7 +385,7 @@ fn test_basic(source: &str, mapping: HashMap<&str, &str>, virtuals: &[(&str, &st
     let mut env = TestEnvironment::new();
     let id_to_name = std::mem::take(&mut env.id_to_name);
     let mut defined_identifiers: HashSet<_> = env.identifier_mapping.keys().cloned().collect();
-    defined_identifiers.insert("virtual".to_string());
+    defined_identifiers.insert("virtual".into());
     let mut inferencer = env.get_inferencer();
     inferencer.defined_identifiers = defined_identifiers.clone();
     let statements = parse_program(source).unwrap();
@@ -400,16 +400,16 @@ fn test_basic(source: &str, mapping: HashMap<&str, &str>, virtuals: &[(&str, &st
     for (k, v) in inferencer.variable_mapping.iter() {
         let name = inferencer.unifier.stringify(
             *v,
-            &mut |v| id_to_name.get(&v).unwrap().clone(),
+            &mut |v| (*id_to_name.get(&v).unwrap()).into(),
             &mut |v| format!("v{}", v),
         );
         println!("{}: {}", k, name);
     }
     for (k, v) in mapping.iter() {
-        let ty = inferencer.variable_mapping.get(*k).unwrap();
+        let ty = inferencer.variable_mapping.get(&(*k).into()).unwrap();
         let name = inferencer.unifier.stringify(
             *ty,
-            &mut |v| id_to_name.get(&v).unwrap().clone(),
+            &mut |v| (*id_to_name.get(&v).unwrap()).into(),
             &mut |v| format!("v{}", v),
         );
         assert_eq!(format!("{}: {}", k, v), format!("{}: {}", k, name));
@@ -418,12 +418,12 @@ fn test_basic(source: &str, mapping: HashMap<&str, &str>, virtuals: &[(&str, &st
     for ((a, b), (x, y)) in zip(inferencer.virtual_checks.iter(), virtuals) {
         let a = inferencer.unifier.stringify(
             *a,
-            &mut |v| id_to_name.get(&v).unwrap().clone(),
+            &mut |v| (*id_to_name.get(&v).unwrap()).into(),
             &mut |v| format!("v{}", v),
         );
         let b = inferencer.unifier.stringify(
             *b,
-            &mut |v| id_to_name.get(&v).unwrap().clone(),
+            &mut |v| (*id_to_name.get(&v).unwrap()).into(),
             &mut |v| format!("v{}", v),
         );
 
@@ -527,7 +527,7 @@ fn test_primitive_magic_methods(source: &str, mapping: HashMap<&str, &str>) {
     let mut env = TestEnvironment::basic_test_env();
     let id_to_name = std::mem::take(&mut env.id_to_name);
     let mut defined_identifiers: HashSet<_> = env.identifier_mapping.keys().cloned().collect();
-    defined_identifiers.insert("virtual".to_string());
+    defined_identifiers.insert("virtual".into());
     let mut inferencer = env.get_inferencer();
     inferencer.defined_identifiers = defined_identifiers.clone();
     let statements = parse_program(source).unwrap();
@@ -542,16 +542,16 @@ fn test_primitive_magic_methods(source: &str, mapping: HashMap<&str, &str>) {
     for (k, v) in inferencer.variable_mapping.iter() {
         let name = inferencer.unifier.stringify(
             *v,
-            &mut |v| id_to_name.get(&v).unwrap().clone(),
+            &mut |v| (*id_to_name.get(&v).unwrap()).into(),
             &mut |v| format!("v{}", v),
         );
         println!("{}: {}", k, name);
     }
     for (k, v) in mapping.iter() {
-        let ty = inferencer.variable_mapping.get(*k).unwrap();
+        let ty = inferencer.variable_mapping.get(&(*k).into()).unwrap();
         let name = inferencer.unifier.stringify(
             *ty,
-            &mut |v| id_to_name.get(&v).unwrap().clone(),
+            &mut |v| (*id_to_name.get(&v).unwrap()).into(),
             &mut |v| format!("v{}", v),
         );
         assert_eq!(format!("{}: {}", k, v), format!("{}: {}", k, name));

@@ -10,15 +10,12 @@ pub enum Location {
     Builtin,
 }
 
+#[derive(Default)]
 pub struct FileRegistry {
     files: Vec<String>,
 }
 
 impl FileRegistry {
-    pub fn new() -> FileRegistry {
-        FileRegistry { files: Vec::new() }
-    }
-
     pub fn add_file(&mut self, path: &str) -> FileID {
         let index = self.files.len() as u32;
         self.files.push(path.to_owned());

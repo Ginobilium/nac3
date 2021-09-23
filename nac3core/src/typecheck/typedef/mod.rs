@@ -6,6 +6,8 @@ use std::iter::once;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
+use rustpython_parser::ast::StrRef;
+
 use super::unification_table::{UnificationKey, UnificationTable};
 use crate::symbol_resolver::SymbolValue;
 use crate::toplevel::{DefinitionId, TopLevelContext, TopLevelDef};
@@ -25,14 +27,14 @@ type VarMap = Mapping<u32>;
 #[derive(Clone)]
 pub struct Call {
     pub posargs: Vec<Type>,
-    pub kwargs: HashMap<String, Type>,
+    pub kwargs: HashMap<StrRef, Type>,
     pub ret: Type,
     pub fun: RefCell<Option<Type>>,
 }
 
 #[derive(Clone)]
 pub struct FuncArg {
-    pub name: String,
+    pub name: StrRef,
     pub ty: Type,
     pub default_value: Option<SymbolValue>,
 }
@@ -48,7 +50,7 @@ pub struct FunSignature {
 pub enum TypeVarMeta {
     Generic,
     Sequence(RefCell<Mapping<i32>>),
-    Record(RefCell<Mapping<String>>),
+    Record(RefCell<Mapping<StrRef>>),
 }
 
 #[derive(Clone)]
@@ -70,7 +72,7 @@ pub enum TypeEnum {
     },
     TObj {
         obj_id: DefinitionId,
-        fields: RefCell<Mapping<String>>,
+        fields: RefCell<Mapping<StrRef>>,
         params: RefCell<VarMap>,
     },
     TVirtual {
@@ -103,6 +105,12 @@ pub struct Unifier {
     unification_table: UnificationTable<Rc<TypeEnum>>,
     calls: Vec<Rc<Call>>,
     var_id: u32,
+}
+
+impl Default for Unifier {
+    fn default() -> Self {
+        Unifier::new()
+    }
 }
 
 impl Unifier {
@@ -141,7 +149,7 @@ impl Unifier {
                             .borrow()
                             .iter()
                             .map(|(name, ty)| {
-                                (name.clone(), self.copy_from(unifier, *ty, type_cache))
+                                (*name, self.copy_from(unifier, *ty, type_cache))
                             })
                             .collect(),
                     ),
@@ -163,7 +171,7 @@ impl Unifier {
                             .args
                             .iter()
                             .map(|arg| FuncArg {
-                                name: arg.name.clone(),
+                                name: arg.name,
                                 ty: self.copy_from(unifier, arg.ty, type_cache),
                                 default_value: arg.default_value.clone(),
                             })
@@ -219,7 +227,7 @@ impl Unifier {
         self.unification_table.new_key(Rc::new(a))
     }
 
-    pub fn add_record(&mut self, fields: Mapping<String>) -> Type {
+    pub fn add_record(&mut self, fields: Mapping<StrRef>) -> Type {
         let id = self.var_id + 1;
         self.var_id += 1;
         self.add_ty(TypeEnum::TVar {
@@ -372,6 +380,54 @@ impl Unifier {
         }
     }
 
+    pub fn unify_call(&mut self, call: &Call, b: Type, signature: &FunSignature, required: &[StrRef]) -> Result<(), String> {
+        let Call { posargs, kwargs, ret, fun } = call;
+        let instantiated = self.instantiate_fun(b, &*signature);
+        let r = self.get_ty(instantiated);
+        let r = r.as_ref();
+        let signature;
+        if let TypeEnum::TFunc(s) = &*r {
+            signature = s;
+        } else {
+            unreachable!();
+        }
+        // we check to make sure that all required arguments (those without default
+        // arguments) are provided, and do not provide the same argument twice.
+        let mut required = required.to_vec();
+        let mut all_names: Vec<_> = signature
+            .borrow()
+            .args
+            .iter()
+            .map(|v| (v.name, v.ty))
+            .rev()
+            .collect();
+        for (i, t) in posargs.iter().enumerate() {
+            if signature.borrow().args.len() <= i {
+                return Err("Too many arguments.".to_string());
+            }
+            if !required.is_empty() {
+                required.pop();
+            }
+            self.unify(all_names.pop().unwrap().1, *t)?;
+        }
+        for (k, t) in kwargs.iter() {
+            if let Some(i) = required.iter().position(|v| v == k) {
+                required.remove(i);
+            }
+            let i = all_names
+                .iter()
+                .position(|v| &v.0 == k)
+                .ok_or_else(|| format!("Unknown keyword argument {}", k))?;
+            self.unify(all_names.remove(i).1, *t)?;
+        }
+        if !required.is_empty() {
+            return Err("Expected more arguments".to_string());
+        }
+        self.unify(*ret, signature.borrow().ret)?;
+        *fun.borrow_mut() = Some(instantiated);
+        Ok(())
+    }
+
     pub fn unify(&mut self, a: Type, b: Type) -> Result<(), String> {
         if self.unification_table.unioned(a, b) {
             Ok(())
@@ -404,7 +460,7 @@ impl Unifier {
                             if let Some(ty) = fields2.get(key) {
                                 self.unify(*ty, *value)?;
                             } else {
-                                fields2.insert(key.clone(), *value);
+                                fields2.insert(*key, *value);
                             }
                         }
                     }
@@ -563,60 +619,19 @@ impl Unifier {
             }
             (TCall(calls), TFunc(signature)) => {
                 self.occur_check(a, b)?;
-                let required: Vec<String> = signature
+                let required: Vec<StrRef> = signature
                     .borrow()
                     .args
                     .iter()
                     .filter(|v| v.default_value.is_none())
-                    .map(|v| v.name.clone())
+                    .map(|v| v.name)
                     .rev()
                     .collect();
                 // we unify every calls to the function signature.
+                let signature = signature.borrow();
                 for c in calls.borrow().iter() {
-                    let Call { posargs, kwargs, ret, fun } = &*self.calls[c.0].clone();
-                    let instantiated = self.instantiate_fun(b, &*signature.borrow());
-                    let r = self.get_ty(instantiated);
-                    let r = r.as_ref();
-                    let signature;
-                    if let TypeEnum::TFunc(s) = &*r {
-                        signature = s;
-                    } else {
-                        unreachable!();
-                    }
-                    // we check to make sure that all required arguments (those without default
-                    // arguments) are provided, and do not provide the same argument twice.
-                    let mut required = required.clone();
-                    let mut all_names: Vec<_> = signature
-                        .borrow()
-                        .args
-                        .iter()
-                        .map(|v| (v.name.clone(), v.ty))
-                        .rev()
-                        .collect();
-                    for (i, t) in posargs.iter().enumerate() {
-                        if signature.borrow().args.len() <= i {
-                            return Err("Too many arguments.".to_string());
-                        }
-                        if !required.is_empty() {
-                            required.pop();
-                        }
-                        self.unify(all_names.pop().unwrap().1, *t)?;
-                    }
-                    for (k, t) in kwargs.iter() {
-                        if let Some(i) = required.iter().position(|v| v == k) {
-                            required.remove(i);
-                        }
-                        let i = all_names
-                            .iter()
-                            .position(|v| &v.0 == k)
-                            .ok_or_else(|| format!("Unknown keyword argument {}", k))?;
-                        self.unify(all_names.remove(i).1, *t)?;
-                    }
-                    if !required.is_empty() {
-                        return Err("Expected more arguments".to_string());
-                    }
-                    self.unify(*ret, signature.borrow().ret)?;
-                    *fun.borrow_mut() = Some(instantiated);
+                    let call = self.calls[c.0].clone();
+                    self.unify_call(&call, b, &signature, &required)?;
                 }
                 self.set_a_to_b(a, b);
             }
@@ -662,7 +677,7 @@ impl Unifier {
                         if let TopLevelDef::Class { name, .. } =
                             &*top_level.definitions.read()[id].read()
                         {
-                            name.clone()
+                            name.to_string()
                         } else {
                             unreachable!("expected class definition")
                         }
