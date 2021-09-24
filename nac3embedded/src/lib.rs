@@ -133,7 +133,7 @@ impl Nac3 {
         };
         let task = CodeGenTask {
             subst: Default::default(),
-            symbol_name: method_name,
+            symbol_name: "__modinit__".to_string(),
             body: instance.body,
             signature,
             resolver: self.resolver.clone(),
