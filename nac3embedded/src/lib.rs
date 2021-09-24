@@ -104,7 +104,6 @@ impl Nac3 {
             let defs = top_level.definitions.read();
             let class_def = defs[self.resolver.get_identifier_def(class_name.into()).unwrap().0].write();
             let mut method_def = if let TopLevelDef::Class { methods, .. } = &*class_def {
-                println!("{:?}", methods);
                 if let Some((_name, _unification_key, definition_id)) = methods.iter().find(|method| method.0.to_string() == method_name) {
                     defs[definition_id.0].write()
                 } else {
@@ -171,7 +170,16 @@ impl Nac3 {
         registry.add_task(task);
         registry.wait_tasks_complete(handles);
 
-        if let Ok(linker_status) = Command::new("ld.lld").args(&["-shared", "--eh-frame-hdr", "-Tkernel.ld"]).status() {
+        let mut linker_args = vec![
+            "-shared".to_string(),
+            "--eh-frame-hdr".to_string(),
+            "-Tkernel.ld".to_string(),
+            "-x".to_string(),
+            "-o".to_string(),
+            "module.so".to_string()
+        ];
+        linker_args.extend(thread_names.iter().map(|name| name.to_owned() + ".o"));
+        if let Ok(linker_status) = Command::new("ld.lld").args(linker_args).status() {
             if !linker_status.success() {
                 return Err(exceptions::PyRuntimeError::new_err("failed to start linker"));
             }
