@@ -102,9 +102,10 @@ impl Nac3 {
         let top_level = self.top_level.as_ref().unwrap();
         let instance = {
             let defs = top_level.definitions.read();
-            let class_def = defs[self.resolver.get_identifier_def(&class_name).unwrap().0].write();
+            let class_def = defs[self.resolver.get_identifier_def(class_name.into()).unwrap().0].write();
             let mut method_def = if let TopLevelDef::Class { methods, .. } = &*class_def {
-                if let Some((_name, _unification_key, definition_id)) = methods.iter().find(|method| method.0 == method_name) {
+                println!("{:?}", methods);
+                if let Some((_name, _unification_key, definition_id)) = methods.iter().find(|method| method.0.to_string() == method_name) {
                     defs[definition_id.0].write()
                 } else {
                     return Err(exceptions::PyValueError::new_err("method not found"));
