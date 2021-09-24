@@ -67,7 +67,7 @@ impl Nac3 {
         }
     }
 
-    fn register_class(&mut self, obj: PyObject) -> PyResult<()> {
+    fn register_object(&mut self, obj: PyObject) -> PyResult<()> {
         Python::with_gil(|py| -> PyResult<()> {
             let obj: &PyAny = obj.extract(py)?;
 
