@@ -147,14 +147,18 @@ impl Nac3 {
             builder.populate_module_pass_manager(&passes);
             passes.run_on(module);
 
-            let triple = TargetTriple::create("riscv32-unknown-linux");
+            // For RISC-V (needs https://git.m-labs.hk/M-Labs/nac3/issues/24)
+            //let triple = TargetTriple::create("riscv32-unknown-linux");
+            //let features = "+a,+m";
+            let triple = TargetTriple::create("armv7-unknown-linux-gnueabihf");
+            let features = "+dsp,+fp16,+neon,+vfp3";
             let target =
                 Target::from_triple(&triple).expect("couldn't create target from target triple");
             let target_machine = target
                 .create_target_machine(
                     &triple,
                     "",
-                    "+a,+m",
+                    features,
                     OptimizationLevel::Default,
                     RelocMode::PIC,
                     CodeModel::Default,
