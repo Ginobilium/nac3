@@ -176,7 +176,7 @@ impl Nac3 {
             "-Tkernel.ld".to_string(),
             "-x".to_string(),
             "-o".to_string(),
-            "module.so".to_string()
+            "module.elf".to_string()
         ];
         linker_args.extend(thread_names.iter().map(|name| name.to_owned() + ".o"));
         if let Ok(linker_status) = Command::new("ld.lld").args(linker_args).status() {
