@@ -12,6 +12,6 @@ in
       libffi
       libxml2
       clippy
-      python3.withPackages(ps: [ps.numpy])
+      (python3.withPackages(ps: [ps.numpy]))
     ];
   }
