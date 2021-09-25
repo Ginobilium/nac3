@@ -102,6 +102,7 @@ impl TestEnvironment {
             top_level: TopLevelContext {
                 definitions: Default::default(),
                 unifiers: Default::default(),
+                personality_symbol: None,
             },
             unifier,
             function_data: FunctionData {
@@ -277,6 +278,7 @@ impl TestEnvironment {
         let top_level = TopLevelContext {
             definitions: Arc::new(top_level_defs.into()),
             unifiers: Default::default(),
+            personality_symbol: None
         };
 
         let resolver = Arc::new(Box::new(Resolver {

@@ -115,6 +115,7 @@ fn test_primitives() {
     let top_level = Arc::new(TopLevelContext {
         definitions: Arc::new(RwLock::new(std::mem::take(&mut *top_level.definitions.write()))),
         unifiers: Arc::new(RwLock::new(vec![(unifier.get_shared_unifier(), primitives)])),
+        personality_symbol: None
     });
 
     let unifier = (unifier.get_shared_unifier(), primitives);
@@ -302,6 +303,7 @@ fn test_simple_call() {
     let top_level = Arc::new(TopLevelContext {
         definitions: Arc::new(RwLock::new(std::mem::take(&mut *top_level.definitions.write()))),
         unifiers: Arc::new(RwLock::new(vec![(unifier.get_shared_unifier(), primitives)])),
+        personality_symbol: None
     });
 
     let unifier = (unifier.get_shared_unifier(), primitives);

@@ -132,6 +132,7 @@ impl TopLevelComposer {
                 self.unifier.get_shared_unifier(),
                 self.primitives_ty,
             )])),
+            personality_symbol: None
         }
     }
 

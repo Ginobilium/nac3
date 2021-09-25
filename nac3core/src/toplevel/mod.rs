@@ -84,4 +84,5 @@ pub enum TopLevelDef {
 pub struct TopLevelContext {
     pub definitions: Arc<RwLock<Vec<Arc<RwLock<TopLevelDef>>>>>,
     pub unifiers: Arc<RwLock<Vec<(SharedUnifier, PrimitiveStore)>>>,
+    pub personality_symbol: Option<String>,
 }

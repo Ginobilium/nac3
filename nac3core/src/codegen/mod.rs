@@ -308,6 +308,14 @@ pub fn gen_func<'ctx>(
     let fn_val =
         module.get_function(symbol).unwrap_or_else(|| module.add_function(symbol, fn_type, None));
 
+    if let Some(personality) = &top_level_ctx.personality_symbol {
+        let personality = module.get_function(&personality).unwrap_or_else(|| {
+            let ty = context.i32_type().fn_type(&[], true);
+            module.add_function(&personality, ty, None)
+        });
+        fn_val.set_personality_function(personality);
+    }
+
     let init_bb = context.append_basic_block(fn_val, "init");
     builder.position_at_end(init_bb);
     let body_bb = context.append_basic_block(fn_val, "body");
