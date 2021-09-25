@@ -417,6 +417,11 @@ impl TopLevelComposer {
     /// now that the type vars of all classes are done, handle base classes and
     /// put Self class into the ancestors list. We only allow single inheritance
     fn analyze_top_level_class_bases(&mut self) -> Result<(), String> {
+        if self.unifier.top_level.is_none() {
+            let ctx = Arc::new(self.make_top_level_context());
+            self.unifier.top_level = Some(ctx);
+        }
+
         let temp_def_list = self.extract_def_list();
         let unifier = self.unifier.borrow_mut();
 
@@ -765,7 +770,9 @@ impl TopLevelComposer {
                         FunSignature { args: arg_types, ret: return_ty, vars: function_var_map }
                             .into(),
                     ));
-                    unifier.unify(*dummy_ty, function_ty)?;
+                    unifier
+                        .unify(*dummy_ty, function_ty)
+                        .map_err(|old| format!("{} at {}", old, function_ast.location))?;
                 } else {
                     unreachable!("must be both function");
                 }
@@ -1175,7 +1182,7 @@ impl TopLevelComposer {
     fn analyze_function_instance(&mut self) -> Result<(), String> {
         // first get the class contructor type correct for the following type check in function body
         // also do class field instantiation check
-        for (def, _) in self.definition_ast_list.iter().skip(self.built_in_num) {
+        for (def, ast) in self.definition_ast_list.iter().skip(self.built_in_num) {
             let class_def = def.read();
             if let TopLevelDef::Class {
                 constructor,
@@ -1217,7 +1224,9 @@ impl TopLevelComposer {
                     FunSignature { args: contor_args, ret: self_type, vars: contor_type_vars }
                         .into(),
                 ));
-                self.unifier.unify(constructor.unwrap(), contor_type)?;
+                self.unifier
+                    .unify(constructor.unwrap(), contor_type)
+                    .map_err(|old| format!("{} at {}", old, ast.as_ref().unwrap().location))?;
 
                 // class field instantiation check
                 if let (Some(init_id), false) = (init_id, fields.is_empty()) {
@@ -1239,6 +1248,7 @@ impl TopLevelComposer {
             }
         }
 
+        let ctx = Arc::new(self.make_top_level_context());
         // type inference inside function body
         for (id, (def, ast)) in self.definition_ast_list.iter().enumerate().skip(self.built_in_num)
         {
@@ -1334,7 +1344,7 @@ impl TopLevelComposer {
                         };
                         let mut calls: HashMap<CodeLocation, CallId> = HashMap::new();
                         let mut inferencer = Inferencer {
-                            top_level: &self.make_top_level_context(),
+                            top_level: ctx.as_ref(),
                             defined_identifiers: identifiers.clone(),
                             function_data: &mut FunctionData {
                                 resolver: resolver.as_ref().unwrap().clone(),
