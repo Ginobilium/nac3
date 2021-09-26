@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::path::Path;
 use std::process::Command;
@@ -14,7 +14,7 @@ use inkwell::{
 
 use nac3core::typecheck::type_inferencer::PrimitiveStore;
 use nac3core::{
-    codegen::{CodeGenTask, WithCall, WorkerRegistry},
+    codegen::{CodeGenTask, WithCall, WorkerRegistry, GenCall},
     symbol_resolver::SymbolResolver,
     toplevel::{composer::TopLevelComposer, TopLevelContext, TopLevelDef},
     typecheck::typedef::{FunSignature, FuncArg},
@@ -59,10 +59,10 @@ impl Nac3 {
             Box::new(Resolver(internal_resolver.clone())) as Box<dyn SymbolResolver + Send + Sync>
         );
         Nac3 {
-            primitive: primitive,
-            internal_resolver: internal_resolver,
-            resolver: resolver,
-            composer: composer,
+            primitive,
+            internal_resolver,
+            resolver,
+            composer,
             top_level: None
         }
     }
@@ -168,9 +168,10 @@ impl Nac3 {
                 .write_to_file(module, FileType::Object, Path::new(&format!("{}.o", module.get_name().to_str().unwrap())))
                 .expect("couldn't write module to file");
         })));
+        let external_codegen = Arc::new(GenCall::new(Box::new(|_, _, _, _| unimplemented!()), HashSet::new()));
         let thread_names: Vec<String> = (0..4).map(|i| format!("module{}", i)).collect();
         let threads: Vec<_> = thread_names.iter().map(|s| s.as_str()).collect();
-        let (registry, handles) = WorkerRegistry::create_workers(&threads, top_level.clone(), f);
+        let (registry, handles) = WorkerRegistry::create_workers(&threads, top_level.clone(), f, external_codegen);
         registry.add_task(task);
         registry.wait_tasks_complete(handles);
 

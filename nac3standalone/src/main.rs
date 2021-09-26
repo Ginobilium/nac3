@@ -1,16 +1,12 @@
-use std::fs;
 use std::env;
-use inkwell::{
-    passes::{PassManager, PassManagerBuilder},
-    targets::*,
-    OptimizationLevel,
-};
+use std::fs;
+use inkwell::{OptimizationLevel, passes::{PassManager, PassManagerBuilder}, targets::*};
 use nac3core::typecheck::type_inferencer::PrimitiveStore;
 use rustpython_parser::parser;
 use std::{collections::HashMap, path::Path, sync::Arc, time::SystemTime};
 
 use nac3core::{
-    codegen::{CodeGenTask, WithCall, WorkerRegistry},
+    codegen::{CodeGenTask, WithCall, GenCall, WorkerRegistry},
     symbol_resolver::SymbolResolver,
     toplevel::{composer::TopLevelComposer, TopLevelDef},
     typecheck::typedef::{FunSignature, FuncArg},
@@ -148,9 +144,19 @@ fn main() {
         // println!("IR:\n{}", module.print_to_string().to_str().unwrap());
 
     })));
+    let external_codegen = Arc::new(GenCall::new(Box::new(
+        // example implementation that does sitofp:
+        // note that a proper implementation may want to check the definition ID
+        // |ctx, _, _, args| {
+        //     let arg = args[0].1.into_int_value();
+        //     let val = ctx.builder.build_signed_int_to_float(arg, ctx.ctx.f64_type(), "sitofp").into();
+        //     Some(val)
+        // }
+        |_, _, _, _| unimplemented!()
+    ), Default::default()));
     let threads: Vec<String> = (0..threads).map(|i| format!("module{}", i)).collect();
     let threads: Vec<_> = threads.iter().map(|s| s.as_str()).collect();
-    let (registry, handles) = WorkerRegistry::create_workers(&threads, top_level, f);
+    let (registry, handles) = WorkerRegistry::create_workers(&threads, top_level, f, external_codegen);
     registry.add_task(task);
     registry.wait_tasks_complete(handles);
 

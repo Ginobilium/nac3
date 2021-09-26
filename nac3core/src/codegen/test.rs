@@ -1,15 +1,9 @@
-use crate::{
-    codegen::{CodeGenTask, WithCall, WorkerRegistry},
-    location::Location,
-    symbol_resolver::{SymbolResolver, SymbolValue},
-    toplevel::{
+use crate::{codegen::{CodeGenTask, GenCall, WithCall, WorkerRegistry}, location::Location, symbol_resolver::{SymbolResolver, SymbolValue}, toplevel::{
         composer::TopLevelComposer, DefinitionId, FunInstance, TopLevelContext, TopLevelDef,
-    },
-    typecheck::{
+    }, typecheck::{
         type_inferencer::{FunctionData, Inferencer, PrimitiveStore},
         typedef::{FunSignature, FuncArg, Type, TypeEnum, Unifier},
-    },
-};
+    }};
 use indoc::indoc;
 use parking_lot::RwLock;
 use rustpython_parser::{ast::{StrRef, fold::Fold}, parser::parse_program};
@@ -188,7 +182,8 @@ fn test_primitives() {
         .trim();
         assert_eq!(expected, module.print_to_string().to_str().unwrap().trim());
     })));
-    let (registry, handles) = WorkerRegistry::create_workers(&threads, top_level, f);
+    let external_codegen = Arc::new(GenCall::new(Box::new(|_, _, _, _| unimplemented!()), HashSet::new()));
+    let (registry, handles) = WorkerRegistry::create_workers(&threads, top_level, f, external_codegen);
     registry.add_task(task);
     registry.wait_tasks_complete(handles);
 }
@@ -352,7 +347,8 @@ fn test_simple_call() {
         .trim();
         assert_eq!(expected, module.print_to_string().to_str().unwrap().trim());
     })));
-    let (registry, handles) = WorkerRegistry::create_workers(&threads, top_level, f);
+    let external_codegen = Arc::new(GenCall::new(Box::new(|_, _, _, _| unimplemented!()), HashSet::new()));
+    let (registry, handles) = WorkerRegistry::create_workers(&threads, top_level, f, external_codegen);
     registry.add_task(task);
     registry.wait_tasks_complete(handles);
 }
