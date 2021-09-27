@@ -1381,7 +1381,7 @@ impl TopLevelComposer {
                             {
                                 if !decorator_list.is_empty()
                                     && matches!(&decorator_list[0].node,
-                                        ast::ExprKind::Name{ id, .. } if id == &"syscall".into())
+                                        ast::ExprKind::Name{ id, .. } if id == &"extern".into())
                                 {
                                     instance_to_symbol.insert("".into(), simple_name.to_string());
                                     continue;

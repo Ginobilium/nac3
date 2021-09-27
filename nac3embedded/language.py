@@ -4,14 +4,14 @@ from functools import wraps
 import nac3embedded
 
 
-__all__ = ["syscall", "kernel"]
+__all__ = ["extern", "kernel"]
 
 
 nac3 = nac3embedded.NAC3()
 allow_object_registration = True
 
 
-def syscall(function):
+def extern(function):
     assert allow_object_registration
     nac3.register_object(function)
     return function
