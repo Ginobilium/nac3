@@ -88,13 +88,22 @@ impl Nac3 {
             let parser_result = parser::parse_program(&source).map_err(|e|
                 exceptions::PySyntaxError::new_err(format!("failed to parse host object source: {}", e)))?;
 
-            for stmt in parser_result.into_iter() {
-                let include = match &stmt.node {
-                    ast::StmtKind::ClassDef { decorator_list, .. } => {
-                        decorator_list.iter().any(|decorator| if let ast::ExprKind::Name { id, .. } = decorator.node
-                            { id.to_string() == "kernel" || id.to_string() == "portable" } else { false })
+            for mut stmt in parser_result.into_iter() {
+                let include = match stmt.node {
+                    ast::StmtKind::ClassDef { ref decorator_list, ref mut body, .. } => {
+                        let kernels = decorator_list.iter().any(|decorator| if let ast::ExprKind::Name { id, .. } = decorator.node
+                            { id.to_string() == "kernel" || id.to_string() == "portable" } else { false });
+                        body.retain(|stmt| {
+                            if let ast::StmtKind::FunctionDef { ref decorator_list, .. } = stmt.node {
+                                decorator_list.iter().any(|decorator| if let ast::ExprKind::Name { id, .. } = decorator.node
+                                    { id.to_string() == "kernel" || id.to_string() == "portable" } else { false })
+                            } else {
+                                true
+                            }
+                        });
+                        kernels
                     },
-                    ast::StmtKind::FunctionDef { decorator_list, .. } => {
+                    ast::StmtKind::FunctionDef { ref decorator_list, .. } => {
                         decorator_list.iter().any(|decorator| if let ast::ExprKind::Name { id, .. } = decorator.node
                             { id.to_string() == "extern" || id.to_string() == "portable" } else { false })
                     },
