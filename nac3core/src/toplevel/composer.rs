@@ -140,7 +140,7 @@ impl TopLevelComposer {
         self.definition_ast_list.iter().map(|(def, ..)| def.clone()).collect_vec()
     }
 
-    /// register, just remeber the names of top level classes/function
+    /// register, just remember the names of top level classes/function
     /// and check duplicate class/method/function definition
     pub fn register_top_level(
         &mut self,
@@ -166,7 +166,7 @@ impl TopLevelComposer {
                 let class_def_id = self.definition_ast_list.len();
 
                 // since later when registering class method, ast will still be used,
-                // here push None temporarly, later will move the ast inside
+                // here push None temporarily, later will move the ast inside
                 let constructor_ty = self.unifier.get_fresh_var().0;
                 let mut class_def_ast = (
                     Arc::new(RwLock::new(Self::make_top_level_class_def(
@@ -298,7 +298,7 @@ impl TopLevelComposer {
                 ))
             }
 
-            _ => Err("only registrations of top level classes/functions are supprted".into()),
+            _ => Err("only registrations of top level classes/functions are supported".into()),
         }
     }
 
