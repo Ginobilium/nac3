@@ -1,4 +1,4 @@
-from inspect import isclass
+from inspect import isclass, getmodule
 from functools import wraps
 
 import nac3artiq
@@ -8,28 +8,28 @@ __all__ = ["extern", "kernel"]
 
 
 nac3 = nac3artiq.NAC3()
-allow_object_registration = True
+allow_module_registration = True
 
 
 def extern(function):
-    assert allow_object_registration
-    nac3.register_object(function)
+    assert allow_module_registration
+    nac3.register_module(getmodule(function))
     return function
 
 
-def kernel(function_or_class):
-    global allow_object_registration
+def kernel(class_or_function):
+    global allow_module_registration
 
-    if isclass(function_or_class):
-        assert allow_object_registration
-        nac3.register_object(function_or_class)
-        return function_or_class
+    assert allow_module_registration
+    nac3.register_module(getmodule(class_or_function))
+    if isclass(class_or_function):
+        return class_or_function
     else:
-        @wraps(function_or_class)
+        @wraps(class_or_function)
         def run_on_core(self, *args, **kwargs):
-            global allow_object_registration
-            if allow_object_registration:
+            global allow_module_registration
+            if allow_module_registration:
                 nac3.analyze()
-                allow_object_registration = False
-            nac3.compile_method(self.__class__.__name__, function_or_class.__name__)
+                allow_module_registration = False
+            nac3.compile_method(self.__class__.__name__, class_or_function.__name__)
         return run_on_core
