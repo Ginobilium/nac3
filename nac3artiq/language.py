@@ -1,13 +1,13 @@
 from inspect import isclass
 from functools import wraps
 
-import nac3embedded
+import nac3artiq
 
 
 __all__ = ["extern", "kernel"]
 
 
-nac3 = nac3embedded.NAC3()
+nac3 = nac3artiq.NAC3()
 allow_object_registration = True
 
 

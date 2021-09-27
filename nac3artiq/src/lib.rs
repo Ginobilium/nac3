@@ -197,7 +197,7 @@ impl Nac3 {
 }
 
 #[pymodule]
-fn nac3embedded(_py: Python, m: &PyModule) -> PyResult<()> {
+fn nac3artiq(_py: Python, m: &PyModule) -> PyResult<()> {
     Target::initialize_all(&InitializationConfig::default());
     m.add_class::<Nac3>()?;
     Ok(())

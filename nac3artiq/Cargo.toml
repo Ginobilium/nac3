@@ -1,11 +1,11 @@
 [package]
-name = "nac3embedded"
+name = "nac3artiq"
 version = "0.1.0"
 authors = ["M-Labs"]
 edition = "2018"
 
 [lib]
-name = "nac3embedded"
+name = "nac3artiq"
 crate-type = ["cdylib"]
 
 [dependencies]

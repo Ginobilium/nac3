@@ -2,7 +2,7 @@
 members = [
   "nac3core",
   "nac3standalone",
-  "nac3embedded",
+  "nac3artiq",
 ]
 
 [profile.release]
