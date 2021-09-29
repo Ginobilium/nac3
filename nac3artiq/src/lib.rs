@@ -24,10 +24,17 @@ use nac3core::{
 mod symbol_resolver;
 use symbol_resolver::*;
 
+#[derive(Clone, Copy)]
+enum Isa {
+    RiscV,
+    CortexA9
+}
+
 // TODO: do we really want unsendable?
 // TopLevelComposer causes a lot of problems for Send.
 #[pyclass(unsendable,name="NAC3")]
 struct Nac3 {
+    isa: Isa,
     primitive: PrimitiveStore,
     internal_resolver: Arc<ResolverInternal>,
     resolver: Arc<Box<dyn SymbolResolver + Send + Sync>>,
@@ -39,7 +46,12 @@ struct Nac3 {
 #[pymethods]
 impl Nac3 {
     #[new]
-    fn new() -> Self {
+    fn new(isa: &str) -> PyResult<Self> {
+        let isa = match isa {
+            "riscv" => Isa::RiscV,
+            "cortexa9" => Isa::CortexA9,
+            _ => return Err(exceptions::PyValueError::new_err("invalid ISA"))
+        };
         let primitive: PrimitiveStore = TopLevelComposer::make_primitives().0;
         let (composer, builtins_def, builtins_ty) = TopLevelComposer::new(vec![
             ("output_int".into(), FunSignature {
@@ -60,14 +72,15 @@ impl Nac3 {
         let resolver = Arc::new(
             Box::new(Resolver(internal_resolver.clone())) as Box<dyn SymbolResolver + Send + Sync>
         );
-        Nac3 {
+        Ok(Nac3 {
+            isa,
             primitive,
             internal_resolver,
             resolver,
             composer,
             top_level: None,
             registered_module_ids: HashSet::new()
-        }
+        })
     }
 
     fn register_module(&mut self, obj: PyObject) -> PyResult<()> {
@@ -175,6 +188,7 @@ impl Nac3 {
             unifier: top_level.unifiers.read()[instance.unifier_id].clone(),
             calls: instance.calls,
         };
+        let isa = self.isa;
         let f = Arc::new(WithCall::new(Box::new(move |module| {
             let builder = PassManagerBuilder::create();
             builder.set_optimization_level(OptimizationLevel::Aggressive);
@@ -182,11 +196,10 @@ impl Nac3 {
             builder.populate_module_pass_manager(&passes);
             passes.run_on(module);
 
-            // For RISC-V (needs https://git.m-labs.hk/M-Labs/nac3/issues/24)
-            //let triple = TargetTriple::create("riscv32-unknown-linux");
-            //let features = "+a,+m";
-            let triple = TargetTriple::create("armv7-unknown-linux-gnueabihf");
-            let features = "+dsp,+fp16,+neon,+vfp3";
+            let (triple, features) = match isa {
+                Isa::RiscV => (TargetTriple::create("riscv32-unknown-linux"), "+a,+m"),
+                Isa::CortexA9 => (TargetTriple::create("armv7-unknown-linux-gnueabihf"), "+dsp,+fp16,+neon,+vfp3"),
+            };
             let target =
                 Target::from_triple(&triple).expect("couldn't create target from target triple");
             let target_machine = target

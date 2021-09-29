@@ -3,11 +3,13 @@ from functools import wraps
 
 import nac3artiq
 
+import device_db
+
 
 __all__ = ["extern", "kernel"]
 
 
-nac3 = nac3artiq.NAC3()
+nac3 = nac3artiq.NAC3(device_db.device_db["core"]["arguments"]["target"])
 allow_module_registration = True
 
 
