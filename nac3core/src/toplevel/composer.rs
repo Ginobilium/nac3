@@ -36,7 +36,13 @@ impl TopLevelComposer {
     pub fn new(
         builtins: Vec<(StrRef, FunSignature)>,
     ) -> (Self, HashMap<StrRef, DefinitionId>, HashMap<StrRef, Type>) {
-        let primitives = Self::make_primitives();
+        let mut primitives = Self::make_primitives();
+
+        let int32 = primitives.0.int32;
+        let int64 = primitives.0.int64;
+        let float = primitives.0.float;
+        let num_ty = primitives.1.get_fresh_var_with_range(&[int32, int64, float]);
+        let var_map: HashMap<_, _> = vec![(num_ty.1, num_ty.0)].into_iter().collect();
 
         let mut definition_ast_list = {
             let top_level_def_list = vec![
@@ -60,8 +66,213 @@ impl TopLevelComposer {
                 ))),
                 Arc::new(RwLock::new(Self::make_top_level_class_def(3, None, "bool".into(), None))),
                 Arc::new(RwLock::new(Self::make_top_level_class_def(4, None, "none".into(), None))),
+                Arc::new(RwLock::new(TopLevelDef::Function {
+                    name: "int32".into(),
+                    simple_name: "int32".into(),
+                    signature: primitives.1.add_ty(TypeEnum::TFunc(RefCell::new(FunSignature {
+                        args: vec![FuncArg { name: "_".into(), ty: num_ty.0, default_value: None }],
+                        ret: int32,
+                        vars: var_map.clone(),
+                    }))),
+                    var_id: Default::default(),
+                    instance_to_symbol: Default::default(),
+                    instance_to_stmt: Default::default(),
+                    resolver: None,
+                    codegen_callback: Some(Arc::new(GenCall::new(Box::new(
+                        |ctx, _, fun, args| {
+                            let int32 = ctx.primitives.int32;
+                            let int64 = ctx.primitives.int64;
+                            let float = ctx.primitives.float;
+                            let arg_ty = fun.0.args[0].ty;
+                            let arg = args[0].1;
+                            if ctx.unifier.unioned(arg_ty, int32) {
+                                Some(arg)
+                            } else if ctx.unifier.unioned(arg_ty, int64) {
+                                Some(
+                                    ctx.builder
+                                        .build_int_truncate(
+                                            arg.into_int_value(),
+                                            ctx.ctx.i32_type(),
+                                            "trunc",
+                                        )
+                                        .into(),
+                                )
+                            } else if ctx.unifier.unioned(arg_ty, float) {
+                                let val = ctx
+                                    .builder
+                                    .build_float_to_signed_int(
+                                        arg.into_float_value(),
+                                        ctx.ctx.i32_type(),
+                                        "fptosi",
+                                    )
+                                    .into();
+                                Some(val)
+                            } else {
+                                unreachable!()
+                            }
+                        },
+                    )))),
+                })),
+                Arc::new(RwLock::new(TopLevelDef::Function {
+                    name: "int64".into(),
+                    simple_name: "int64".into(),
+                    signature: primitives.1.add_ty(TypeEnum::TFunc(RefCell::new(FunSignature {
+                        args: vec![FuncArg { name: "_".into(), ty: num_ty.0, default_value: None }],
+                        ret: int64,
+                        vars: var_map.clone(),
+                    }))),
+                    var_id: Default::default(),
+                    instance_to_symbol: Default::default(),
+                    instance_to_stmt: Default::default(),
+                    resolver: None,
+                    codegen_callback: Some(Arc::new(GenCall::new(Box::new(
+                        |ctx, _, fun, args| {
+                            let int32 = ctx.primitives.int32;
+                            let int64 = ctx.primitives.int64;
+                            let float = ctx.primitives.float;
+                            let arg_ty = fun.0.args[0].ty;
+                            let arg = args[0].1;
+                            if ctx.unifier.unioned(arg_ty, int32) {
+                                Some(
+                                    ctx.builder
+                                        .build_int_s_extend(
+                                            arg.into_int_value(),
+                                            ctx.ctx.i64_type(),
+                                            "sext",
+                                        )
+                                        .into(),
+                                )
+                            } else if ctx.unifier.unioned(arg_ty, int64) {
+                                Some(arg)
+                            } else if ctx.unifier.unioned(arg_ty, float) {
+                                let val = ctx
+                                    .builder
+                                    .build_float_to_signed_int(
+                                        arg.into_float_value(),
+                                        ctx.ctx.i64_type(),
+                                        "fptosi",
+                                    )
+                                    .into();
+                                Some(val)
+                            } else {
+                                unreachable!()
+                            }
+                        },
+                    )))),
+                })),
+                Arc::new(RwLock::new(TopLevelDef::Function {
+                    name: "float".into(),
+                    simple_name: "float".into(),
+                    signature: primitives.1.add_ty(TypeEnum::TFunc(RefCell::new(FunSignature {
+                        args: vec![FuncArg { name: "_".into(), ty: num_ty.0, default_value: None }],
+                        ret: float,
+                        vars: var_map,
+                    }))),
+                    var_id: Default::default(),
+                    instance_to_symbol: Default::default(),
+                    instance_to_stmt: Default::default(),
+                    resolver: None,
+                    codegen_callback: Some(Arc::new(GenCall::new(Box::new(
+                        |ctx, _, fun, args| {
+                            let int32 = ctx.primitives.int32;
+                            let int64 = ctx.primitives.int64;
+                            let float = ctx.primitives.float;
+                            let arg_ty = fun.0.args[0].ty;
+                            let arg = args[0].1;
+                            if ctx.unifier.unioned(arg_ty, int32)
+                                || ctx.unifier.unioned(arg_ty, int64)
+                            {
+                                let arg = args[0].1.into_int_value();
+                                let val = ctx
+                                    .builder
+                                    .build_signed_int_to_float(arg, ctx.ctx.f64_type(), "sitofp")
+                                    .into();
+                                Some(val)
+                            } else if ctx.unifier.unioned(arg_ty, float) {
+                                Some(arg)
+                            } else {
+                                unreachable!()
+                            }
+                        },
+                    )))),
+                })),
+                Arc::new(RwLock::new(TopLevelDef::Function {
+                    name: "round".into(),
+                    simple_name: "round".into(),
+                    signature: primitives.1.add_ty(TypeEnum::TFunc(RefCell::new(FunSignature {
+                        args: vec![FuncArg { name: "_".into(), ty: float, default_value: None }],
+                        ret: int32,
+                        vars: Default::default(),
+                    }))),
+                    var_id: Default::default(),
+                    instance_to_symbol: Default::default(),
+                    instance_to_stmt: Default::default(),
+                    resolver: None,
+                    codegen_callback: Some(Arc::new(GenCall::new(Box::new(|ctx, _, _, args| {
+                        let arg = args[0].1;
+                        let round_intrinsic =
+                            ctx.module.get_function("llvm.rint.f64").unwrap_or_else(|| {
+                                let float = ctx.ctx.f64_type();
+                                let fn_type = float.fn_type(&[float.into()], false);
+                                ctx.module.add_function("llvm.rint.f64", fn_type, None)
+                            });
+                        let val = ctx
+                            .builder
+                            .build_call(round_intrinsic, &[arg], "round")
+                            .try_as_basic_value()
+                            .left()
+                            .unwrap();
+                        Some(
+                            ctx.builder
+                                .build_float_to_signed_int(
+                                    val.into_float_value(),
+                                    ctx.ctx.i32_type(),
+                                    "fptosi",
+                                )
+                                .into(),
+                        )
+                    })))),
+                })),
+                Arc::new(RwLock::new(TopLevelDef::Function {
+                    name: "round64".into(),
+                    simple_name: "round64".into(),
+                    signature: primitives.1.add_ty(TypeEnum::TFunc(RefCell::new(FunSignature {
+                        args: vec![FuncArg { name: "_".into(), ty: float, default_value: None }],
+                        ret: int64,
+                        vars: Default::default(),
+                    }))),
+                    var_id: Default::default(),
+                    instance_to_symbol: Default::default(),
+                    instance_to_stmt: Default::default(),
+                    resolver: None,
+                    codegen_callback: Some(Arc::new(GenCall::new(Box::new(|ctx, _, _, args| {
+                        let arg = args[0].1;
+                        let round_intrinsic =
+                            ctx.module.get_function("llvm.rint.f64").unwrap_or_else(|| {
+                                let float = ctx.ctx.f64_type();
+                                let fn_type = float.fn_type(&[float.into()], false);
+                                ctx.module.add_function("llvm.rint.f64", fn_type, None)
+                            });
+                        let val = ctx
+                            .builder
+                            .build_call(round_intrinsic, &[arg], "round")
+                            .try_as_basic_value()
+                            .left()
+                            .unwrap();
+                        Some(
+                            ctx.builder
+                                .build_float_to_signed_int(
+                                    val.into_float_value(),
+                                    ctx.ctx.i64_type(),
+                                    "fptosi",
+                                )
+                                .into(),
+                        )
+                    })))),
+                })),
             ];
-            let ast_list: Vec<Option<ast::Stmt<()>>> = vec![None, None, None, None, None];
+            let ast_list: Vec<Option<ast::Stmt<()>>> =
+                (0..top_level_def_list.len()).map(|_| None).collect();
             izip!(top_level_def_list, ast_list).collect_vec()
         };
         let primitives_ty = primitives.0;
@@ -86,6 +297,19 @@ impl TopLevelComposer {
 
         let mut built_in_id: HashMap<StrRef, DefinitionId> = Default::default();
         let mut built_in_ty: HashMap<StrRef, Type> = Default::default();
+
+        for (id, name) in ["int32", "int64", "float", "round", "round64"].iter().rev().enumerate() {
+            let name = (**name).into();
+            let id = definition_ast_list.len() - id - 1;
+            let def = definition_ast_list[id].0.read();
+            if let TopLevelDef::Function { simple_name, signature, .. } = &*def {
+                assert!(name == *simple_name);
+                built_in_ty.insert(name, *signature);
+                built_in_id.insert(name, DefinitionId(id));
+            } else {
+                unreachable!()
+            }
+        }
 
         for (name, sig) in builtins {
             let fun_sig = unifier.add_ty(TypeEnum::TFunc(RefCell::new(sig)));
@@ -133,7 +357,7 @@ impl TopLevelComposer {
                 self.unifier.get_shared_unifier(),
                 self.primitives_ty,
             )])),
-            personality_symbol: None
+            personality_symbol: None,
         }
     }
 
@@ -816,17 +1040,7 @@ impl TopLevelComposer {
         } = &mut *class_def
         {
             if let ast::StmtKind::ClassDef { name, bases, body, .. } = &class_ast {
-                (
-                    *object_id,
-                    *name,
-                    bases,
-                    body,
-                    ancestors,
-                    fields,
-                    methods,
-                    type_vars,
-                    resolver,
-                )
+                (*object_id, *name, bases, body, ancestors, fields, methods, type_vars, resolver)
             } else {
                 unreachable!("here must be class def ast");
             }
@@ -1087,8 +1301,7 @@ impl TopLevelComposer {
                 let mut is_override: HashSet<StrRef> = HashSet::new();
                 for (anc_method_name, anc_method_ty, anc_method_def_id) in methods {
                     // find if there is a method with same name in the child class
-                    let mut to_be_added =
-                        (*anc_method_name, *anc_method_ty, *anc_method_def_id);
+                    let mut to_be_added = (*anc_method_name, *anc_method_ty, *anc_method_def_id);
                     for (class_method_name, class_method_ty, class_method_defid) in
                         class_methods_def.iter()
                     {
@@ -1107,11 +1320,8 @@ impl TopLevelComposer {
                             }
                             // mark it as added
                             is_override.insert(*class_method_name);
-                            to_be_added = (
-                                *class_method_name,
-                                *class_method_ty,
-                                *class_method_defid,
-                            );
+                            to_be_added =
+                                (*class_method_name, *class_method_ty, *class_method_defid);
                             break;
                         }
                     }
