@@ -129,7 +129,8 @@ impl Nac3 {
                     ref decorator_list, ..
                 } => decorator_list.iter().any(|decorator| {
                     if let ast::ExprKind::Name { id, .. } = decorator.node {
-                        id.to_string() == "extern" || id.to_string() == "portable"
+                        let id = id.to_string();
+                        id == "extern" || id == "portable" || id == "kernel"
                     } else {
                         false
                     }
