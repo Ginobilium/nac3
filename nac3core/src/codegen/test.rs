@@ -1,12 +1,21 @@
-use crate::{codegen::{CodeGenTask, GenCall, WithCall, WorkerRegistry}, location::Location, symbol_resolver::{SymbolResolver, SymbolValue}, toplevel::{
+use crate::{
+    codegen::{CodeGenTask, WithCall, WorkerRegistry},
+    location::Location,
+    symbol_resolver::{SymbolResolver, SymbolValue},
+    toplevel::{
         composer::TopLevelComposer, DefinitionId, FunInstance, TopLevelContext, TopLevelDef,
-    }, typecheck::{
+    },
+    typecheck::{
         type_inferencer::{FunctionData, Inferencer, PrimitiveStore},
         typedef::{FunSignature, FuncArg, Type, TypeEnum, Unifier},
-    }};
+    },
+};
 use indoc::indoc;
 use parking_lot::RwLock;
-use rustpython_parser::{ast::{StrRef, fold::Fold}, parser::parse_program};
+use rustpython_parser::{
+    ast::{fold::Fold, StrRef},
+    parser::parse_program,
+};
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -56,12 +65,6 @@ fn test_primitives() {
     let top_level = Arc::new(composer.make_top_level_context());
     unifier.top_level = Some(top_level.clone());
 
-    // let resolver = Arc::new(Mutex::new(Resolver {
-    //     id_to_type: HashMap::new(),
-    //     id_to_def: RwLock::new(HashMap::new()),
-    //     class_names: Default::default(),
-    // }) as Mutex<dyn SymbolResolver + Send + Sync>);
-
     let resolver = Arc::new(Box::new(Resolver {
         id_to_type: HashMap::new(),
         id_to_def: RwLock::new(HashMap::new()),
@@ -109,7 +112,7 @@ fn test_primitives() {
     let top_level = Arc::new(TopLevelContext {
         definitions: Arc::new(RwLock::new(std::mem::take(&mut *top_level.definitions.write()))),
         unifiers: Arc::new(RwLock::new(vec![(unifier.get_shared_unifier(), primitives)])),
-        personality_symbol: None
+        personality_symbol: None,
     });
 
     let unifier = (unifier.get_shared_unifier(), primitives);
@@ -182,8 +185,7 @@ fn test_primitives() {
         .trim();
         assert_eq!(expected, module.print_to_string().to_str().unwrap().trim());
     })));
-    let external_codegen = Arc::new(GenCall::new(Box::new(|_, _, _, _| unimplemented!()), HashSet::new()));
-    let (registry, handles) = WorkerRegistry::create_workers(&threads, top_level, f, external_codegen);
+    let (registry, handles) = WorkerRegistry::create_workers(&threads, top_level, f);
     registry.add_task(task);
     registry.wait_tasks_complete(handles);
 }
@@ -223,6 +225,7 @@ fn test_simple_call() {
         instance_to_stmt: HashMap::new(),
         instance_to_symbol: HashMap::new(),
         resolver: None,
+        codegen_callback: None,
     })));
 
     let resolver = Box::new(Resolver {
@@ -298,7 +301,7 @@ fn test_simple_call() {
     let top_level = Arc::new(TopLevelContext {
         definitions: Arc::new(RwLock::new(std::mem::take(&mut *top_level.definitions.write()))),
         unifiers: Arc::new(RwLock::new(vec![(unifier.get_shared_unifier(), primitives)])),
-        personality_symbol: None
+        personality_symbol: None,
     });
 
     let unifier = (unifier.get_shared_unifier(), primitives);
@@ -347,8 +350,7 @@ fn test_simple_call() {
         .trim();
         assert_eq!(expected, module.print_to_string().to_str().unwrap().trim());
     })));
-    let external_codegen = Arc::new(GenCall::new(Box::new(|_, _, _, _| unimplemented!()), HashSet::new()));
-    let (registry, handles) = WorkerRegistry::create_workers(&threads, top_level, f, external_codegen);
+    let (registry, handles) = WorkerRegistry::create_workers(&threads, top_level, f);
     registry.add_task(task);
     registry.wait_tasks_complete(handles);
 }

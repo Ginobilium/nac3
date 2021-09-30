@@ -122,6 +122,7 @@ impl TopLevelComposer {
             instance_to_symbol: Default::default(),
             instance_to_stmt: Default::default(),
             resolver,
+            codegen_callback: None,
         }
     }
 

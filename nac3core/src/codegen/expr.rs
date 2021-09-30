@@ -108,18 +108,17 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
         fun: (&FunSignature, DefinitionId),
         params: Vec<(Option<StrRef>, BasicValueEnum<'ctx>)>,
     ) -> Option<BasicValueEnum<'ctx>> {
-        if self.external_codegen.def_list.contains(&fun.1) {
-            let external_codegen = self.external_codegen.clone();
-            return external_codegen.run(self, obj, fun, params)
-        }
-        let key = self.get_subst_key(obj.map(|a| a.0), fun.0, None);
         let definition = self.top_level.definitions.read().get(fun.1.0).cloned().unwrap();
         let mut task = None;
+        let key = self.get_subst_key(obj.map(|a| a.0), fun.0, None);
         let symbol = {
             // make sure this lock guard is dropped at the end of this scope...
             let def = definition.read();
             match &*def {
-                TopLevelDef::Function { instance_to_symbol, .. } => {
+                TopLevelDef::Function { instance_to_symbol, codegen_callback, .. } => {
+                    if let Some(callback) = codegen_callback {
+                        return callback.run(self, obj, fun, params);
+                    }
                     instance_to_symbol.get(&key).cloned()
                 }
                 TopLevelDef::Class { methods, .. } => {

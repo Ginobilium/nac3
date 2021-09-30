@@ -100,6 +100,7 @@ impl TopLevelComposer {
                     instance_to_symbol: [("".into(), name.into())].iter().cloned().collect(),
                     var_id: Default::default(),
                     resolver: None,
+                    codegen_callback: None,
                 })),
                 None,
             ));

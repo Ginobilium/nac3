@@ -1,6 +1,6 @@
 use crate::{
     symbol_resolver::SymbolResolver,
-    toplevel::{DefinitionId, TopLevelContext, TopLevelDef},
+    toplevel::{TopLevelContext, TopLevelDef},
     typecheck::{
         type_inferencer::{CodeLocation, PrimitiveStore},
         typedef::{CallId, FunSignature, SharedUnifier, Type, TypeEnum, Unifier},
@@ -13,13 +13,13 @@ use inkwell::{
     context::Context,
     module::Module,
     types::{BasicType, BasicTypeEnum},
-    values::{BasicValueEnum, PointerValue},
+    values::PointerValue,
     AddressSpace,
 };
 use itertools::Itertools;
 use parking_lot::{Condvar, Mutex};
 use rustpython_parser::ast::{Stmt, StrRef};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,
@@ -49,7 +49,6 @@ pub struct CodeGenContext<'ctx, 'a> {
     // where continue and break should go to respectively
     // the first one is the test_bb, and the second one is bb after the loop
     pub loop_bb: Option<(BasicBlock<'ctx>, BasicBlock<'ctx>)>,
-    pub external_codegen: Arc<GenCall>,
 }
 
 type Fp = Box<dyn Fn(&Module) + Send + Sync>;
@@ -68,42 +67,6 @@ impl WithCall {
     }
 }
 
-type GenCallCallback = Box<
-    dyn for<'ctx, 'a> Fn(
-            &mut CodeGenContext<'ctx, 'a>,
-            Option<(Type, BasicValueEnum)>,
-            (&FunSignature, DefinitionId),
-            Vec<(Option<StrRef>, BasicValueEnum<'ctx>)>,
-        ) -> Option<BasicValueEnum<'ctx>>
-        + Send
-        + Sync,
->;
-
-pub struct GenCall {
-    def_list: HashSet<DefinitionId>,
-    fp: GenCallCallback,
-}
-
-impl GenCall {
-    pub fn new(fp: GenCallCallback, def_list: HashSet<DefinitionId>) -> GenCall {
-        GenCall { def_list, fp }
-    }
-
-    pub fn run<'ctx, 'a>(
-        &self,
-        ctx: &mut CodeGenContext<'ctx, 'a>,
-        obj: Option<(Type, BasicValueEnum<'ctx>)>,
-        fun: (&FunSignature, DefinitionId),
-        args: Vec<(Option<StrRef>, BasicValueEnum<'ctx>)>,
-    ) -> Option<BasicValueEnum<'ctx>> {
-        (self.fp)(ctx, obj, fun, args)
-    }
-
-    pub fn need_external_codegen(&self, id: DefinitionId) -> bool {
-        self.def_list.contains(&id)
-    }
-}
-
 pub struct WorkerRegistry {
     sender: Arc<Sender<Option<CodeGenTask>>>,
     receiver: Arc<Receiver<Option<CodeGenTask>>>,
@@ -118,7 +81,6 @@ impl WorkerRegistry {
         names: &[&str],
         top_level_ctx: Arc<TopLevelContext>,
         f: Arc<WithCall>,
-        external_codegen: Arc<GenCall>,
     ) -> (Arc<WorkerRegistry>, Vec<thread::JoinHandle<()>>) {
         let (sender, receiver) = unbounded();
         let task_count = Mutex::new(0);
@@ -140,9 +102,8 @@ impl WorkerRegistry {
             let registry2 = registry.clone();
             let name = name.to_string();
             let f = f.clone();
-            let external_codegen = external_codegen.clone();
             let handle = thread::spawn(move || {
-                registry.worker_thread(name, top_level_ctx, f, external_codegen);
+                registry.worker_thread(name, top_level_ctx, f);
             });
             let handle = thread::spawn(move || {
                 if let Err(e) = handle.join() {
@@ -200,22 +161,13 @@ impl WorkerRegistry {
         module_name: String,
         top_level_ctx: Arc<TopLevelContext>,
         f: Arc<WithCall>,
-        external_codegen: Arc<GenCall>,
     ) {
         let context = Context::create();
         let mut builder = context.create_builder();
         let mut module = context.create_module(&module_name);
 
         while let Some(task) = self.receiver.recv().unwrap() {
-            let result = gen_func(
-                &context,
-                self,
-                builder,
-                module,
-                task,
-                top_level_ctx.clone(),
-                external_codegen.clone(),
-            );
+            let result = gen_func(&context, self, builder, module, task, top_level_ctx.clone());
             builder = result.0;
             module = result.1;
             *self.task_count.lock() -= 1;
@@ -298,7 +250,6 @@ pub fn gen_func<'ctx>(
     module: Module<'ctx>,
     task: CodeGenTask,
     top_level_ctx: Arc<TopLevelContext>,
-    external_codegen: Arc<GenCall>,
 ) -> (Builder<'ctx>, Module<'ctx>) {
     // unwrap_or(0) is for unit tests without using rayon
     let (mut unifier, primitives) = {
@@ -396,7 +347,6 @@ pub fn gen_func<'ctx>(
         builder,
         module,
         unifier,
-        external_codegen,
     };
 
     let mut returned = false;

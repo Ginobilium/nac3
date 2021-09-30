@@ -7,6 +7,7 @@ use std::{
     sync::Arc,
 };
 
+use super::codegen::CodeGenContext;
 use super::typecheck::type_inferencer::PrimitiveStore;
 use super::typecheck::typedef::{FunSignature, FuncArg, SharedUnifier, Type, TypeEnum, Unifier};
 use crate::{
@@ -16,6 +17,7 @@ use crate::{
 use itertools::{izip, Itertools};
 use parking_lot::RwLock;
 use rustpython_parser::ast::{self, Stmt, StrRef};
+use inkwell::values::BasicValueEnum;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Hash, Debug)]
 pub struct DefinitionId(pub usize);
@@ -27,6 +29,43 @@ use composer::*;
 use type_annotation::*;
 #[cfg(test)]
 mod test;
+
+type GenCallCallback = Box<
+    dyn for<'ctx, 'a> Fn(
+            &mut CodeGenContext<'ctx, 'a>,
+            Option<(Type, BasicValueEnum)>,
+            (&FunSignature, DefinitionId),
+            Vec<(Option<StrRef>, BasicValueEnum<'ctx>)>,
+        ) -> Option<BasicValueEnum<'ctx>>
+        + Send
+        + Sync,
+>;
+
+pub struct GenCall {
+    fp: GenCallCallback,
+}
+
+impl GenCall {
+    pub fn new(fp: GenCallCallback) -> GenCall {
+        GenCall { fp }
+    }
+
+    pub fn run<'ctx, 'a>(
+        &self,
+        ctx: &mut CodeGenContext<'ctx, 'a>,
+        obj: Option<(Type, BasicValueEnum<'ctx>)>,
+        fun: (&FunSignature, DefinitionId),
+        args: Vec<(Option<StrRef>, BasicValueEnum<'ctx>)>,
+    ) -> Option<BasicValueEnum<'ctx>> {
+        (self.fp)(ctx, obj, fun, args)
+    }
+}
+
+impl Debug for GenCall {
+    fn fmt(&self, _: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        Ok(())
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct FunInstance {
@@ -78,6 +117,8 @@ pub enum TopLevelDef {
         instance_to_stmt: HashMap<String, FunInstance>,
         // symbol resolver of the module defined the class
         resolver: Option<Arc<Box<dyn SymbolResolver + Send + Sync>>>,
+        // custom codegen callback
+        codegen_callback: Option<Arc<GenCall>>
     },
 }
 
