@@ -1,46 +1,163 @@
+use std::collections::HashMap;
 use std::fs;
-use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
 use std::path::Path;
 use std::process::Command;
+use std::sync::Arc;
 
-use pyo3::prelude::*;
-use pyo3::exceptions;
-use rustpython_parser::{ast, parser};
 use inkwell::{
     passes::{PassManager, PassManagerBuilder},
     targets::*,
     OptimizationLevel,
 };
+use pyo3::prelude::*;
+use pyo3::{exceptions, types::PyList};
+use rustpython_parser::{
+    ast::{self, StrRef},
+    parser,
+};
 
-use nac3core::typecheck::type_inferencer::PrimitiveStore;
+use parking_lot::RwLock;
+
 use nac3core::{
     codegen::{CodeGenTask, WithCall, WorkerRegistry},
     symbol_resolver::SymbolResolver,
     toplevel::{composer::TopLevelComposer, TopLevelContext, TopLevelDef},
     typecheck::typedef::{FunSignature, FuncArg},
 };
+use nac3core::{
+    toplevel::DefinitionId,
+    typecheck::{type_inferencer::PrimitiveStore, typedef::Type},
+};
+
+use crate::symbol_resolver::Resolver;
 
 mod symbol_resolver;
-use symbol_resolver::*;
 
 #[derive(Clone, Copy)]
 enum Isa {
     RiscV,
-    CortexA9
+    CortexA9,
 }
 
 // TODO: do we really want unsendable?
 // TopLevelComposer causes a lot of problems for Send.
-#[pyclass(unsendable,name="NAC3")]
+#[pyclass(unsendable, name = "NAC3")]
 struct Nac3 {
     isa: Isa,
     primitive: PrimitiveStore,
-    internal_resolver: Arc<ResolverInternal>,
-    resolver: Arc<Box<dyn SymbolResolver + Send + Sync>>,
+    builtins_ty: HashMap<StrRef, Type>,
+    builtins_def: HashMap<StrRef, DefinitionId>,
+    pyid_to_def: Arc<RwLock<HashMap<u64, DefinitionId>>>,
+    pyid_to_type: Arc<RwLock<HashMap<u64, Type>>>,
     composer: TopLevelComposer,
     top_level: Option<Arc<TopLevelContext>>,
-    registered_module_ids: HashSet<u64>
+    to_be_registered: Vec<PyObject>,
+}
+
+impl Nac3 {
+    fn register_module_impl(&mut self, obj: PyObject) -> PyResult<()> {
+        let mut name_to_pyid: HashMap<StrRef, u64> = HashMap::new();
+        let (module_name, source_file) = Python::with_gil(|py| -> PyResult<(String, String)> {
+            let obj: &PyAny = obj.extract(py)?;
+            let builtins = PyModule::import(py, "builtins")?;
+            let id_fn = builtins.getattr("id")?;
+            let members: &PyList = PyModule::import(py, "inspect")?
+                .getattr("getmembers")?
+                .call1((obj,))?
+                .cast_as()?;
+            for member in members.iter() {
+                let key: &str = member.get_item(0)?.extract()?;
+                let val = id_fn.call1((member.get_item(1)?,))?.extract()?;
+                name_to_pyid.insert(key.into(), val);
+            }
+            Ok((
+                obj.getattr("__name__")?.extract()?,
+                obj.getattr("__file__")?.extract()?,
+            ))
+        })?;
+
+        let source = fs::read_to_string(source_file).map_err(|e| {
+            exceptions::PyIOError::new_err(format!("failed to read input file: {}", e))
+        })?;
+        let parser_result = parser::parse_program(&source).map_err(|e| {
+            exceptions::PySyntaxError::new_err(format!("failed to parse host object source: {}", e))
+        })?;
+        let resolver = Arc::new(Box::new(Resolver {
+            id_to_type: self.builtins_ty.clone().into(),
+            id_to_def: self.builtins_def.clone().into(),
+            pyid_to_def: self.pyid_to_def.clone(),
+            pyid_to_type: self.pyid_to_type.clone(),
+            class_names: Default::default(),
+            name_to_pyid: name_to_pyid.clone(),
+        }) as Box<dyn SymbolResolver + Send + Sync>);
+        let mut name_to_def = HashMap::new();
+        let mut name_to_type = HashMap::new();
+
+        for mut stmt in parser_result.into_iter() {
+            let include = match stmt.node {
+                ast::StmtKind::ClassDef {
+                    ref decorator_list,
+                    ref mut body,
+                    ..
+                } => {
+                    let kernels = decorator_list.iter().any(|decorator| {
+                        if let ast::ExprKind::Name { id, .. } = decorator.node {
+                            id.to_string() == "kernel" || id.to_string() == "portable"
+                        } else {
+                            false
+                        }
+                    });
+                    body.retain(|stmt| {
+                        if let ast::StmtKind::FunctionDef {
+                            ref decorator_list, ..
+                        } = stmt.node
+                        {
+                            decorator_list.iter().any(|decorator| {
+                                if let ast::ExprKind::Name { id, .. } = decorator.node {
+                                    id.to_string() == "kernel" || id.to_string() == "portable"
+                                } else {
+                                    false
+                                }
+                            })
+                        } else {
+                            true
+                        }
+                    });
+                    kernels
+                }
+                ast::StmtKind::FunctionDef {
+                    ref decorator_list, ..
+                } => decorator_list.iter().any(|decorator| {
+                    if let ast::ExprKind::Name { id, .. } = decorator.node {
+                        id.to_string() == "extern" || id.to_string() == "portable"
+                    } else {
+                        false
+                    }
+                }),
+                _ => false,
+            };
+
+            if include {
+                let (name, def_id, ty) = self
+                    .composer
+                    .register_top_level(stmt, Some(resolver.clone()), module_name.clone())
+                    .unwrap();
+                name_to_def.insert(name, def_id);
+                if let Some(ty) = ty {
+                    name_to_type.insert(name, ty);
+                }
+            }
+        }
+        let mut map = self.pyid_to_def.write();
+        for (name, def) in name_to_def.into_iter() {
+            map.insert(*name_to_pyid.get(&name).unwrap(), def);
+        }
+        let mut map = self.pyid_to_type.write();
+        for (name, ty) in name_to_type.into_iter() {
+            map.insert(*name_to_pyid.get(&name).unwrap(), ty);
+        }
+        Ok(())
+    }
 }
 
 #[pymethods]
@@ -50,11 +167,12 @@ impl Nac3 {
         let isa = match isa {
             "riscv" => Isa::RiscV,
             "cortexa9" => Isa::CortexA9,
-            _ => return Err(exceptions::PyValueError::new_err("invalid ISA"))
+            _ => return Err(exceptions::PyValueError::new_err("invalid ISA")),
         };
         let primitive: PrimitiveStore = TopLevelComposer::make_primitives().0;
-        let (composer, builtins_def, builtins_ty) = TopLevelComposer::new(vec![
-            ("output_int".into(), FunSignature {
+        let (composer, builtins_def, builtins_ty) = TopLevelComposer::new(vec![(
+            "output_int".into(),
+            FunSignature {
                 args: vec![FuncArg {
                     name: "x".into(),
                     ty: primitive.int32,
@@ -62,103 +180,57 @@ impl Nac3 {
                 }],
                 ret: primitive.none,
                 vars: HashMap::new(),
-            }),
-        ]);
-        let internal_resolver: Arc<ResolverInternal> = ResolverInternal {
-            id_to_type: builtins_ty.into(),
-            id_to_def: builtins_def.into(),
-            class_names: Default::default(),
-        }.into();
-        let resolver = Arc::new(
-            Box::new(Resolver(internal_resolver.clone())) as Box<dyn SymbolResolver + Send + Sync>
-        );
+            },
+        )]);
         Ok(Nac3 {
             isa,
             primitive,
-            internal_resolver,
-            resolver,
+            builtins_ty,
+            builtins_def,
             composer,
             top_level: None,
-            registered_module_ids: HashSet::new()
+            pyid_to_def: Default::default(),
+            pyid_to_type: Default::default(),
+            to_be_registered: Default::default(),
         })
     }
 
-    fn register_module(&mut self, obj: PyObject) -> PyResult<()> {
-        let module_info = Python::with_gil(|py| -> PyResult<Option<(String, String)>> {
-            let obj: &PyAny = obj.extract(py)?;
-            let builtins = PyModule::import(py, "builtins")?;
-            let id = builtins.getattr("id")?.call1((obj, ))?.extract()?;
-            if self.registered_module_ids.insert(id) {
-                Ok(Some((obj.getattr("__name__")?.extract()?, obj.getattr("__file__")?.extract()?)))
-            } else {
-                Ok(None)
-            }
-        })?;
-
-        if let Some((module_name, source_file)) = module_info {
-            let source = fs::read_to_string(source_file).map_err(|e|
-                exceptions::PyIOError::new_err(format!("failed to read input file: {}", e)))?;
-            let parser_result = parser::parse_program(&source).map_err(|e|
-                exceptions::PySyntaxError::new_err(format!("failed to parse host object source: {}", e)))?;
-
-            for mut stmt in parser_result.into_iter() {
-                let include = match stmt.node {
-                    ast::StmtKind::ClassDef { ref decorator_list, ref mut body, .. } => {
-                        let kernels = decorator_list.iter().any(|decorator| if let ast::ExprKind::Name { id, .. } = decorator.node
-                            { id.to_string() == "kernel" || id.to_string() == "portable" } else { false });
-                        body.retain(|stmt| {
-                            if let ast::StmtKind::FunctionDef { ref decorator_list, .. } = stmt.node {
-                                decorator_list.iter().any(|decorator| if let ast::ExprKind::Name { id, .. } = decorator.node
-                                    { id.to_string() == "kernel" || id.to_string() == "portable" } else { false })
-                            } else {
-                                true
-                            }
-                        });
-                        kernels
-                    },
-                    ast::StmtKind::FunctionDef { ref decorator_list, .. } => {
-                        decorator_list.iter().any(|decorator| if let ast::ExprKind::Name { id, .. } = decorator.node
-                            { id.to_string() == "extern" || id.to_string() == "portable" } else { false })
-                    },
-                    _ => false
-                };
-
-                if include {
-                    let (name, def_id, ty) = self.composer.register_top_level(
-                        stmt,
-                        Some(self.resolver.clone()),
-                        module_name.clone(),
-                    ).unwrap();
-
-                    self.internal_resolver.add_id_def(name.clone(), def_id);
-                    if let Some(ty) = ty {
-                        self.internal_resolver.add_id_type(name, ty);
-                    }
-                }
-            }
-        }
-        Ok(())
+    fn register_module(&mut self, obj: PyObject) {
+        self.to_be_registered.push(obj);
     }
 
     fn analyze(&mut self) -> PyResult<()> {
+        for obj in std::mem::take(&mut self.to_be_registered).into_iter() {
+            self.register_module_impl(obj)?;
+        }
         self.composer.start_analysis(true).unwrap();
         self.top_level = Some(Arc::new(self.composer.make_top_level_context()));
         Ok(())
     }
 
-    fn compile_method(&mut self, class_name: String, method_name: String) -> PyResult<()> {
+    fn compile_method(&mut self, class: u64, method_name: String) -> PyResult<()> {
         let top_level = self.top_level.as_ref().unwrap();
+        let module_resolver;
         let instance = {
             let defs = top_level.definitions.read();
-            let class_def = defs[self.resolver.get_identifier_def(class_name.into()).unwrap().0].write();
-            let mut method_def = if let TopLevelDef::Class { methods, .. } = &*class_def {
-                if let Some((_name, _unification_key, definition_id)) = methods.iter().find(|method| method.0.to_string() == method_name) {
+            let class_def = defs[self.pyid_to_def.read().get(&class).unwrap().0].write();
+            let mut method_def = if let TopLevelDef::Class {
+                methods, resolver, ..
+            } = &*class_def
+            {
+                module_resolver = Some(resolver.clone().unwrap());
+                if let Some((_name, _unification_key, definition_id)) = methods
+                    .iter()
+                    .find(|method| method.0.to_string() == method_name)
+                {
                     defs[definition_id.0].write()
                 } else {
                     return Err(exceptions::PyValueError::new_err("method not found"));
                 }
             } else {
-                return Err(exceptions::PyTypeError::new_err("parent object is not a class"));
+                return Err(exceptions::PyTypeError::new_err(
+                    "parent object is not a class",
+                ));
             };
 
             // FIXME: what is this for? What happens if the kernel is called twice?
@@ -168,7 +240,7 @@ impl Nac3 {
                 ..
             } = &mut *method_def
             {
-                instance_to_symbol.insert("".to_string(), method_name.clone());
+                instance_to_symbol.insert("".to_string(), method_name);
                 instance_to_stmt[""].clone()
             } else {
                 unreachable!()
@@ -184,7 +256,7 @@ impl Nac3 {
             symbol_name: "__modinit__".to_string(),
             body: instance.body,
             signature,
-            resolver: self.resolver.clone(),
+            resolver: module_resolver.unwrap(),
             unifier: top_level.unifiers.read()[instance.unifier_id].clone(),
             calls: instance.calls,
         };
@@ -198,7 +270,10 @@ impl Nac3 {
 
             let (triple, features) = match isa {
                 Isa::RiscV => (TargetTriple::create("riscv32-unknown-linux"), "+a,+m"),
-                Isa::CortexA9 => (TargetTriple::create("armv7-unknown-linux-gnueabihf"), "+dsp,+fp16,+neon,+vfp3"),
+                Isa::CortexA9 => (
+                    TargetTriple::create("armv7-unknown-linux-gnueabihf"),
+                    "+dsp,+fp16,+neon,+vfp3",
+                ),
             };
             let target =
                 Target::from_triple(&triple).expect("couldn't create target from target triple");
@@ -213,7 +288,11 @@ impl Nac3 {
                 )
                 .expect("couldn't create target machine");
             target_machine
-                .write_to_file(module, FileType::Object, Path::new(&format!("{}.o", module.get_name().to_str().unwrap())))
+                .write_to_file(
+                    module,
+                    FileType::Object,
+                    Path::new(&format!("{}.o", module.get_name().to_str().unwrap())),
+                )
                 .expect("couldn't write module to file");
         })));
         let thread_names: Vec<String> = (0..4).map(|i| format!("module{}", i)).collect();
@@ -228,15 +307,19 @@ impl Nac3 {
             "-Tkernel.ld".to_string(),
             "-x".to_string(),
             "-o".to_string(),
-            "module.elf".to_string()
+            "module.elf".to_string(),
         ];
         linker_args.extend(thread_names.iter().map(|name| name.to_owned() + ".o"));
         if let Ok(linker_status) = Command::new("ld.lld").args(linker_args).status() {
             if !linker_status.success() {
-                return Err(exceptions::PyRuntimeError::new_err("failed to start linker"));
+                return Err(exceptions::PyRuntimeError::new_err(
+                    "failed to start linker",
+                ));
             }
         } else {
-            return Err(exceptions::PyRuntimeError::new_err("linker returned non-zero status code"));
+            return Err(exceptions::PyRuntimeError::new_err(
+                "linker returned non-zero status code",
+            ));
         }
 
         Ok(())

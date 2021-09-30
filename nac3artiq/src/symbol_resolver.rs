@@ -7,35 +7,31 @@ use nac3core::{
         typedef::{Type, Unifier},
     },
 };
-use parking_lot::Mutex;
+use parking_lot::{Mutex, RwLock};
 use rustpython_parser::ast::StrRef;
 use std::{collections::HashMap, sync::Arc};
 
-pub struct ResolverInternal {
+pub struct Resolver {
     pub id_to_type: Mutex<HashMap<StrRef, Type>>,
     pub id_to_def: Mutex<HashMap<StrRef, DefinitionId>>,
     pub class_names: Mutex<HashMap<StrRef, Type>>,
+    pub pyid_to_def: Arc<RwLock<HashMap<u64, DefinitionId>>>,
+    pub pyid_to_type: Arc<RwLock<HashMap<u64, Type>>>,
+    // module specific
+    pub name_to_pyid: HashMap<StrRef, u64>,
 }
-
-impl ResolverInternal {
-    pub fn add_id_def(&self, id: StrRef, def: DefinitionId) {
-        self.id_to_def.lock().insert(id, def);
-    }
-
-    pub fn add_id_type(&self, id: StrRef, ty: Type) {
-        self.id_to_type.lock().insert(id, ty);
-    }
-}
-
-pub struct Resolver(pub Arc<ResolverInternal>);
 
 impl SymbolResolver for Resolver {
     fn get_symbol_type(&self, _: &mut Unifier, _: &PrimitiveStore, str: StrRef) -> Option<Type> {
-        let ret = self.0.id_to_type.lock().get(&str).cloned();
-        if ret.is_none() {
-            // println!("unknown here resolver {}", str);
-        }
-        ret
+        let mut id_to_type = self.id_to_type.lock();
+        id_to_type.get(&str).cloned().or_else(|| {
+            let py_id = self.name_to_pyid.get(&str);
+            let result = py_id.and_then(|id| self.pyid_to_type.read().get(&id).copied());
+            if let Some(result) = &result {
+                id_to_type.insert(str, *result);
+            }
+            result
+        })
     }
 
     fn get_symbol_value(&self, _: StrRef) -> Option<SymbolValue> {
@@ -47,6 +43,14 @@ impl SymbolResolver for Resolver {
     }
 
     fn get_identifier_def(&self, id: StrRef) -> Option<DefinitionId> {
-        self.0.id_to_def.lock().get(&id).cloned()
+        let mut id_to_def = self.id_to_def.lock();
+        id_to_def.get(&id).cloned().or_else(|| {
+            let py_id = self.name_to_pyid.get(&id);
+            let result = py_id.and_then(|id| self.pyid_to_def.read().get(&id).copied());
+            if let Some(result) = &result {
+                id_to_def.insert(id, *result);
+            }
+            result
+        })
     }
 }
