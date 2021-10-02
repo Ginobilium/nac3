@@ -1,20 +1,11 @@
-from language import *
 from numpy import int32, int64
 
-@extern
-def now_mu() -> int64:
-    raise NotImplementedError("syscall not simulated")
+from language import *
 
 
-@extern
-def at_mu(t: int64):
-    raise NotImplementedError("syscall not simulated")
-
-
-@extern
-def delay_mu(dt: int64):
-    raise NotImplementedError("syscall not simulated")
-
+import device_db
+if device_db.device_db["core"]["arguments"]["target"] == "cortexa9":
+	from artiq_timeline_extern import *
 
 @extern
 def rtio_init():
