@@ -39,8 +39,8 @@ enum Isa {
     CortexA9,
 }
 
-// TODO: do we really want unsendable?
-// TopLevelComposer causes a lot of problems for Send.
+// TopLevelComposer is unsendable as it holds the unification table, which is
+// unsendable due to Rc. Arc would cause a performance hit.
 #[pyclass(unsendable, name = "NAC3")]
 struct Nac3 {
     isa: Isa,
