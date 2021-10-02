@@ -80,7 +80,7 @@ impl Nac3 {
             exceptions::PyIOError::new_err(format!("failed to read input file: {}", e))
         })?;
         let parser_result = parser::parse_program(&source).map_err(|e| {
-            exceptions::PySyntaxError::new_err(format!("failed to parse host object source: {}", e))
+            exceptions::PySyntaxError::new_err(format!("parse error: {}", e))
         })?;
         let resolver = Arc::new(Box::new(Resolver {
             id_to_type: self.builtins_ty.clone().into(),
