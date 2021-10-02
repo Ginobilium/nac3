@@ -34,7 +34,7 @@ impl TopLevelComposer {
     /// return a composer and things to make a "primitive" symbol resolver, so that the symbol
     /// resolver can later figure out primitive type definitions when passed a primitive type name
     pub fn new(
-        builtins: Vec<(StrRef, FunSignature)>,
+        builtins: Vec<(StrRef, FunSignature, Arc<GenCall>)>,
     ) -> (Self, HashMap<StrRef, DefinitionId>, HashMap<StrRef, Type>) {
         let mut primitives = Self::make_primitives();
 
@@ -311,7 +311,7 @@ impl TopLevelComposer {
             }
         }
 
-        for (name, sig) in builtins {
+        for (name, sig, codegen_callback) in builtins {
             let fun_sig = unifier.add_ty(TypeEnum::TFunc(RefCell::new(sig)));
             built_in_ty.insert(name, fun_sig);
             built_in_id.insert(name, DefinitionId(definition_ast_list.len()));
@@ -320,11 +320,11 @@ impl TopLevelComposer {
                     name: name.into(),
                     simple_name: name,
                     signature: fun_sig,
-                    instance_to_stmt: HashMap::new(),
-                    instance_to_symbol: [("".into(), name.into())].iter().cloned().collect(),
+                    instance_to_stmt: Default::default(),
+                    instance_to_symbol: Default::default(),
                     var_id: Default::default(),
                     resolver: None,
-                    codegen_callback: None,
+                    codegen_callback: Some(codegen_callback),
                 })),
                 None,
             ));

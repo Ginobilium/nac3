@@ -9,7 +9,7 @@ use nac3core::{
     codegen::{CodeGenTask, WithCall, WorkerRegistry},
     symbol_resolver::SymbolResolver,
     toplevel::{composer::TopLevelComposer, TopLevelDef},
-    typecheck::typedef::{FunSignature, FuncArg},
+    typecheck::typedef::FunSignature,
 };
 
 mod basic_symbol_resolver;
@@ -32,26 +32,7 @@ fn main() {
    };
 
     let primitive: PrimitiveStore = TopLevelComposer::make_primitives().0;
-    let (mut composer, builtins_def, builtins_ty) = TopLevelComposer::new(vec![
-        ("output_int".into(), FunSignature {
-            args: vec![FuncArg {
-                name: "x".into(),
-                ty: primitive.int32,
-                default_value: None,
-            }],
-            ret: primitive.none,
-            vars: HashMap::new(),
-        }),
-        ("output_asciiart".into(), FunSignature {
-            args: vec![FuncArg {
-                name: "x".into(),
-                ty: primitive.int32,
-                default_value: None,
-            }],
-            ret: primitive.none,
-            vars: HashMap::new(),
-        })
-    ]);
+    let (mut composer, builtins_def, builtins_ty) = TopLevelComposer::new(vec![]);
 
     let internal_resolver: Arc<ResolverInternal> = ResolverInternal {
         id_to_type: builtins_ty.into(),

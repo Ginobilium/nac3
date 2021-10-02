@@ -1,3 +1,8 @@
+@extern
+def output_int(x: int32):
+    ...
+
+
 class A:
     a: int32
     b: B

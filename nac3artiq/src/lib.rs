@@ -21,7 +21,7 @@ use parking_lot::RwLock;
 use nac3core::{
     codegen::{CodeGenTask, WithCall, WorkerRegistry},
     symbol_resolver::SymbolResolver,
-    toplevel::{composer::TopLevelComposer, TopLevelContext, TopLevelDef},
+    toplevel::{composer::TopLevelComposer, TopLevelContext, TopLevelDef, GenCall},
     typecheck::typedef::{FunSignature, FuncArg},
 };
 use nac3core::{
@@ -33,7 +33,7 @@ use crate::symbol_resolver::Resolver;
 
 mod symbol_resolver;
 
-#[derive(Clone, Copy)]
+#[derive(PartialEq, Clone, Copy)]
 enum Isa {
     RiscV,
     CortexA9,
@@ -171,18 +171,57 @@ impl Nac3 {
             _ => return Err(exceptions::PyValueError::new_err("invalid ISA")),
         };
         let primitive: PrimitiveStore = TopLevelComposer::make_primitives().0;
-        let (composer, builtins_def, builtins_ty) = TopLevelComposer::new(vec![(
-            "output_int".into(),
-            FunSignature {
-                args: vec![FuncArg {
-                    name: "x".into(),
-                    ty: primitive.int32,
-                    default_value: None,
-                }],
-                ret: primitive.none,
-                vars: HashMap::new(),
-            },
-        )]);
+        let mut builtins = vec![];
+        if isa == Isa::RiscV {
+            builtins.push((
+                "now_mu".into(),
+                FunSignature {
+                    args: vec![],
+                    ret: primitive.int64,
+                    vars: HashMap::new(),
+                },
+                Arc::new(GenCall::new(Box::new(
+                    |ctx, _, fun, args| {
+                        unimplemented!();
+                    }
+                )))
+            ));
+            builtins.push((
+                "at_mu".into(),
+                FunSignature {
+                    args: vec![FuncArg {
+                        name: "t".into(),
+                        ty: primitive.int64,
+                        default_value: None,
+                    }],
+                    ret: primitive.none,
+                    vars: HashMap::new(),
+                },
+                Arc::new(GenCall::new(Box::new(
+                    |ctx, _, fun, args| {
+                        unimplemented!();
+                    }
+                )))
+            ));
+            builtins.push((
+                "delay_mu".into(),
+                FunSignature {
+                    args: vec![FuncArg {
+                        name: "dt".into(),
+                        ty: primitive.int64,
+                        default_value: None,
+                    }],
+                    ret: primitive.none,
+                    vars: HashMap::new(),
+                },
+                Arc::new(GenCall::new(Box::new(
+                    |ctx, _, fun, args| {
+                        unimplemented!();
+                    }
+                )))
+            ));
+        }
+        let (composer, builtins_def, builtins_ty) = TopLevelComposer::new(builtins);
         Ok(Nac3 {
             isa,
             primitive,

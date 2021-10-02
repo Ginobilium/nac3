@@ -1,3 +1,8 @@
+@extern
+def output_asciiart(x: int32):
+    ...
+
+
 def run() -> int32:
     minX = -2.0
     maxX = 1.0
