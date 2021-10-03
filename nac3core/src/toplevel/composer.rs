@@ -894,9 +894,11 @@ impl TopLevelComposer {
                                     .node
                                     .annotation
                                     .as_ref()
-                                    .ok_or_else(|| {
-                                        "function parameter type annotation needed".to_string()
-                                    })?
+                                    .ok_or_else(|| format!(
+                                        "function parameter `{}` at {} need type annotation",
+                                        x.node.arg,
+                                        x.location
+                                    ))?
                                     .as_ref();
 
                                 let type_annotation = parse_ast_to_type_annotation_kinds(
@@ -1098,7 +1100,11 @@ impl TopLevelComposer {
                                         .node
                                         .annotation
                                         .as_ref()
-                                        .ok_or_else(|| "type annotation needed".to_string())?
+                                        .ok_or_else(|| format!(
+                                            "type annotation for `{}` at {} needed",
+                                            x.node.arg,
+                                            x.location
+                                        ))?
                                         .as_ref();
                                     parse_ast_to_type_annotation_kinds(
                                         class_resolver.as_ref(),
