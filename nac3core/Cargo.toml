@@ -17,3 +17,4 @@ rayon = "1.5.1"
 [dev-dependencies]
 test-case = "1.2.0"
 indoc = "1.0"
+insta = "1.5"

@@ -1,0 +1,18 @@
+---
+source: nac3core/src/toplevel/test.rs
+expression: res_vec
+
+---
+[
+    "10: Class {\nname: \"A\",\ndef_id: DefinitionId(10),\nancestors: [CustomClassKind { id: DefinitionId(10), params: [] }],\nfields: [(\"a\", \"class0\")],\nmethods: [(\"__init__\", \"fn[[], class4]\", DefinitionId(11)), (\"fun\", \"fn[[b=class14], class4]\", DefinitionId(12)), (\"foo\", \"fn[[a=tvar3, b=tvar4], class4]\", DefinitionId(13))],\ntype_vars: []\n}\n",
+    "11: Function {\nname: \"A.__init__\",\nsig: \"fn[[], class4]\",\nvar_id: []\n}\n",
+    "12: Function {\nname: \"A.fun\",\nsig: \"fn[[b=class14], class4]\",\nvar_id: []\n}\n",
+    "13: Function {\nname: \"A.foo\",\nsig: \"fn[[a=tvar3, b=tvar4], class4]\",\nvar_id: [3, 4]\n}\n",
+    "14: Class {\nname: \"B\",\ndef_id: DefinitionId(14),\nancestors: [CustomClassKind { id: DefinitionId(14), params: [] }, CustomClassKind { id: DefinitionId(16), params: [] }, CustomClassKind { id: DefinitionId(10), params: [] }],\nfields: [(\"a\", \"class0\")],\nmethods: [(\"__init__\", \"fn[[], class4]\", DefinitionId(15)), (\"fun\", \"fn[[b=class14], class4]\", DefinitionId(18)), (\"foo\", \"fn[[a=tvar3, b=tvar4], class4]\", DefinitionId(13))],\ntype_vars: []\n}\n",
+    "15: Function {\nname: \"B.__init__\",\nsig: \"fn[[], class4]\",\nvar_id: []\n}\n",
+    "16: Class {\nname: \"C\",\ndef_id: DefinitionId(16),\nancestors: [CustomClassKind { id: DefinitionId(16), params: [] }, CustomClassKind { id: DefinitionId(10), params: [] }],\nfields: [(\"a\", \"class0\")],\nmethods: [(\"__init__\", \"fn[[], class4]\", DefinitionId(17)), (\"fun\", \"fn[[b=class14], class4]\", DefinitionId(18)), (\"foo\", \"fn[[a=tvar3, b=tvar4], class4]\", DefinitionId(13))],\ntype_vars: []\n}\n",
+    "17: Function {\nname: \"C.__init__\",\nsig: \"fn[[], class4]\",\nvar_id: []\n}\n",
+    "18: Function {\nname: \"C.fun\",\nsig: \"fn[[b=class14], class4]\",\nvar_id: []\n}\n",
+    "19: Function {\nname: \"foo\",\nsig: \"fn[[a=class10], class4]\",\nvar_id: []\n}\n",
+    "20: Function {\nname: \"ff\",\nsig: \"fn[[a=tvar3], tvar4]\",\nvar_id: [3, 4]\n}\n",
+]
