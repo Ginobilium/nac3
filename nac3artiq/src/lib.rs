@@ -200,7 +200,7 @@ fn timeline_builtins(primitive: &PrimitiveStore) -> Vec<(StrRef, FunSignature, A
         },
         Arc::new(GenCall::new(Box::new(
             |ctx, _, _, args| {
-                let i32_type = ctx.ctx.i64_type();
+                let i32_type = ctx.ctx.i32_type();
                 let i64_type = ctx.ctx.i64_type();
                 let i64_32 = i64_type.const_int(32, false).into();
                 if let BasicValueEnum::IntValue(time) = args[0].1 {
@@ -234,7 +234,7 @@ fn timeline_builtins(primitive: &PrimitiveStore) -> Vec<(StrRef, FunSignature, A
         },
         Arc::new(GenCall::new(Box::new(
             |ctx, _, _, args| {
-                let i32_type = ctx.ctx.i64_type();
+                let i32_type = ctx.ctx.i32_type();
                 let i64_type = ctx.ctx.i64_type();
                 let i64_32 = i64_type.const_int(32, false).into();
                 let now = ctx.module.get_global("now").unwrap_or_else(|| ctx.module.add_global(i64_type, None, "now"));
