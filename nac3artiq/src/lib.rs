@@ -5,7 +5,7 @@ use std::process::Command;
 use std::sync::Arc;
 
 use inkwell::{
-    AddressSpace,
+    AddressSpace, AtomicOrdering,
     values::BasicValueEnum,
     passes::{PassManager, PassManagerBuilder},
     targets::*,
@@ -164,8 +164,6 @@ impl Nac3 {
 }
 
 // ARTIQ timeline control with now-pinning optimization.
-// This is a bit of mess due to endianness issues.
-// Modify gateware to make `now` little-endian, since we don't have OpenRISC anymore?
 fn timeline_builtins(primitive: &PrimitiveStore) -> Vec<(StrRef, FunSignature, Arc<GenCall>)> {
     vec![(
         "now_mu".into(),
@@ -212,8 +210,8 @@ fn timeline_builtins(primitive: &PrimitiveStore) -> Vec<(StrRef, FunSignature, A
                     let now_hiptr = ctx.builder.build_bitcast(now, i32_type.ptr_type(AddressSpace::Generic), "now_bitcast");
                     if let BasicValueEnum::PointerValue(now_hiptr) = now_hiptr {
                         let now_loptr = unsafe { ctx.builder.build_gep(now_hiptr, &[i32_type.const_int(1, false).into()], "now_gep") };
-                        ctx.builder.build_store(now_hiptr, time_hi);
-                        ctx.builder.build_store(now_loptr, time_lo);
+                        ctx.builder.build_store(now_hiptr, time_hi).set_atomic_ordering(AtomicOrdering::SequentiallyConsistent).unwrap();
+                        ctx.builder.build_store(now_loptr, time_lo).set_atomic_ordering(AtomicOrdering::SequentiallyConsistent).unwrap();
                         None
                     } else {
                         unreachable!();
@@ -251,8 +249,8 @@ fn timeline_builtins(primitive: &PrimitiveStore) -> Vec<(StrRef, FunSignature, A
                     let now_hiptr = ctx.builder.build_bitcast(now, i32_type.ptr_type(AddressSpace::Generic), "now_bitcast");
                     if let BasicValueEnum::PointerValue(now_hiptr) = now_hiptr {
                         let now_loptr = unsafe { ctx.builder.build_gep(now_hiptr, &[i32_type.const_int(1, false).into()], "now_gep") };
-                        ctx.builder.build_store(now_hiptr, time_hi);
-                        ctx.builder.build_store(now_loptr, time_lo);
+                        ctx.builder.build_store(now_hiptr, time_hi).set_atomic_ordering(AtomicOrdering::SequentiallyConsistent).unwrap();
+                        ctx.builder.build_store(now_loptr, time_lo).set_atomic_ordering(AtomicOrdering::SequentiallyConsistent).unwrap();
                         None
                     } else {
                         unreachable!();
