@@ -1615,14 +1615,21 @@ impl TopLevelComposer {
                             inferencer.check_block(fun_body.as_slice(), &mut identifiers)?;
 
                         if !self.unifier.unioned(inst_ret, self.primitives_ty.none) && !returned {
+                            let def_ast_list = &self.definition_ast_list;
                             let ret_str = self.unifier.stringify(
                                 inst_ret,
-                                &mut |id| format!("class{}", id),
+                                &mut |id| {
+                                    if let TopLevelDef::Class { name, .. } = &*def_ast_list[id].0.read() {
+                                        name.to_string()
+                                    } else {
+                                        unreachable!("must be class id here")
+                                    }
+                                },
                                 &mut |id| format!("tvar{}", id),
                             );
                             return Err(format!(
-                                "expected return type of {} in function `{}`",
-                                ret_str, name
+                                "expected return type of `{}` in function `{}` at {}",
+                                ret_str, name, ast.as_ref().unwrap().location
                             ));
                         }
 
