@@ -1,6 +1,7 @@
 use crate::{
+    codegen::CodeGenContext,
     location::Location,
-    symbol_resolver::{SymbolResolver, SymbolValue},
+    symbol_resolver::SymbolResolver,
     toplevel::DefinitionId,
     typecheck::{
         type_inferencer::PrimitiveStore,
@@ -34,7 +35,7 @@ impl ResolverInternal {
 struct Resolver(Arc<ResolverInternal>);
 
 impl SymbolResolver for Resolver {
-    fn get_symbol_type(&self, _: &mut Unifier, _: &PrimitiveStore, str: StrRef) -> Option<Type> {
+    fn get_symbol_type(&self, _: &mut Unifier, _: &[Arc<RwLock<TopLevelDef>>], _: &PrimitiveStore, str: StrRef) -> Option<Type> {
         let ret = self.0.id_to_type.lock().get(&str).cloned();
         if ret.is_none() {
             // println!("unknown here resolver {}", str);
@@ -42,7 +43,11 @@ impl SymbolResolver for Resolver {
         ret
     }
 
-    fn get_symbol_value(&self, _: StrRef) -> Option<SymbolValue> {
+    fn get_symbol_value<'ctx, 'a>(
+        &self,
+        _: StrRef,
+        _: &mut CodeGenContext<'ctx, 'a>,
+    ) -> Option<BasicValueEnum<'ctx>> {
         unimplemented!()
     }
 

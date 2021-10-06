@@ -57,7 +57,17 @@ impl<'a> Inferencer<'a> {
         match &expr.node {
             ExprKind::Name { id, .. } => {
                 if !defined_identifiers.contains(id) {
-                    if self.function_data.resolver.get_identifier_def(*id).is_some() {
+                    if self
+                        .function_data
+                        .resolver
+                        .get_symbol_type(
+                            self.unifier,
+                            &self.top_level.definitions.read(),
+                            self.primitives,
+                            *id,
+                        )
+                        .is_some()
+                    {
                         defined_identifiers.insert(*id);
                     } else {
                         return Err(format!(

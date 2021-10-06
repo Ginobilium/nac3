@@ -108,7 +108,7 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
         fun: (&FunSignature, DefinitionId),
         params: Vec<(Option<StrRef>, BasicValueEnum<'ctx>)>,
     ) -> Option<BasicValueEnum<'ctx>> {
-        let definition = self.top_level.definitions.read().get(fun.1.0).cloned().unwrap();
+        let definition = self.top_level.definitions.read().get(fun.1 .0).cloned().unwrap();
         let mut task = None;
         let key = self.get_subst_key(obj.map(|a| a.0), fun.0, None);
         let symbol = {
@@ -283,7 +283,8 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
                 } else {
                     unreachable!();
                 };
-                ty.const_int(v.try_into().unwrap(), false).into()
+                let val: i64 = v.try_into().unwrap();
+                ty.const_int(val as u64, false).into()
             }
             Constant::Float(v) => {
                 assert!(self.unifier.unioned(ty, self.primitives.float));
@@ -386,8 +387,13 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
                 self.gen_const(value, ty)
             }
             ExprKind::Name { id, .. } => {
-                let ptr = self.var_assignment.get(id).unwrap();
-                self.builder.build_load(*ptr, "load")
+                let ptr = self.var_assignment.get(id);
+                if let Some(ptr) = ptr {
+                    self.builder.build_load(*ptr, "load")
+                } else {
+                    let resolver = self.resolver.clone();
+                    resolver.get_symbol_value(*id, self).unwrap()
+                }
             }
             ExprKind::List { elts, .. } => {
                 // this shall be optimized later for constant primitive lists...
@@ -647,10 +653,7 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
                 let mut params =
                     args.iter().map(|arg| (None, self.gen_expr(arg).unwrap())).collect_vec();
                 let kw_iter = keywords.iter().map(|kw| {
-                    (
-                        Some(*kw.node.arg.as_ref().unwrap()),
-                        self.gen_expr(&kw.node.value).unwrap(),
-                    )
+                    (Some(*kw.node.arg.as_ref().unwrap()), self.gen_expr(&kw.node.value).unwrap())
                 });
                 params.extend(kw_iter);
                 let call = self.calls.get(&expr.location.into());

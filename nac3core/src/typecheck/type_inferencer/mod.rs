@@ -111,32 +111,40 @@ impl<'a> fold::Fold<()> for Inferencer<'a> {
                     if let ast::StmtKind::Assign { targets, value, .. } = node.node {
                         let value = self.fold_expr(*value)?;
                         let value_ty = value.custom.unwrap();
-                        let targets: Result<Vec<_>, _> = targets.into_iter().map(|target| {
-                            if let ast::ExprKind::Name { id, ctx } = target.node {
-                                self.defined_identifiers.insert(id);
-                                let target_ty = if let Some(ty) = self.variable_mapping.get(&id) {
-                                    *ty
+                        let targets: Result<Vec<_>, _> = targets
+                            .into_iter()
+                            .map(|target| {
+                                if let ast::ExprKind::Name { id, ctx } = target.node {
+                                    self.defined_identifiers.insert(id);
+                                    let target_ty = if let Some(ty) = self.variable_mapping.get(&id)
+                                    {
+                                        *ty
+                                    } else {
+                                        let unifier = &mut self.unifier;
+                                        self.function_data
+                                            .resolver
+                                            .get_symbol_type(
+                                                unifier,
+                                                &self.top_level.definitions.read(),
+                                                self.primitives,
+                                                id,
+                                            )
+                                            .unwrap_or_else(|| {
+                                                self.variable_mapping.insert(id, value_ty);
+                                                value_ty
+                                            })
+                                    };
+                                    let location = target.location;
+                                    self.unifier.unify(value_ty, target_ty).map(|_| Located {
+                                        location,
+                                        node: ast::ExprKind::Name { id, ctx },
+                                        custom: Some(target_ty),
+                                    })
                                 } else {
-                                    let unifier = &mut self.unifier;
-                                    self
-                                        .function_data
-                                        .resolver
-                                        .get_symbol_type(unifier, self.primitives, id)
-                                        .unwrap_or_else(|| {
-                                            self.variable_mapping.insert(id, value_ty);
-                                            value_ty
-                                        })
-                                };
-                                let location = target.location;
-                                self.unifier.unify(value_ty, target_ty).map(|_| Located {
-                                    location,
-                                    node: ast::ExprKind::Name { id, ctx },
-                                    custom: Some(target_ty)
-                                })
-                            } else {
-                                unreachable!()
-                            }
-                        }).collect();
+                                    unreachable!()
+                                }
+                            })
+                            .collect();
                         let targets = targets?;
                         return Ok(Located {
                             location: node.location,
@@ -145,7 +153,7 @@ impl<'a> fold::Fold<()> for Inferencer<'a> {
                                 value: Box::new(value),
                                 type_comment: None,
                             },
-                            custom: None
+                            custom: None,
                         });
                     } else {
                         unreachable!()
@@ -207,7 +215,17 @@ impl<'a> fold::Fold<()> for Inferencer<'a> {
             ast::ExprKind::Constant { value, .. } => Some(self.infer_constant(value)?),
             ast::ExprKind::Name { id, .. } => {
                 if !self.defined_identifiers.contains(id) {
-                    if self.function_data.resolver.get_identifier_def(*id).is_some() {
+                    if self
+                        .function_data
+                        .resolver
+                        .get_symbol_type(
+                            self.unifier,
+                            &self.top_level.definitions.read(),
+                            self.primitives,
+                            *id,
+                        )
+                        .is_some()
+                    {
                         self.defined_identifiers.insert(*id);
                     } else {
                         return Err(format!(
@@ -359,11 +377,8 @@ impl<'a> Inferencer<'a> {
                 defined_identifiers.insert(*name);
             }
         }
-        let fn_args: Vec<_> = args
-            .args
-            .iter()
-            .map(|v| (v.node.arg, self.unifier.get_fresh_var().0))
-            .collect();
+        let fn_args: Vec<_> =
+            args.args.iter().map(|v| (v.node.arg, self.unifier.get_fresh_var().0)).collect();
         let mut variable_mapping = self.variable_mapping.clone();
         variable_mapping.extend(fn_args.iter().cloned());
         let ret = self.unifier.get_fresh_var().0;
@@ -596,7 +611,7 @@ impl<'a> Inferencer<'a> {
             Ok(self
                 .function_data
                 .resolver
-                .get_symbol_type(unifier, self.primitives, id)
+                .get_symbol_type(unifier, &self.top_level.definitions.read(), self.primitives, id)
                 .unwrap_or_else(|| {
                     let ty = unifier.get_fresh_var().0;
                     variable_mapping.insert(id, ty);

@@ -1,7 +1,7 @@
 use crate::{
-    codegen::{CodeGenTask, WithCall, WorkerRegistry},
+    codegen::{CodeGenTask, WithCall, WorkerRegistry, CodeGenContext},
     location::Location,
-    symbol_resolver::{SymbolResolver, SymbolValue},
+    symbol_resolver::SymbolResolver,
     toplevel::{
         composer::TopLevelComposer, DefinitionId, FunInstance, TopLevelContext, TopLevelDef,
     },
@@ -11,6 +11,7 @@ use crate::{
     },
 };
 use indoc::indoc;
+use inkwell::values::BasicValueEnum;
 use parking_lot::RwLock;
 use rustpython_parser::{
     ast::{fold::Fold, StrRef},
@@ -33,11 +34,11 @@ impl Resolver {
 }
 
 impl SymbolResolver for Resolver {
-    fn get_symbol_type(&self, _: &mut Unifier, _: &PrimitiveStore, str: StrRef) -> Option<Type> {
+    fn get_symbol_type(&self, _: &mut Unifier, _: &[Arc<RwLock<TopLevelDef>>], _: &PrimitiveStore, str: StrRef) -> Option<Type> {
         self.id_to_type.get(&str).cloned()
     }
 
-    fn get_symbol_value(&self, _: StrRef) -> Option<SymbolValue> {
+    fn get_symbol_value<'ctx, 'a>(&self, _: StrRef, _: &mut CodeGenContext<'ctx, 'a>) -> Option<BasicValueEnum<'ctx>> {
         unimplemented!()
     }
 

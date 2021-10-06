@@ -1,12 +1,10 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::Path;
 use std::process::Command;
 use std::sync::Arc;
 
 use inkwell::{
-    AddressSpace, AtomicOrdering,
-    values::BasicValueEnum,
     passes::{PassManager, PassManagerBuilder},
     targets::*,
     OptimizationLevel,
@@ -18,13 +16,13 @@ use rustpython_parser::{
     parser,
 };
 
-use parking_lot::RwLock;
+use parking_lot::{RwLock, Mutex};
 
 use nac3core::{
     codegen::{CodeGenTask, WithCall, WorkerRegistry},
     symbol_resolver::SymbolResolver,
-    toplevel::{composer::TopLevelComposer, TopLevelContext, TopLevelDef, GenCall},
-    typecheck::typedef::{FunSignature, FuncArg},
+    toplevel::{composer::TopLevelComposer, TopLevelContext, TopLevelDef},
+    typecheck::typedef::FunSignature,
 };
 use nac3core::{
     toplevel::DefinitionId,
@@ -33,12 +31,24 @@ use nac3core::{
 
 use crate::symbol_resolver::Resolver;
 
+mod builtins;
 mod symbol_resolver;
 
 #[derive(PartialEq, Clone, Copy)]
 enum Isa {
     RiscV,
     CortexA9,
+}
+
+#[derive(Clone)]
+pub struct PrimitivePythonId {
+    int: u64,
+    int32: u64,
+    int64: u64,
+    float: u64,
+    bool: u64,
+    list: u64,
+    tuple: u64,
 }
 
 // TopLevelComposer is unsendable as it holds the unification table, which is
@@ -54,6 +64,8 @@ struct Nac3 {
     composer: TopLevelComposer,
     top_level: Option<Arc<TopLevelContext>>,
     to_be_registered: Vec<PyObject>,
+    primitive_ids: PrimitivePythonId,
+    global_value_ids: Arc<Mutex<HashSet<u64>>>,
 }
 
 impl Nac3 {
@@ -81,16 +93,18 @@ impl Nac3 {
         let source = fs::read_to_string(source_file).map_err(|e| {
             exceptions::PyIOError::new_err(format!("failed to read input file: {}", e))
         })?;
-        let parser_result = parser::parse_program(&source).map_err(|e| {
-            exceptions::PySyntaxError::new_err(format!("parse error: {}", e))
-        })?;
+        let parser_result = parser::parse_program(&source)
+            .map_err(|e| exceptions::PySyntaxError::new_err(format!("parse error: {}", e)))?;
         let resolver = Arc::new(Box::new(Resolver {
             id_to_type: self.builtins_ty.clone().into(),
             id_to_def: self.builtins_def.clone().into(),
             pyid_to_def: self.pyid_to_def.clone(),
             pyid_to_type: self.pyid_to_type.clone(),
+            primitive_ids: self.primitive_ids.clone(),
+            global_value_ids: self.global_value_ids.clone(),
             class_names: Default::default(),
             name_to_pyid: name_to_pyid.clone(),
+            module: obj,
         }) as Box<dyn SymbolResolver + Send + Sync>);
         let mut name_to_def = HashMap::new();
         let mut name_to_type = HashMap::new();
@@ -163,128 +177,76 @@ impl Nac3 {
     }
 }
 
-// ARTIQ timeline control with now-pinning optimization.
-fn timeline_builtins(primitive: &PrimitiveStore) -> Vec<(StrRef, FunSignature, Arc<GenCall>)> {
-    vec![(
-        "now_mu".into(),
-        FunSignature {
-            args: vec![],
-            ret: primitive.int64,
-            vars: HashMap::new(),
-        },
-        Arc::new(GenCall::new(Box::new(
-            |ctx, _, _, _| {
-                let i64_type = ctx.ctx.i64_type();
-                let now = ctx.module.get_global("now").unwrap_or_else(|| ctx.module.add_global(i64_type, None, "now"));
-                let now_raw = ctx.builder.build_load(now.as_pointer_value(), "now");
-                if let BasicValueEnum::IntValue(now_raw) = now_raw {
-                    let i64_32 = i64_type.const_int(32, false).into();
-                    let now_lo = ctx.builder.build_left_shift(now_raw, i64_32, "now_shl");
-                    let now_hi = ctx.builder.build_right_shift(now_raw, i64_32, false, "now_lshr").into();
-                    Some(ctx.builder.build_or(now_lo, now_hi, "now_or").into())
-                } else {
-                    unreachable!()
-                }
-            }
-        )))
-    ),(
-        "at_mu".into(),
-        FunSignature {
-            args: vec![FuncArg {
-                name: "t".into(),
-                ty: primitive.int64,
-                default_value: None,
-            }],
-            ret: primitive.none,
-            vars: HashMap::new(),
-        },
-        Arc::new(GenCall::new(Box::new(
-            |ctx, _, _, args| {
-                let i32_type = ctx.ctx.i32_type();
-                let i64_type = ctx.ctx.i64_type();
-                let i64_32 = i64_type.const_int(32, false).into();
-                if let BasicValueEnum::IntValue(time) = args[0].1 {
-                    let time_hi = ctx.builder.build_int_truncate(ctx.builder.build_right_shift(time, i64_32, false, "now_lshr"), i32_type, "now_trunc");
-                    let time_lo = ctx.builder.build_int_truncate(time, i32_type, "now_trunc");
-                    let now = ctx.module.get_global("now").unwrap_or_else(|| ctx.module.add_global(i64_type, None, "now"));
-                    let now_hiptr = ctx.builder.build_bitcast(now, i32_type.ptr_type(AddressSpace::Generic), "now_bitcast");
-                    if let BasicValueEnum::PointerValue(now_hiptr) = now_hiptr {
-                        let now_loptr = unsafe { ctx.builder.build_gep(now_hiptr, &[i32_type.const_int(1, false).into()], "now_gep") };
-                        ctx.builder.build_store(now_hiptr, time_hi).set_atomic_ordering(AtomicOrdering::SequentiallyConsistent).unwrap();
-                        ctx.builder.build_store(now_loptr, time_lo).set_atomic_ordering(AtomicOrdering::SequentiallyConsistent).unwrap();
-                        None
-                    } else {
-                        unreachable!();
-                    }
-                } else {
-                    unreachable!();
-                }
-            }
-        )))
-    ),(
-        "delay_mu".into(),
-        FunSignature {
-            args: vec![FuncArg {
-                name: "dt".into(),
-                ty: primitive.int64,
-                default_value: None,
-            }],
-            ret: primitive.none,
-            vars: HashMap::new(),
-        },
-        Arc::new(GenCall::new(Box::new(
-            |ctx, _, _, args| {
-                let i32_type = ctx.ctx.i32_type();
-                let i64_type = ctx.ctx.i64_type();
-                let i64_32 = i64_type.const_int(32, false).into();
-                let now = ctx.module.get_global("now").unwrap_or_else(|| ctx.module.add_global(i64_type, None, "now"));
-                let now_raw = ctx.builder.build_load(now.as_pointer_value(), "now");
-                if let (BasicValueEnum::IntValue(now_raw), BasicValueEnum::IntValue(dt)) = (now_raw, args[0].1) {
-                    let now_lo = ctx.builder.build_left_shift(now_raw, i64_32, "now_shl");
-                    let now_hi = ctx.builder.build_right_shift(now_raw, i64_32, false, "now_lshr").into();
-                    let now_val = ctx.builder.build_or(now_lo, now_hi, "now_or");
-                    let time = ctx.builder.build_int_add(now_val, dt, "now_add");
-                    let time_hi = ctx.builder.build_int_truncate(ctx.builder.build_right_shift(time, i64_32, false, "now_lshr"), i32_type, "now_trunc");
-                    let time_lo = ctx.builder.build_int_truncate(time, i32_type, "now_trunc");
-                    let now_hiptr = ctx.builder.build_bitcast(now, i32_type.ptr_type(AddressSpace::Generic), "now_bitcast");
-                    if let BasicValueEnum::PointerValue(now_hiptr) = now_hiptr {
-                        let now_loptr = unsafe { ctx.builder.build_gep(now_hiptr, &[i32_type.const_int(1, false).into()], "now_gep") };
-                        ctx.builder.build_store(now_hiptr, time_hi).set_atomic_ordering(AtomicOrdering::SequentiallyConsistent).unwrap();
-                        ctx.builder.build_store(now_loptr, time_lo).set_atomic_ordering(AtomicOrdering::SequentiallyConsistent).unwrap();
-                        None
-                    } else {
-                        unreachable!();
-                    }
-                } else {
-                    unreachable!();
-                }
-            }
-        )))
-    )]
-}
-
 #[pymethods]
 impl Nac3 {
     #[new]
-    fn new(isa: &str) -> PyResult<Self> {
+    fn new(isa: &str, py: Python) -> PyResult<Self> {
         let isa = match isa {
             "riscv" => Isa::RiscV,
             "cortexa9" => Isa::CortexA9,
             _ => return Err(exceptions::PyValueError::new_err("invalid ISA")),
         };
         let primitive: PrimitiveStore = TopLevelComposer::make_primitives().0;
-        let builtins = if isa == Isa::RiscV { timeline_builtins(&primitive) } else { vec![] };
+        let builtins = if isa == Isa::RiscV {
+            builtins::timeline_builtins(&primitive)
+        } else {
+            vec![]
+        };
         let (composer, builtins_def, builtins_ty) = TopLevelComposer::new(builtins);
+
+        let builtins_mod = PyModule::import(py, "builtins").unwrap();
+        let id_fn = builtins_mod.getattr("id").unwrap();
+        let numpy_mod = PyModule::import(py, "numpy").unwrap();
+        let primitive_ids = PrimitivePythonId {
+            int: id_fn
+                .call1((builtins_mod.getattr("int").unwrap(),))
+                .unwrap()
+                .extract()
+                .unwrap(),
+            int32: id_fn
+                .call1((numpy_mod.getattr("int32").unwrap(),))
+                .unwrap()
+                .extract()
+                .unwrap(),
+            int64: id_fn
+                .call1((numpy_mod.getattr("int64").unwrap(),))
+                .unwrap()
+                .extract()
+                .unwrap(),
+            bool: id_fn
+                .call1((builtins_mod.getattr("bool").unwrap(),))
+                .unwrap()
+                .extract()
+                .unwrap(),
+            float: id_fn
+                .call1((builtins_mod.getattr("float").unwrap(),))
+                .unwrap()
+                .extract()
+                .unwrap(),
+            list: id_fn
+                .call1((builtins_mod.getattr("list").unwrap(),))
+                .unwrap()
+                .extract()
+                .unwrap(),
+            tuple: id_fn
+                .call1((builtins_mod.getattr("tuple").unwrap(),))
+                .unwrap()
+                .extract()
+                .unwrap(),
+        };
+
         Ok(Nac3 {
             isa,
             primitive,
             builtins_ty,
             builtins_def,
             composer,
+            primitive_ids,
             top_level: None,
             pyid_to_def: Default::default(),
             pyid_to_type: Default::default(),
             to_be_registered: Default::default(),
+            global_value_ids: Default::default(),
         })
     }
 
@@ -301,7 +263,7 @@ impl Nac3 {
         Ok(())
     }
 
-    fn compile_method(&mut self, class: u64, method_name: String) -> PyResult<()> {
+    fn compile_method(&mut self, class: u64, method_name: String, py: Python) -> PyResult<()> {
         let top_level = self.top_level.as_ref().unwrap();
         let module_resolver;
         let instance = {
@@ -356,7 +318,7 @@ impl Nac3 {
         let isa = self.isa;
         let f = Arc::new(WithCall::new(Box::new(move |module| {
             let builder = PassManagerBuilder::create();
-            builder.set_optimization_level(OptimizationLevel::Aggressive);
+            builder.set_optimization_level(OptimizationLevel::Default);
             let passes = PassManager::create(());
             builder.populate_module_pass_manager(&passes);
             passes.run_on(module);
@@ -390,9 +352,13 @@ impl Nac3 {
         })));
         let thread_names: Vec<String> = (0..4).map(|i| format!("module{}", i)).collect();
         let threads: Vec<_> = thread_names.iter().map(|s| s.as_str()).collect();
-        let (registry, handles) = WorkerRegistry::create_workers(&threads, top_level.clone(), f);
-        registry.add_task(task);
-        registry.wait_tasks_complete(handles);
+
+        py.allow_threads(|| {
+            let (registry, handles) =
+                WorkerRegistry::create_workers(&threads, top_level.clone(), f);
+            registry.add_task(task);
+            registry.wait_tasks_complete(handles);
+        });
 
         let mut linker_args = vec![
             "-shared".to_string(),

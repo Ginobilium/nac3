@@ -62,7 +62,7 @@ pub fn parse_ast_to_type_annotation_kinds<T>(
                     ));
                 }
                 Ok(TypeAnnotation::CustomClassKind { id: obj_id, params: vec![] })
-            } else if let Some(ty) = resolver.get_symbol_type(unifier, primitives, *id) {
+            } else if let Some(ty) = resolver.get_symbol_type(unifier, top_level_defs, primitives, *id) {
                 if let TypeEnum::TVar { .. } = unifier.get_ty(ty).as_ref() {
                     Ok(TypeAnnotation::TypeVarKind(ty))
                 } else {

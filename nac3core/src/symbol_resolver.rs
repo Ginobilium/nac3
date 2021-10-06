@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::fmt::Debug;
 use std::{cell::RefCell, sync::Arc};
 
-use crate::toplevel::{DefinitionId, TopLevelDef};
+use crate::{codegen::CodeGenContext, toplevel::{DefinitionId, TopLevelDef}};
 use crate::typecheck::{
     type_inferencer::PrimitiveStore,
     typedef::{Type, Unifier},
@@ -11,6 +11,7 @@ use crate::{location::Location, typecheck::typedef::TypeEnum};
 use itertools::{chain, izip};
 use parking_lot::RwLock;
 use rustpython_parser::ast::{Expr, StrRef};
+use inkwell::values::BasicValueEnum;
 
 #[derive(Clone, PartialEq)]
 pub enum SymbolValue {
@@ -28,12 +29,13 @@ pub trait SymbolResolver {
     fn get_symbol_type(
         &self,
         unifier: &mut Unifier,
+        top_level_defs: &[Arc<RwLock<TopLevelDef>>],
         primitives: &PrimitiveStore,
         str: StrRef,
     ) -> Option<Type>;
     // get the top-level definition of identifiers
     fn get_identifier_def(&self, str: StrRef) -> Option<DefinitionId>;
-    fn get_symbol_value(&self, str: StrRef) -> Option<SymbolValue>;
+    fn get_symbol_value<'ctx, 'a>(&self, str: StrRef, ctx: &mut CodeGenContext<'ctx, 'a>) -> Option<BasicValueEnum<'ctx>>;
     fn get_symbol_location(&self, str: StrRef) -> Option<Location>;
     // handle function call etc.
 }
@@ -113,7 +115,7 @@ pub fn parse_type_annotation<T>(
                 } else {
                     // it could be a type variable
                     let ty = resolver
-                        .get_symbol_type(unifier, primitives, *id)
+                        .get_symbol_type(unifier, top_level_defs, primitives, *id)
                         .ok_or_else(|| "unknown type variable name".to_owned())?;
                     if let TypeEnum::TVar { .. } = &*unifier.get_ty(ty) {
                         Ok(ty)
