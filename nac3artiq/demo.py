@@ -63,4 +63,4 @@ class Demo:
 
 
 if __name__ == "__main__":
-    Demo().run()
+    run_on_core(Demo().run)
