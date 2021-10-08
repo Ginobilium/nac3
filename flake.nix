@@ -6,7 +6,7 @@
   outputs = { self, nixpkgs }:
     let
       pkgs = import nixpkgs { system = "x86_64-linux"; };
-    in {
+    in rec {
       packages.x86_64-linux = {
         nac3artiq = pkgs.python3Packages.toPythonModule (
           pkgs.rustPlatform.buildRustPackage {
@@ -40,6 +40,10 @@
           clippy
           (python3.withPackages(ps: [ ps.numpy ]))
         ];
+      };
+
+      hydraJobs = {
+        inherit (packages.x86_64-linux) nac3artiq;
       };
   };
 }
