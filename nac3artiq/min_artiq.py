@@ -8,12 +8,16 @@ import nac3artiq
 import device_db
 
 
-__all__ = ["extern", "kernel", "portable", "Core", "TTLOut"]
+__all__ = ["KernelInvariant", "extern", "kernel", "portable", "Core", "TTLOut"]
 
 
 nac3 = nac3artiq.NAC3(device_db.device_db["core"]["arguments"]["target"])
 allow_module_registration = True
 registered_ids = set()
+
+
+def KernelInvariant(t):
+    return t
 
 
 def register_module_of(obj):
