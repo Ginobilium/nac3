@@ -21,18 +21,17 @@ use parking_lot::{RwLock, Mutex};
 use nac3core::{
     codegen::{CodeGenTask, WithCall, WorkerRegistry},
     symbol_resolver::SymbolResolver,
-    toplevel::{composer::TopLevelComposer, TopLevelContext, TopLevelDef},
-    typecheck::typedef::FunSignature,
-};
-use nac3core::{
-    toplevel::DefinitionId,
+    toplevel::{composer::TopLevelComposer, TopLevelContext, TopLevelDef, DefinitionId, GenCall},
+    typecheck::typedef::{FunSignature, FuncArg},
     typecheck::{type_inferencer::PrimitiveStore, typedef::Type},
 };
 
 use crate::symbol_resolver::Resolver;
 
-mod builtins;
+mod timeline;
 mod symbol_resolver;
+
+use timeline::TimeFns;
 
 #[derive(PartialEq, Clone, Copy)]
 enum Isa {
@@ -186,12 +185,48 @@ impl Nac3 {
             "cortexa9" => Isa::CortexA9,
             _ => return Err(exceptions::PyValueError::new_err("invalid ISA")),
         };
-        let primitive: PrimitiveStore = TopLevelComposer::make_primitives().0;
-        let builtins = if isa == Isa::RiscV {
-            builtins::timeline_builtins(&primitive)
-        } else {
-            vec![]
+        let time_fns: &(dyn TimeFns + Sync) = match isa {
+            Isa::RiscV => &timeline::NOW_PINNING_TIME_FNS,
+            Isa::CortexA9 => &timeline::EXTERN_TIME_FNS,
         };
+        let primitive: PrimitiveStore = TopLevelComposer::make_primitives().0;
+        let builtins = vec![
+            (
+                "now_mu".into(),
+                FunSignature {
+                    args: vec![],
+                    ret: primitive.int64,
+                    vars: HashMap::new(),
+                },
+                Arc::new(GenCall::new(Box::new(move |ctx, _, _, _| Some(time_fns.emit_now_mu(ctx))))),
+            ),
+            (
+                "at_mu".into(),
+                FunSignature {
+                    args: vec![FuncArg {
+                        name: "t".into(),
+                        ty: primitive.int64,
+                        default_value: None,
+                    }],
+                    ret: primitive.none,
+                    vars: HashMap::new(),
+                },
+                Arc::new(GenCall::new(Box::new(move |ctx, _, _, args| { time_fns.emit_at_mu(ctx, args[0].1); None }))),
+            ),
+            (
+                "delay_mu".into(),
+                FunSignature {
+                    args: vec![FuncArg {
+                        name: "dt".into(),
+                        ty: primitive.int64,
+                        default_value: None,
+                    }],
+                    ret: primitive.none,
+                    vars: HashMap::new(),
+                },
+                Arc::new(GenCall::new(Box::new(move |ctx, _, _, args| { time_fns.emit_delay_mu(ctx, args[0].1); None }))),
+            ),
+        ];
         let (composer, builtins_def, builtins_ty) = TopLevelComposer::new(builtins);
 
         let builtins_mod = PyModule::import(py, "builtins").unwrap();

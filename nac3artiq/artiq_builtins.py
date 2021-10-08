@@ -2,11 +2,6 @@ from numpy import int32, int64
 
 from language import *
 
-
-import device_db
-if device_db.device_db["core"]["arguments"]["target"] == "cortexa9":
-	from artiq_timeline_extern import *
-
 @extern
 def rtio_init():
     raise NotImplementedError("syscall not simulated")
