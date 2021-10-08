@@ -120,32 +120,47 @@ impl Resolver {
                 ..
             } = &*def
             {
-                if type_vars.is_empty() {
-                    let mut fields_ty = HashMap::new();
-                    for method in methods.iter() {
-                        fields_ty.insert(method.0, method.1);
-                    }
-                    for field in fields.iter() {
-                        let name: String = field.0.into();
-                        let field_data = obj.getattr(&name)?;
-                        let ty = self
-                            .get_obj_type(field_data, helper, unifier, defs, primitives)?
-                            .unwrap_or(primitives.none);
-                        if unifier.unify(ty, field.1).is_err() {
-                            // field type mismatch
-                            return Ok(None);
-                        }
-                        fields_ty.insert(field.0, ty);
-                    }
-                    Ok(Some(unifier.add_ty(TypeEnum::TObj {
-                        obj_id: *object_id,
-                        fields: RefCell::new(fields_ty),
-                        params: Default::default(),
-                    })))
-                } else {
-                    // type var is not supported for now
-                    Ok(None)
+                let var_map: HashMap<_, _> = type_vars
+                    .iter()
+                    .map(|var| {
+                        (
+                            if let TypeEnum::TVar { id, .. } = &*unifier.get_ty(*var) {
+                                *id
+                            } else {
+                                unreachable!()
+                            },
+                            unifier.get_fresh_var().0,
+                        )
+                    })
+                    .collect();
+                let mut fields_ty = HashMap::new();
+                for method in methods.iter() {
+                    fields_ty.insert(method.0, method.1);
                 }
+                for field in fields.iter() {
+                    let name: String = field.0.into();
+                    let field_data = obj.getattr(&name)?;
+                    let ty = self
+                        .get_obj_type(field_data, helper, unifier, defs, primitives)?
+                        .unwrap_or(primitives.none);
+                    let field_ty = unifier.subst(field.1, &var_map).unwrap_or(field.1);
+                    if unifier.unify(ty, field_ty).is_err() {
+                        // field type mismatch
+                        return Ok(None);
+                    }
+                    fields_ty.insert(field.0, ty);
+                }
+                for (_, ty) in var_map.iter() {
+                    // must be concrete type
+                    if !unifier.is_concrete(*ty, &[]) {
+                        return Ok(None)
+                    }
+                }
+                Ok(Some(unifier.add_ty(TypeEnum::TObj {
+                    obj_id: *object_id,
+                    fields: RefCell::new(fields_ty),
+                    params: RefCell::new(var_map),
+                })))
             } else {
                 // only object is supported, functions are not supported
                 Ok(None)
