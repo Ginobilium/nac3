@@ -82,6 +82,10 @@ def rtio_input_data(channel: int32) -> int32:
 
 @kernel
 class Core:
+    @portable
+    def __init__(self):
+        pass
+
     def run(self, method, *args, **kwargs):
         global allow_module_registration
         if allow_module_registration:
@@ -106,6 +110,7 @@ class TTLOut:
     channel: int32
     target_o: int32
 
+    @portable
     def __init__(self, channel: int32):
         self.channel = channel
         self.target_o = channel << 8
