@@ -7,7 +7,7 @@ class Demo:
     core: Core
     led: TTLOut
 
-    @portable  # FIXME: why does it still compile if @portable is removed?
+    @portable
     def __init__(self):
         self.core = Core()
         self.led = TTLOut(0)

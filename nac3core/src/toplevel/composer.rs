@@ -419,8 +419,13 @@ impl TopLevelComposer {
                 // we do not push anything to the def list, so we keep track of the index
                 // and then push in the correct order after the for loop
                 let mut class_method_index_offset = 0;
+                let mut contains_constructor = false;
+                let init_id = "__init__".into();
                 for b in body {
                     if let ast::StmtKind::FunctionDef { name: method_name, .. } = &b.node {
+                        if method_name == &init_id {
+                            contains_constructor = true;
+                        }
                         if self.keyword_list.contains(method_name) {
                             return Err("cannot use keyword as a method name".into());
                         }
@@ -484,7 +489,12 @@ impl TopLevelComposer {
                     self.definition_ast_list.push((def, Some(ast)));
                 }
 
-                Ok((class_name, DefinitionId(class_def_id), Some(constructor_ty)))
+                let result_ty = if contains_constructor {
+                    Some(constructor_ty)
+                } else {
+                    None
+                };
+                Ok((class_name, DefinitionId(class_def_id), result_ty))
             }
 
             ast::StmtKind::FunctionDef { name, .. } => {
