@@ -286,6 +286,7 @@ impl Nac3 {
     }
 
     fn register_module(&mut self, obj: PyObject) {
+        // Delay registration until all referenced variables are supposed to exist on the CPython side
         self.to_be_registered.push(obj);
     }
 
