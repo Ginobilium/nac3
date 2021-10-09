@@ -7,20 +7,29 @@ class Demo:
     core: Core
     led: TTLOut
 
+    @portable  # FIXME: why does it still compile if @portable is removed?
     def __init__(self):
         self.core = Core()
         self.led = TTLOut(0)
 
     @kernel
-    def main_kernel(self):
+    def run(self):
         self.core.reset()
         while True:
             self.led.pulse_mu(int64(100000000))
             delay_mu(int64(100000000))
 
-    def run(self):
-        self.core.run(self.main_kernel)
 
+@kernel
+class Workaround56:
+    @kernel
+    def run(self):
+        demo = Demo()
+        demo.run()
+
+    def run_host(self):
+        core = Core()
+        core.run(self.run) # works because run() never uses its self argument
 
 if __name__ == "__main__":
-    Demo().run()
+    Workaround56().run_host()
