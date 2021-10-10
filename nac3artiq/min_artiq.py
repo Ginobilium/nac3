@@ -45,7 +45,7 @@ def kernel(class_or_function):
             raise RuntimeError("Kernels must not be called directly, use core.run(kernel_function) instead")
         return device_only
 
-    
+
 def portable(function):
     register_module_of(function)
     return function
@@ -91,7 +91,15 @@ class Core:
         if allow_module_registration:
             nac3.analyze()
             allow_module_registration = False
-        nac3.compile_method(id(get_defined_class(method)), method.__name__)
+
+        if hasattr(method, "__self__"):
+            obj = method.__self__
+            name = method.__name__
+        else:
+            obj = method
+            name = ""
+
+        nac3.compile_method(obj, name, args)
 
     @kernel
     def reset(self):

@@ -17,19 +17,14 @@ class Demo:
         self.core.reset()
         while True:
             self.led.pulse_mu(int64(100000000))
-            delay_mu(int64(100000000))
+            delay_mu(int64(True))
 
 
 @kernel
-class Workaround56:
-    @kernel
-    def run(self):
-        demo = Demo()
-        demo.run()
-
-    def run_host(self):
-        core = Core()
-        core.run(self.run) # works because run() never uses its self argument
+def testing(a: int32) -> int32:
+    return a + 1
 
 if __name__ == "__main__":
-    Workaround56().run_host()
+    core = Core()
+    # core.run(testing, 1)
+    core.run(Demo().run)

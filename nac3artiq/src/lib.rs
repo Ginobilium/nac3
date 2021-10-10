@@ -13,23 +13,23 @@ use pyo3::prelude::*;
 use pyo3::{exceptions, types::PyList};
 use rustpython_parser::{
     ast::{self, StrRef},
-    parser,
+    parser::{self, parse_program},
 };
 
-use parking_lot::{RwLock, Mutex};
+use parking_lot::{Mutex, RwLock};
 
 use nac3core::{
     codegen::{CodeGenTask, WithCall, WorkerRegistry},
     symbol_resolver::SymbolResolver,
-    toplevel::{composer::TopLevelComposer, TopLevelContext, TopLevelDef, DefinitionId, GenCall},
+    toplevel::{composer::TopLevelComposer, DefinitionId, GenCall, TopLevelContext, TopLevelDef},
     typecheck::typedef::{FunSignature, FuncArg},
     typecheck::{type_inferencer::PrimitiveStore, typedef::Type},
 };
 
 use crate::symbol_resolver::Resolver;
 
-mod timeline;
 mod symbol_resolver;
+mod timeline;
 
 use timeline::TimeFns;
 
@@ -198,7 +198,9 @@ impl Nac3 {
                     ret: primitive.int64,
                     vars: HashMap::new(),
                 },
-                Arc::new(GenCall::new(Box::new(move |ctx, _, _, _| Some(time_fns.emit_now_mu(ctx))))),
+                Arc::new(GenCall::new(Box::new(move |ctx, _, _, _| {
+                    Some(time_fns.emit_now_mu(ctx))
+                }))),
             ),
             (
                 "at_mu".into(),
@@ -211,7 +213,10 @@ impl Nac3 {
                     ret: primitive.none,
                     vars: HashMap::new(),
                 },
-                Arc::new(GenCall::new(Box::new(move |ctx, _, _, args| { time_fns.emit_at_mu(ctx, args[0].1); None }))),
+                Arc::new(GenCall::new(Box::new(move |ctx, _, _, args| {
+                    time_fns.emit_at_mu(ctx, args[0].1);
+                    None
+                }))),
             ),
             (
                 "delay_mu".into(),
@@ -224,7 +229,10 @@ impl Nac3 {
                     ret: primitive.none,
                     vars: HashMap::new(),
                 },
-                Arc::new(GenCall::new(Box::new(move |ctx, _, _, args| { time_fns.emit_delay_mu(ctx, args[0].1); None }))),
+                Arc::new(GenCall::new(Box::new(move |ctx, _, _, args| {
+                    time_fns.emit_delay_mu(ctx, args[0].1);
+                    None
+                }))),
             ),
         ];
         let (composer, builtins_def, builtins_ty) = TopLevelComposer::new(builtins);
@@ -294,49 +302,77 @@ impl Nac3 {
         for obj in std::mem::take(&mut self.to_be_registered).into_iter() {
             self.register_module_impl(obj)?;
         }
-        self.composer.start_analysis(true).unwrap();
-        self.top_level = Some(Arc::new(self.composer.make_top_level_context()));
         Ok(())
     }
 
-    fn compile_method(&mut self, class: u64, method_name: String, py: Python) -> PyResult<()> {
+    fn compile_method(
+        &mut self,
+        obj: &PyAny,
+        method_name: String,
+        args: Vec<&PyAny>,
+        py: Python,
+    ) -> PyResult<()> {
+        let id_fun = PyModule::import(py, "builtins")?.getattr("id")?;
+        let mut name_to_pyid: HashMap<StrRef, u64> = HashMap::new();
+        let module = PyModule::new(py, "tmp")?;
+        module.add("base", obj)?;
+        name_to_pyid.insert("base".into(), id_fun.call1((obj,))?.extract()?);
+        let mut arg_names = vec![];
+        for (i, arg) in args.into_iter().enumerate() {
+            let name = format!("tmp{}", i);
+            module.add(&name, arg)?;
+            name_to_pyid.insert(name.clone().into(), id_fun.call1((arg,))?.extract()?);
+            arg_names.push(name);
+        }
+        let synthesized = if method_name.is_empty() {
+            format!("def __modinit__():\n    base({})", arg_names.join(", "))
+        } else {
+            format!(
+                "def __modinit__():\n    base.{}({})",
+                method_name,
+                arg_names.join(", ")
+            )
+        };
+        let mut synthesized = parse_program(&synthesized).unwrap();
+        let resolver = Arc::new(Box::new(Resolver {
+            id_to_type: self.builtins_ty.clone().into(),
+            id_to_def: self.builtins_def.clone().into(),
+            pyid_to_def: self.pyid_to_def.clone(),
+            pyid_to_type: self.pyid_to_type.clone(),
+            primitive_ids: self.primitive_ids.clone(),
+            global_value_ids: self.global_value_ids.clone(),
+            class_names: Default::default(),
+            name_to_pyid,
+            module: module.to_object(py),
+        }) as Box<dyn SymbolResolver + Send + Sync>);
+        let (_, def_id, _) = self
+            .composer
+            .register_top_level(
+                synthesized.pop().unwrap(),
+                Some(resolver.clone()),
+                "".into(),
+            )
+            .unwrap();
+
+        self.composer.start_analysis(true).unwrap();
+        self.top_level = Some(Arc::new(self.composer.make_top_level_context()));
         let top_level = self.top_level.as_ref().unwrap();
-        let module_resolver;
         let instance = {
             let defs = top_level.definitions.read();
-            let class_def = defs[self.pyid_to_def.read().get(&class).unwrap().0].write();
-            let mut method_def = if let TopLevelDef::Class {
-                methods, resolver, ..
-            } = &*class_def
-            {
-                module_resolver = Some(resolver.clone().unwrap());
-                if let Some((_name, _unification_key, definition_id)) = methods
-                    .iter()
-                    .find(|method| method.0.to_string() == method_name)
-                {
-                    defs[definition_id.0].write()
-                } else {
-                    return Err(exceptions::PyValueError::new_err("method not found"));
-                }
-            } else {
-                return Err(exceptions::PyTypeError::new_err(
-                    "parent object is not a class",
-                ));
-            };
-
-            // FIXME: what is this for? What happens if the kernel is called twice?
+            let mut definition = defs[def_id.0].write();
             if let TopLevelDef::Function {
                 instance_to_stmt,
                 instance_to_symbol,
                 ..
-            } = &mut *method_def
+            } = &mut *definition
             {
-                instance_to_symbol.insert("".to_string(), method_name);
+                instance_to_symbol.insert("".to_string(), "__modinit__".into());
                 instance_to_stmt[""].clone()
             } else {
                 unreachable!()
             }
         };
+
         let signature = FunSignature {
             args: vec![],
             ret: self.primitive.none,
@@ -347,7 +383,7 @@ impl Nac3 {
             symbol_name: "__modinit__".to_string(),
             body: instance.body,
             signature,
-            resolver: module_resolver.unwrap(),
+            resolver,
             unifier: top_level.unifiers.read()[instance.unifier_id].clone(),
             calls: instance.calls,
         };
