@@ -5,13 +5,13 @@ from numpy import int32, int64
 
 import nac3artiq
 
+__all__ = ["KernelInvariant", "extern", "kernel", "portable", "ms", "us", "ns", "Core", "TTLOut"]
+
+
 import device_db
+core_arguments = device_db.device_db["core"]["arguments"]
 
-
-__all__ = ["KernelInvariant", "extern", "kernel", "portable", "Core", "TTLOut"]
-
-
-nac3 = nac3artiq.NAC3(device_db.device_db["core"]["arguments"]["target"])
+nac3 = nac3artiq.NAC3(core_arguments["target"])
 allow_module_registration = True
 registered_ids = set()
 
@@ -55,6 +55,10 @@ def get_defined_class(method):
     return vars(sys.modules[method.__module__])[method.__qualname__.split('.')[0]]
 
 
+ms = 1e-3
+us = 1e-6
+ns = 1e-9
+
 @extern
 def rtio_init():
     raise NotImplementedError("syscall not simulated")
@@ -82,9 +86,10 @@ def rtio_input_data(channel: int32) -> int32:
 
 @kernel
 class Core:
-    @portable
+    ref_period: float
+
     def __init__(self):
-        pass
+        self.ref_period = core_arguments["ref_period"]
 
     def run(self, method, *args, **kwargs):
         global allow_module_registration
@@ -112,14 +117,28 @@ class Core:
         if now_mu() < min_now:
             at_mu(min_now)
 
+    @portable
+    def seconds_to_mu(self, seconds: float) -> int64:
+        return int64(round(seconds/self.ref_period))
+
+    @portable
+    def mu_to_seconds(self, mu: int64) -> float:
+        return float(mu)*self.ref_period
+
+    @kernel
+    def delay(self, dt: float):
+        delay_mu(self.seconds_to_mu(dt))
+
 
 @kernel
 class TTLOut:
+    core: Core
     channel: int32
     target_o: int32
 
     @portable
-    def __init__(self, channel: int32):
+    def __init__(self, core: Core, channel: int32):
+        self.core = core
         self.channel = channel
         self.target_o = channel << 8
 
@@ -143,4 +162,10 @@ class TTLOut:
     def pulse_mu(self, duration: int64):
         self.on()
         delay_mu(duration)
+        self.off()
+
+    @kernel
+    def pulse(self, duration: float):
+        self.on()
+        self.core.delay(duration)
         self.off()
