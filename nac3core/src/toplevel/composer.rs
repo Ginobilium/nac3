@@ -228,10 +228,10 @@ impl TopLevelComposer {
                     codegen_callback: Some(Arc::new(GenCall::new(Box::new(|ctx, _, _, args| {
                         let arg = args[0].1;
                         let round_intrinsic =
-                            ctx.module.get_function("llvm.rint.f64").unwrap_or_else(|| {
+                            ctx.module.get_function("llvm.round.f64").unwrap_or_else(|| {
                                 let float = ctx.ctx.f64_type();
                                 let fn_type = float.fn_type(&[float.into()], false);
-                                ctx.module.add_function("llvm.rint.f64", fn_type, None)
+                                ctx.module.add_function("llvm.round.f64", fn_type, None)
                             });
                         let val = ctx
                             .builder
@@ -265,10 +265,10 @@ impl TopLevelComposer {
                     codegen_callback: Some(Arc::new(GenCall::new(Box::new(|ctx, _, _, args| {
                         let arg = args[0].1;
                         let round_intrinsic =
-                            ctx.module.get_function("llvm.rint.f64").unwrap_or_else(|| {
+                            ctx.module.get_function("llvm.round.f64").unwrap_or_else(|| {
                                 let float = ctx.ctx.f64_type();
                                 let fn_type = float.fn_type(&[float.into()], false);
-                                ctx.module.add_function("llvm.rint.f64", fn_type, None)
+                                ctx.module.add_function("llvm.round.f64", fn_type, None)
                             });
                         let val = ctx
                             .builder
