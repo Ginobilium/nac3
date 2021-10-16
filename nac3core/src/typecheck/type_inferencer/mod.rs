@@ -443,19 +443,19 @@ impl<'a> Inferencer<'a> {
             return Err("Async iterator not supported.".to_string());
         }
         new_context.infer_pattern(&generator.target)?;
-        let elt = new_context.fold_expr(elt)?;
         let target = new_context.fold_expr(*generator.target)?;
         let iter = new_context.fold_expr(*generator.iter)?;
+        let list = new_context.unifier.add_ty(TypeEnum::TList { ty: target.custom.unwrap() });
+        new_context.unify(iter.custom.unwrap(), list, &iter.location)?;
         let ifs: Vec<_> = generator
             .ifs
             .into_iter()
             .map(|v| new_context.fold_expr(v))
             .collect::<Result<_, _>>()?;
 
+        let elt = new_context.fold_expr(elt)?;
         // iter should be a list of targets...
         // actually it should be an iterator of targets, but we don't have iter type for now
-        let list = new_context.unifier.add_ty(TypeEnum::TList { ty: target.custom.unwrap() });
-        new_context.unify(iter.custom.unwrap(), list, &iter.location)?;
         // if conditions should be bool
         for v in ifs.iter() {
             new_context.unify(v.custom.unwrap(), new_context.primitives.bool, &v.location)?;

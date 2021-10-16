@@ -290,13 +290,6 @@ fn test_unify(
     (("v1", "v2"), "No such attribute b")
     ; "record obj merge"
 )]
-#[test_case(2,
-    &[
-        ("v1", "List[v2]"),
-    ],
-    (("v1", "v2"), "Recursive type is prohibited.")
-    ; "recursive type for lists"
-)]
 /// Test cases for invalid unifications.
 fn test_invalid_unification(
     variable_count: u32,

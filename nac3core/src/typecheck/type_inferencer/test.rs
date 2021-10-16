@@ -19,7 +19,13 @@ struct Resolver {
 }
 
 impl SymbolResolver for Resolver {
-    fn get_symbol_type(&self, _: &mut Unifier, _: &[Arc<RwLock<TopLevelDef>>], _: &PrimitiveStore, str: StrRef) -> Option<Type> {
+    fn get_symbol_type(
+        &self,
+        _: &mut Unifier,
+        _: &[Arc<RwLock<TopLevelDef>>],
+        _: &PrimitiveStore,
+        str: StrRef,
+    ) -> Option<Type> {
         self.id_to_type.get(&str).cloned()
     }
 
@@ -60,6 +66,14 @@ impl TestEnvironment {
             fields: HashMap::new().into(),
             params: HashMap::new().into(),
         });
+        if let TypeEnum::TObj { fields, .. } = &*unifier.get_ty(int32) {
+            let add_ty = unifier.add_ty(TypeEnum::TFunc(FunSignature {
+                args: vec![FuncArg { name: "other".into(), ty: int32, default_value: None }],
+                ret: int32,
+                vars: HashMap::new()
+            }.into()));
+            fields.borrow_mut().insert("__add__".into(), add_ty);
+        }
         let int64 = unifier.add_ty(TypeEnum::TObj {
             obj_id: DefinitionId(1),
             fields: HashMap::new().into(),
@@ -132,6 +146,14 @@ impl TestEnvironment {
             fields: HashMap::new().into(),
             params: HashMap::new().into(),
         });
+        if let TypeEnum::TObj { fields, .. } = &*unifier.get_ty(int32) {
+            let add_ty = unifier.add_ty(TypeEnum::TFunc(FunSignature {
+                args: vec![FuncArg { name: "other".into(), ty: int32, default_value: None }],
+                ret: int32,
+                vars: HashMap::new()
+            }.into()));
+            fields.borrow_mut().insert("__add__".into(), add_ty);
+        }
         let int64 = unifier.add_ty(TypeEnum::TObj {
             obj_id: DefinitionId(1),
             fields: HashMap::new().into(),
@@ -348,6 +370,15 @@ impl TestEnvironment {
     &[]
     ; "lambda test")]
 #[test_case(indoc! {"
+        a = lambda x: x + x
+        b = lambda x: a(x) + x
+        a = b
+        c = b(1)
+    "},
+    [("a", "fn[[x=int32], int32]"), ("b", "fn[[x=int32], int32]"), ("c", "int32")].iter().cloned().collect(),
+    &[]
+    ; "lambda test 2")]
+#[test_case(indoc! {"
         a = lambda x: x
         b = lambda x: x
 
@@ -365,11 +396,10 @@ impl TestEnvironment {
     &[]
     ; "obj test")]
 #[test_case(indoc! {"
-        f = lambda x: True
         a = [1, 2, 3]
-        b = [f(x) for x in a if f(x)]
+        b = [x + x for x in a]
     "},
-    [("a", "list[int32]"), ("b", "list[bool]"), ("f", "fn[[x=int32], bool]")].iter().cloned().collect(),
+    [("a", "list[int32]"), ("b", "list[int32]")].iter().cloned().collect(),
     &[]
     ; "listcomp test")]
 #[test_case(indoc! {"
