@@ -1,8 +1,14 @@
 use inkwell::values::BasicValueEnum;
-use nac3core::{codegen::CodeGenContext, location::Location, symbol_resolver::{SymbolResolver, SymbolValue}, toplevel::{DefinitionId, TopLevelDef}, typecheck::{
+use nac3core::{
+    codegen::CodeGenContext,
+    location::Location,
+    symbol_resolver::SymbolResolver,
+    toplevel::{DefinitionId, TopLevelDef},
+    typecheck::{
         type_inferencer::PrimitiveStore,
         typedef::{Type, Unifier},
-    }};
+    },
+};
 use parking_lot::{Mutex, RwLock};
 use rustpython_parser::ast::StrRef;
 use std::{collections::HashMap, sync::Arc};
@@ -26,7 +32,13 @@ impl ResolverInternal {
 pub struct Resolver(pub Arc<ResolverInternal>);
 
 impl SymbolResolver for Resolver {
-    fn get_symbol_type(&self, _: &mut Unifier, _: &[Arc<RwLock<TopLevelDef>>], _: &PrimitiveStore, str: StrRef) -> Option<Type> {
+    fn get_symbol_type(
+        &self,
+        _: &mut Unifier,
+        _: &[Arc<RwLock<TopLevelDef>>],
+        _: &PrimitiveStore,
+        str: StrRef,
+    ) -> Option<Type> {
         let ret = self.0.id_to_type.lock().get(&str).cloned();
         if ret.is_none() {
             // println!("unknown here resolver {}", str);
@@ -34,7 +46,11 @@ impl SymbolResolver for Resolver {
         ret
     }
 
-    fn get_symbol_value<'ctx, 'a>(&self, _: StrRef, _: &mut CodeGenContext<'ctx, 'a>) -> Option<BasicValueEnum<'ctx>> {
+    fn get_symbol_value<'ctx, 'a>(
+        &self,
+        _: StrRef,
+        _: &mut CodeGenContext<'ctx, 'a>,
+    ) -> Option<BasicValueEnum<'ctx>> {
         unimplemented!()
     }
 

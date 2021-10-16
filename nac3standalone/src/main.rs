@@ -40,8 +40,8 @@ fn main() {
         class_names: Default::default(),
     }.into();
     let resolver = Arc::new(
-        Box::new(Resolver(internal_resolver.clone())) as Box<dyn SymbolResolver + Send + Sync>
-    );
+        Resolver(internal_resolver.clone())
+    ) as Arc<dyn SymbolResolver + Send + Sync>;
     let setup_time = SystemTime::now();
     println!("setup time: {}ms", setup_time.duration_since(start).unwrap().as_millis());
 

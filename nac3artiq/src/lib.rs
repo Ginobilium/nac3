@@ -94,7 +94,7 @@ impl Nac3 {
         })?;
         let parser_result = parser::parse_program(&source)
             .map_err(|e| exceptions::PySyntaxError::new_err(format!("parse error: {}", e)))?;
-        let resolver = Arc::new(Box::new(Resolver {
+        let resolver = Arc::new(Resolver {
             id_to_type: self.builtins_ty.clone().into(),
             id_to_def: self.builtins_def.clone().into(),
             pyid_to_def: self.pyid_to_def.clone(),
@@ -104,7 +104,7 @@ impl Nac3 {
             class_names: Default::default(),
             name_to_pyid: name_to_pyid.clone(),
             module: obj,
-        }) as Box<dyn SymbolResolver + Send + Sync>);
+        }) as Arc<dyn SymbolResolver + Send + Sync>;
         let mut name_to_def = HashMap::new();
         let mut name_to_type = HashMap::new();
 
@@ -334,7 +334,7 @@ impl Nac3 {
             )
         };
         let mut synthesized = parse_program(&synthesized).unwrap();
-        let resolver = Arc::new(Box::new(Resolver {
+        let resolver = Arc::new(Resolver {
             id_to_type: self.builtins_ty.clone().into(),
             id_to_def: self.builtins_def.clone().into(),
             pyid_to_def: self.pyid_to_def.clone(),
@@ -344,7 +344,7 @@ impl Nac3 {
             class_names: Default::default(),
             name_to_pyid,
             module: module.to_object(py),
-        }) as Box<dyn SymbolResolver + Send + Sync>);
+        }) as Arc<dyn SymbolResolver + Send + Sync>;
         let (_, def_id, _) = self
             .composer
             .register_top_level(

@@ -38,7 +38,7 @@ pub struct CodeGenContext<'ctx, 'a> {
     pub module: Module<'ctx>,
     pub top_level: &'a TopLevelContext,
     pub unifier: Unifier,
-    pub resolver: Arc<Box<dyn SymbolResolver + Send + Sync>>,
+    pub resolver: Arc<dyn SymbolResolver + Send + Sync>,
     pub var_assignment: HashMap<StrRef, PointerValue<'ctx>>,
     pub type_cache: HashMap<Type, BasicTypeEnum<'ctx>>,
     pub primitives: PrimitiveStore,
@@ -190,7 +190,7 @@ pub struct CodeGenTask {
     pub body: Arc<Vec<Stmt<Option<Type>>>>,
     pub calls: Arc<HashMap<CodeLocation, CallId>>,
     pub unifier: (SharedUnifier, PrimitiveStore),
-    pub resolver: Arc<Box<dyn SymbolResolver + Send + Sync>>,
+    pub resolver: Arc<dyn SymbolResolver + Send + Sync>,
 }
 
 fn get_llvm_type<'ctx>(
@@ -287,7 +287,7 @@ pub fn gen_func<'ctx>(
         .args
         .iter()
         .map(|arg| {
-            get_llvm_type(&context, &mut unifier, top_level_ctx.as_ref(), &mut type_cache, arg.ty)
+            get_llvm_type(context, &mut unifier, top_level_ctx.as_ref(), &mut type_cache, arg.ty)
         })
         .collect_vec();
 
@@ -295,7 +295,7 @@ pub fn gen_func<'ctx>(
         context.void_type().fn_type(&params, false)
     } else {
         get_llvm_type(
-            &context,
+            context,
             &mut unifier,
             top_level_ctx.as_ref(),
             &mut type_cache,
@@ -309,9 +309,9 @@ pub fn gen_func<'ctx>(
         module.get_function(symbol).unwrap_or_else(|| module.add_function(symbol, fn_type, None));
 
     if let Some(personality) = &top_level_ctx.personality_symbol {
-        let personality = module.get_function(&personality).unwrap_or_else(|| {
+        let personality = module.get_function(personality).unwrap_or_else(|| {
             let ty = context.i32_type().fn_type(&[], true);
-            module.add_function(&personality, ty, None)
+            module.add_function(personality, ty, None)
         });
         fn_val.set_personality_function(personality);
     }
@@ -324,7 +324,7 @@ pub fn gen_func<'ctx>(
     for (n, arg) in task.signature.args.iter().enumerate() {
         let param = fn_val.get_nth_param(n as u32).unwrap();
         let alloca = builder.build_alloca(
-            get_llvm_type(&context, &mut unifier, top_level_ctx.as_ref(), &mut type_cache, arg.ty),
+            get_llvm_type(context, &mut unifier, top_level_ctx.as_ref(), &mut type_cache, arg.ty),
             &arg.name.to_string(),
         );
         builder.build_store(alloca, param);
@@ -334,7 +334,7 @@ pub fn gen_func<'ctx>(
     builder.position_at_end(body_bb);
 
     let mut code_gen_context = CodeGenContext {
-        ctx: &context,
+        ctx: context,
         resolver: task.resolver,
         top_level: top_level_ctx.as_ref(),
         calls: task.calls,

@@ -91,7 +91,7 @@ impl TopLevelComposer {
     /// when first regitering, the type_vars, fields, methods, ancestors are invalid
     pub fn make_top_level_class_def(
         index: usize,
-        resolver: Option<Arc<Box<dyn SymbolResolver + Send + Sync>>>,
+        resolver: Option<Arc<dyn SymbolResolver + Send + Sync>>,
         name: StrRef,
         constructor: Option<Type>,
     ) -> TopLevelDef {
@@ -112,7 +112,7 @@ impl TopLevelComposer {
         name: String,
         simple_name: StrRef,
         ty: Type,
-        resolver: Option<Arc<Box<dyn SymbolResolver + Send + Sync>>>,
+        resolver: Option<Arc<dyn SymbolResolver + Send + Sync>>,
     ) -> TopLevelDef {
         TopLevelDef::Function {
             name,

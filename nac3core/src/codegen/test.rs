@@ -66,11 +66,11 @@ fn test_primitives() {
     let top_level = Arc::new(composer.make_top_level_context());
     unifier.top_level = Some(top_level.clone());
 
-    let resolver = Arc::new(Box::new(Resolver {
+    let resolver = Arc::new(Resolver {
         id_to_type: HashMap::new(),
         id_to_def: RwLock::new(HashMap::new()),
         class_names: Default::default(),
-    }) as Box<dyn SymbolResolver + Send + Sync>);
+    }) as Arc<dyn SymbolResolver + Send + Sync>;
 
     let threads = ["test"];
     let signature = FunSignature {
@@ -229,13 +229,13 @@ fn test_simple_call() {
         codegen_callback: None,
     })));
 
-    let resolver = Box::new(Resolver {
+    let resolver = Resolver {
         id_to_type: HashMap::new(),
         id_to_def: RwLock::new(HashMap::new()),
         class_names: Default::default(),
-    });
+    };
     resolver.add_id_def("foo".into(), DefinitionId(foo_id));
-    let resolver = Arc::new(resolver as Box<dyn SymbolResolver + Send + Sync>);
+    let resolver = Arc::new(resolver) as Arc<dyn SymbolResolver + Send + Sync>;
 
     if let TopLevelDef::Function { resolver: r, .. } =
         &mut *top_level.definitions.read()[foo_id].write()

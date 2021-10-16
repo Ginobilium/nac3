@@ -387,7 +387,7 @@ impl TopLevelComposer {
     pub fn register_top_level(
         &mut self,
         ast: ast::Stmt<()>,
-        resolver: Option<Arc<Box<dyn SymbolResolver + Send + Sync>>>,
+        resolver: Option<Arc<dyn SymbolResolver + Send + Sync>>,
         mod_path: String,
     ) -> Result<(StrRef, DefinitionId, Option<Type>), String> {
         let defined_names = &mut self.defined_names;
@@ -720,7 +720,7 @@ impl TopLevelComposer {
                 // the function parse_ast_to make sure that no type var occured in
                 // bast_ty if it is a CustomClassKind
                 let base_ty = parse_ast_to_type_annotation_kinds(
-                    class_resolver.as_ref(),
+                    class_resolver,
                     &temp_def_list,
                     unifier,
                     &self.primitives_ty,
@@ -926,7 +926,7 @@ impl TopLevelComposer {
                                     .as_ref();
 
                                 let type_annotation = parse_ast_to_type_annotation_kinds(
-                                    resolver.as_ref(),
+                                    resolver,
                                     temp_def_list.as_slice(),
                                     unifier,
                                     primitives_store,
@@ -975,7 +975,7 @@ impl TopLevelComposer {
                             let return_ty_annotation = {
                                 let return_annotation = returns.as_ref();
                                 parse_ast_to_type_annotation_kinds(
-                                    resolver.as_ref(),
+                                    resolver,
                                     &temp_def_list,
                                     unifier,
                                     primitives_store,
@@ -1132,7 +1132,7 @@ impl TopLevelComposer {
                                         })?
                                         .as_ref();
                                     parse_ast_to_type_annotation_kinds(
-                                        class_resolver.as_ref(),
+                                        class_resolver,
                                         temp_def_list,
                                         unifier,
                                         primitives,
@@ -1178,7 +1178,7 @@ impl TopLevelComposer {
                         if let Some(result) = returns {
                             let result = result.as_ref();
                             let annotation = parse_ast_to_type_annotation_kinds(
-                                class_resolver.as_ref(),
+                                class_resolver,
                                 temp_def_list,
                                 unifier,
                                 primitives,
@@ -1253,8 +1253,8 @@ impl TopLevelComposer {
                             };
 
                             let annotation = parse_ast_to_type_annotation_kinds(
-                                class_resolver.as_ref(),
-                                &temp_def_list,
+                                class_resolver,
+                                temp_def_list,
                                 unifier,
                                 primitives,
                                 annotation.as_ref(),

@@ -38,7 +38,7 @@ pub struct PrimitiveStore {
 }
 
 pub struct FunctionData {
-    pub resolver: Arc<Box<dyn SymbolResolver + Send + Sync>>,
+    pub resolver: Arc<dyn SymbolResolver + Send + Sync>,
     pub return_type: Option<Type>,
     pub bound_variables: Vec<Type>,
 }
@@ -91,7 +91,7 @@ impl<'a> fold::Fold<()> for Inferencer<'a> {
                 let annotation_type = self.function_data.resolver.parse_type_annotation(
                     top_level_defs.as_slice(),
                     self.unifier,
-                    &self.primitives,
+                    self.primitives,
                     annotation.as_ref(),
                 )?;
                 self.unify(annotation_type, target.custom.unwrap(), &node.location)?;

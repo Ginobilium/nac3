@@ -96,22 +96,22 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
         match &stmt.node {
             StmtKind::Pass => {},
             StmtKind::Expr { value } => {
-                self.gen_expr(&value);
+                self.gen_expr(value);
             }
             StmtKind::Return { value } => {
-                let value = value.as_ref().map(|v| self.gen_expr(&v).unwrap());
+                let value = value.as_ref().map(|v| self.gen_expr(v).unwrap());
                 let value = value.as_ref().map(|v| v as &dyn BasicValue);
                 self.builder.build_return(value);
                 return true;
             }
             StmtKind::AnnAssign { target, value, .. } => {
                 if let Some(value) = value {
-                    let value = self.gen_expr(&value).unwrap();
+                    let value = self.gen_expr(value).unwrap();
                     self.gen_assignment(target, value);
                 }
             }
             StmtKind::Assign { targets, value, .. } => {
-                let value = self.gen_expr(&value).unwrap();
+                let value = self.gen_expr(value).unwrap();
                 for target in targets.iter() {
                     self.gen_assignment(target, value);
                 }

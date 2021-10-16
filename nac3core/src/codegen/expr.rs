@@ -159,7 +159,7 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
                     let instance = instance_to_stmt.get(&key).unwrap();
                     let unifiers = self.top_level.unifiers.read();
                     let (unifier, primitives) = &unifiers[instance.unifier_id];
-                    let mut unifier = Unifier::from_shared_unifier(&unifier);
+                    let mut unifier = Unifier::from_shared_unifier(unifier);
 
                     let mut type_cache = [
                         (self.primitives.int32, primitives.int32),

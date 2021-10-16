@@ -35,7 +35,13 @@ impl ResolverInternal {
 struct Resolver(Arc<ResolverInternal>);
 
 impl SymbolResolver for Resolver {
-    fn get_symbol_type(&self, _: &mut Unifier, _: &[Arc<RwLock<TopLevelDef>>], _: &PrimitiveStore, str: StrRef) -> Option<Type> {
+    fn get_symbol_type(
+        &self,
+        _: &mut Unifier,
+        _: &[Arc<RwLock<TopLevelDef>>],
+        _: &PrimitiveStore,
+        str: StrRef,
+    ) -> Option<Type> {
         let ret = self.0.id_to_type.lock().get(&str).cloned();
         if ret.is_none() {
             // println!("unknown here resolver {}", str);
@@ -138,9 +144,8 @@ fn test_simple_function_analyze(source: Vec<&str>, tys: Vec<&str>, names: Vec<&s
         id_to_type: Default::default(),
         class_names: Default::default(),
     });
-    let resolver = Arc::new(
-        Box::new(Resolver(internal_resolver.clone())) as Box<dyn SymbolResolver + Send + Sync>
-    );
+    let resolver =
+        Arc::new(Resolver(internal_resolver.clone())) as Arc<dyn SymbolResolver + Send + Sync>;
 
     for s in source {
         let ast = parse_program(s).unwrap();
@@ -148,7 +153,7 @@ fn test_simple_function_analyze(source: Vec<&str>, tys: Vec<&str>, names: Vec<&s
 
         let (id, def_id, ty) =
             composer.register_top_level(ast, Some(resolver.clone()), "".into()).unwrap();
-        internal_resolver.add_id_def(id.clone(), def_id);
+        internal_resolver.add_id_def(id, def_id);
         if let Some(ty) = ty {
             internal_resolver.add_id_type(id, ty);
         }
@@ -489,9 +494,8 @@ fn test_analyze(source: Vec<&str>, res: Vec<&str>) {
         &mut composer.unifier,
         print,
     );
-    let resolver = Arc::new(
-        Box::new(Resolver(internal_resolver.clone())) as Box<dyn SymbolResolver + Send + Sync>
-    );
+    let resolver =
+        Arc::new(Resolver(internal_resolver.clone())) as Arc<dyn SymbolResolver + Send + Sync>;
 
     for s in source {
         let ast = parse_program(s).unwrap();
@@ -685,8 +689,8 @@ fn test_inference(source: Vec<&str>, res: Vec<&str>) {
         print,
     );
     let resolver = Arc::new(
-        Box::new(Resolver(internal_resolver.clone())) as Box<dyn SymbolResolver + Send + Sync>
-    );
+        Resolver(internal_resolver.clone())
+    ) as Arc<dyn SymbolResolver + Send + Sync>;
 
     for s in source {
         let ast = parse_program(s).unwrap();
@@ -705,7 +709,7 @@ fn test_inference(source: Vec<&str>, res: Vec<&str>) {
                 }
             }
         };
-        internal_resolver.add_id_def(id.clone(), def_id);
+        internal_resolver.add_id_def(id, def_id);
         if let Some(ty) = ty {
             internal_resolver.add_id_type(id, ty);
         }
@@ -754,7 +758,7 @@ fn make_internal_resolver_with_tvar(
         id_to_type: tvars
             .into_iter()
             .map(|(name, range)| {
-                (name.clone(), {
+                (name, {
                     let (ty, id) = unifier.get_fresh_var_with_range(range.as_slice());
                     if print {
                         println!("{}: {:?}, tvar{}", name, ty, id);

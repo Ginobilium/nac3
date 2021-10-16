@@ -67,11 +67,14 @@ impl TestEnvironment {
             params: HashMap::new().into(),
         });
         if let TypeEnum::TObj { fields, .. } = &*unifier.get_ty(int32) {
-            let add_ty = unifier.add_ty(TypeEnum::TFunc(FunSignature {
-                args: vec![FuncArg { name: "other".into(), ty: int32, default_value: None }],
-                ret: int32,
-                vars: HashMap::new()
-            }.into()));
+            let add_ty = unifier.add_ty(TypeEnum::TFunc(
+                FunSignature {
+                    args: vec![FuncArg { name: "other".into(), ty: int32, default_value: None }],
+                    ret: int32,
+                    vars: HashMap::new(),
+                }
+                .into(),
+            ));
             fields.borrow_mut().insert("__add__".into(), add_ty);
         }
         let int64 = unifier.add_ty(TypeEnum::TObj {
@@ -111,11 +114,11 @@ impl TestEnvironment {
         let mut identifier_mapping = HashMap::new();
         identifier_mapping.insert("None".into(), none);
 
-        let resolver = Arc::new(Box::new(Resolver {
+        let resolver = Arc::new(Resolver {
             id_to_type: identifier_mapping.clone(),
             id_to_def: Default::default(),
             class_names: Default::default(),
-        }) as Box<dyn SymbolResolver + Send + Sync>);
+        }) as Arc<dyn SymbolResolver + Send + Sync>;
 
         TestEnvironment {
             top_level: TopLevelContext {
@@ -147,11 +150,14 @@ impl TestEnvironment {
             params: HashMap::new().into(),
         });
         if let TypeEnum::TObj { fields, .. } = &*unifier.get_ty(int32) {
-            let add_ty = unifier.add_ty(TypeEnum::TFunc(FunSignature {
-                args: vec![FuncArg { name: "other".into(), ty: int32, default_value: None }],
-                ret: int32,
-                vars: HashMap::new()
-            }.into()));
+            let add_ty = unifier.add_ty(TypeEnum::TFunc(
+                FunSignature {
+                    args: vec![FuncArg { name: "other".into(), ty: int32, default_value: None }],
+                    ret: int32,
+                    vars: HashMap::new(),
+                }
+                .into(),
+            ));
             fields.borrow_mut().insert("__add__".into(), add_ty);
         }
         let int64 = unifier.add_ty(TypeEnum::TObj {
@@ -308,7 +314,7 @@ impl TestEnvironment {
             personality_symbol: None,
         };
 
-        let resolver = Arc::new(Box::new(Resolver {
+        let resolver = Arc::new(Resolver {
             id_to_type: identifier_mapping.clone(),
             id_to_def: [
                 ("Foo".into(), DefinitionId(5)),
@@ -319,7 +325,7 @@ impl TestEnvironment {
             .cloned()
             .collect(),
             class_names,
-        }) as Box<dyn SymbolResolver + Send + Sync>);
+        }) as Arc<dyn SymbolResolver + Send + Sync>;
 
         TestEnvironment {
             unifier,

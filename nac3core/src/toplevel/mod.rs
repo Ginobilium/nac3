@@ -91,7 +91,7 @@ pub enum TopLevelDef {
         // ancestor classes, including itself.
         ancestors: Vec<TypeAnnotation>,
         // symbol resolver of the module defined the class, none if it is built-in type
-        resolver: Option<Arc<Box<dyn SymbolResolver + Send + Sync>>>,
+        resolver: Option<Arc<dyn SymbolResolver + Send + Sync>>,
         // constructor type
         constructor: Option<Type>,
     },
@@ -116,7 +116,7 @@ pub enum TopLevelDef {
         /// rigid type variables that would be substituted when the function is instantiated.
         instance_to_stmt: HashMap<String, FunInstance>,
         // symbol resolver of the module defined the class
-        resolver: Option<Arc<Box<dyn SymbolResolver + Send + Sync>>>,
+        resolver: Option<Arc<dyn SymbolResolver + Send + Sync>>,
         // custom codegen callback
         codegen_callback: Option<Arc<GenCall>>
     },
