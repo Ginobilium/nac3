@@ -14,6 +14,8 @@ use inkwell::{
 use itertools::{chain, izip, zip, Itertools};
 use rustpython_parser::ast::{self, Boolop, Constant, Expr, ExprKind, Operator, StrRef};
 
+use super::CodeGenerator;
+
 pub fn assert_int_val(val: BasicValueEnum<'_>) -> IntValue<'_> {
     if let BasicValueEnum::IntValue(v) = val {
         v
@@ -100,172 +102,6 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
 
     pub fn get_llvm_type(&mut self, ty: Type) -> BasicTypeEnum<'ctx> {
         get_llvm_type(self.ctx, &mut self.unifier, self.top_level, &mut self.type_cache, ty)
-    }
-
-    fn gen_call(
-        &mut self,
-        obj: Option<(Type, BasicValueEnum<'ctx>)>,
-        fun: (&FunSignature, DefinitionId),
-        params: Vec<(Option<StrRef>, BasicValueEnum<'ctx>)>,
-    ) -> Option<BasicValueEnum<'ctx>> {
-        let definition = self.top_level.definitions.read().get(fun.1 .0).cloned().unwrap();
-        let mut task = None;
-        let key = self.get_subst_key(obj.map(|a| a.0), fun.0, None);
-        let symbol = {
-            // make sure this lock guard is dropped at the end of this scope...
-            let def = definition.read();
-            match &*def {
-                TopLevelDef::Function { instance_to_symbol, codegen_callback, .. } => {
-                    if let Some(callback) = codegen_callback {
-                        return callback.run(self, obj, fun, params);
-                    }
-                    instance_to_symbol.get(&key).cloned()
-                }
-                TopLevelDef::Class { methods, .. } => {
-                    // TODO: what about other fields that require alloca?
-                    let mut fun_id = None;
-                    for (name, _, id) in methods.iter() {
-                        if name == &"__init__".into() {
-                            fun_id = Some(*id);
-                        }
-                    }
-                    let ty = self.get_llvm_type(fun.0.ret).into_pointer_type();
-                    let zelf_ty: BasicTypeEnum = ty.get_element_type().try_into().unwrap();
-                    let zelf = self.builder.build_alloca(zelf_ty, "alloca").into();
-                    // call `__init__` if there is one
-                    if let Some(fun_id) = fun_id {
-                        let mut sign = fun.0.clone();
-                        sign.ret = self.primitives.none;
-                        self.gen_call(Some((fun.0.ret, zelf)), (&sign, fun_id), params);
-                    }
-                    return Some(zelf);
-                }
-            }
-        }
-        .unwrap_or_else(|| {
-            if let TopLevelDef::Function {
-                name,
-                instance_to_symbol,
-                instance_to_stmt,
-                var_id,
-                resolver,
-                ..
-            } = &mut *definition.write()
-            {
-                instance_to_symbol.get(&key).cloned().unwrap_or_else(|| {
-                    let symbol = format!("{}.{}", name, instance_to_symbol.len());
-                    instance_to_symbol.insert(key, symbol.clone());
-                    let key = self.get_subst_key(obj.map(|a| a.0), fun.0, Some(var_id));
-                    let instance = instance_to_stmt.get(&key).unwrap();
-                    let unifiers = self.top_level.unifiers.read();
-                    let (unifier, primitives) = &unifiers[instance.unifier_id];
-                    let mut unifier = Unifier::from_shared_unifier(unifier);
-
-                    let mut type_cache = [
-                        (self.primitives.int32, primitives.int32),
-                        (self.primitives.int64, primitives.int64),
-                        (self.primitives.float, primitives.float),
-                        (self.primitives.bool, primitives.bool),
-                        (self.primitives.none, primitives.none),
-                    ]
-                    .iter()
-                    .map(|(a, b)| {
-                        (self.unifier.get_representative(*a), unifier.get_representative(*b))
-                    })
-                    .collect();
-
-                    let subst = fun
-                        .0
-                        .vars
-                        .iter()
-                        .map(|(id, ty)| {
-                            (
-                                *instance.subst.get(id).unwrap(),
-                                unifier.copy_from(&mut self.unifier, *ty, &mut type_cache),
-                            )
-                        })
-                        .collect();
-
-                    let mut signature = FunSignature {
-                        args: fun
-                            .0
-                            .args
-                            .iter()
-                            .map(|arg| FuncArg {
-                                name: arg.name,
-                                ty: unifier.copy_from(&mut self.unifier, arg.ty, &mut type_cache),
-                                default_value: arg.default_value.clone(),
-                            })
-                            .collect(),
-                        ret: unifier.copy_from(&mut self.unifier, fun.0.ret, &mut type_cache),
-                        vars: fun
-                            .0
-                            .vars
-                            .iter()
-                            .map(|(id, ty)| {
-                                (*id, unifier.copy_from(&mut self.unifier, *ty, &mut type_cache))
-                            })
-                            .collect(),
-                    };
-
-                    if let Some(obj) = &obj {
-                        signature.args.insert(
-                            0,
-                            FuncArg { name: "self".into(), ty: obj.0, default_value: None },
-                        );
-                    }
-
-                    let unifier = (unifier.get_shared_unifier(), *primitives);
-
-                    task = Some(CodeGenTask {
-                        symbol_name: symbol.clone(),
-                        body: instance.body.clone(),
-                        resolver: resolver.as_ref().unwrap().clone(),
-                        calls: instance.calls.clone(),
-                        subst,
-                        signature,
-                        unifier,
-                    });
-                    symbol
-                })
-            } else {
-                unreachable!()
-            }
-        });
-
-        if let Some(task) = task {
-            self.registry.add_task(task);
-        }
-
-        let fun_val = self.module.get_function(&symbol).unwrap_or_else(|| {
-            let mut args = fun.0.args.clone();
-            if let Some(obj) = &obj {
-                args.insert(0, FuncArg { name: "self".into(), ty: obj.0, default_value: None });
-            }
-            let params = args.iter().map(|arg| self.get_llvm_type(arg.ty)).collect_vec();
-            let fun_ty = if self.unifier.unioned(fun.0.ret, self.primitives.none) {
-                self.ctx.void_type().fn_type(&params, false)
-            } else {
-                self.get_llvm_type(fun.0.ret).fn_type(&params, false)
-            };
-            self.module.add_function(&symbol, fun_ty, None)
-        });
-        let mut keys = fun.0.args.clone();
-        let mut mapping = HashMap::new();
-        for (key, value) in params.into_iter() {
-            mapping.insert(key.unwrap_or_else(|| keys.remove(0).name), value);
-        }
-        // default value handling
-        for k in keys.into_iter() {
-            mapping.insert(k.name, self.gen_symbol_val(&k.default_value.unwrap()));
-        }
-        // reorder the parameters
-        let mut params =
-            fun.0.args.iter().map(|arg| mapping.remove(&arg.name).unwrap()).collect_vec();
-        if let Some(obj) = obj {
-            params.insert(0, obj.1);
-        }
-        self.builder.build_call(fun_val, &params, "call").try_as_basic_value().left()
     }
 
     fn gen_const(&mut self, value: &Constant, ty: Type) -> BasicValueEnum<'ctx> {
@@ -378,216 +214,392 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
             _ => unimplemented!(),
         }
     }
+}
 
-    pub fn gen_expr(&mut self, expr: &Expr<Option<Type>>) -> Option<BasicValueEnum<'ctx>> {
-        let zero = self.ctx.i32_type().const_int(0, false);
-        Some(match &expr.node {
-            ExprKind::Constant { value, .. } => {
-                let ty = expr.custom.unwrap();
-                self.gen_const(value, ty)
-            }
-            ExprKind::Name { id, .. } => {
-                let ptr = self.var_assignment.get(id);
-                if let Some(ptr) = ptr {
-                    self.builder.build_load(*ptr, "load")
-                } else {
-                    let resolver = self.resolver.clone();
-                    resolver.get_symbol_value(*id, self).unwrap()
+pub fn gen_constructor<'ctx, 'a, G: CodeGenerator + ?Sized>(
+    generator: &mut G,
+    ctx: &mut CodeGenContext<'ctx, 'a>,
+    signature: &FunSignature,
+    def: &TopLevelDef,
+    params: Vec<(Option<StrRef>, BasicValueEnum<'ctx>)>,
+) -> BasicValueEnum<'ctx> {
+    match def {
+        TopLevelDef::Class { methods, .. } => {
+            // TODO: what about other fields that require alloca?
+            let mut fun_id = None;
+            for (name, _, id) in methods.iter() {
+                if name == &"__init__".into() {
+                    fun_id = Some(*id);
                 }
             }
-            ExprKind::List { elts, .. } => {
-                // this shall be optimized later for constant primitive lists...
-                // we should use memcpy for that instead of generating thousands of stores
-                let elements = elts.iter().map(|x| self.gen_expr(x).unwrap()).collect_vec();
-                let ty = if elements.is_empty() {
-                    self.ctx.i32_type().into()
-                } else {
-                    elements[0].get_type()
-                };
-                let arr_ptr = self.builder.build_array_alloca(
-                    ty,
-                    self.ctx.i32_type().const_int(elements.len() as u64, false),
-                    "tmparr",
-                );
-                let arr_ty = self.ctx.struct_type(
-                    &[self.ctx.i32_type().into(), ty.ptr_type(AddressSpace::Generic).into()],
-                    false,
-                );
-                let arr_str_ptr = self.builder.build_alloca(arr_ty, "tmparrstr");
-                unsafe {
-                    let len_ptr =
-                        self.builder.build_in_bounds_gep(arr_str_ptr, &[zero, zero], "len_ptr");
-                    self.builder.build_store(
-                        len_ptr,
-                        self.ctx.i32_type().const_int(elements.len() as u64, false),
-                    );
-                    let ptr_to_arr = self.builder.build_in_bounds_gep(
-                        arr_str_ptr,
-                        &[zero, self.ctx.i32_type().const_int(1, false)],
-                        "ptr_to_arr",
-                    );
-                    self.builder.build_store(ptr_to_arr, arr_ptr);
-                    let i32_type = self.ctx.i32_type();
-                    for (i, v) in elements.iter().enumerate() {
-                        let elem_ptr = self.builder.build_in_bounds_gep(
-                            arr_ptr,
-                            &[i32_type.const_int(i as u64, false)],
-                            "elem_ptr",
-                        );
-                        self.builder.build_store(elem_ptr, *v);
-                    }
-                }
-                arr_str_ptr.into()
+            let ty = ctx.get_llvm_type(signature.ret).into_pointer_type();
+            let zelf_ty: BasicTypeEnum = ty.get_element_type().try_into().unwrap();
+            let zelf = ctx.builder.build_alloca(zelf_ty, "alloca").into();
+            // call `__init__` if there is one
+            if let Some(fun_id) = fun_id {
+                let mut sign = signature.clone();
+                sign.ret = ctx.primitives.none;
+                generator.gen_call(ctx, Some((signature.ret, zelf)), (&sign, fun_id), params);
             }
-            ExprKind::Tuple { elts, .. } => {
-                let element_val = elts.iter().map(|x| self.gen_expr(x).unwrap()).collect_vec();
-                let element_ty = element_val.iter().map(BasicValueEnum::get_type).collect_vec();
-                let tuple_ty = self.ctx.struct_type(&element_ty, false);
-                let tuple_ptr = self.builder.build_alloca(tuple_ty, "tuple");
-                for (i, v) in element_val.into_iter().enumerate() {
-                    unsafe {
-                        let ptr = self.builder.build_in_bounds_gep(
-                            tuple_ptr,
-                            &[zero, self.ctx.i32_type().const_int(i as u64, false)],
-                            "ptr",
-                        );
-                        self.builder.build_store(ptr, v);
-                    }
-                }
-                tuple_ptr.into()
-            }
-            ExprKind::Attribute { value, attr, .. } => {
-                // note that we would handle class methods directly in calls
-                let index = self.get_attr_index(value.custom.unwrap(), *attr);
-                let val = self.gen_expr(value).unwrap();
-                let ptr = assert_pointer_val(val);
-                unsafe {
-                    let ptr = self.builder.build_in_bounds_gep(
-                        ptr,
-                        &[zero, self.ctx.i32_type().const_int(index as u64, false)],
-                        "attr",
-                    );
-                    self.builder.build_load(ptr, "field")
-                }
-            }
-            ExprKind::BoolOp { op, values } => {
-                // requires conditional branches for short-circuiting...
-                let left = assert_int_val(self.gen_expr(&values[0]).unwrap());
-                let current = self.builder.get_insert_block().unwrap().get_parent().unwrap();
-                let a_bb = self.ctx.append_basic_block(current, "a");
-                let b_bb = self.ctx.append_basic_block(current, "b");
-                let cont_bb = self.ctx.append_basic_block(current, "cont");
-                self.builder.build_conditional_branch(left, a_bb, b_bb);
-                let (a, b) = match op {
-                    Boolop::Or => {
-                        self.builder.position_at_end(a_bb);
-                        let a = self.ctx.bool_type().const_int(1, false);
-                        self.builder.build_unconditional_branch(cont_bb);
-                        self.builder.position_at_end(b_bb);
-                        let b = assert_int_val(self.gen_expr(&values[1]).unwrap());
-                        self.builder.build_unconditional_branch(cont_bb);
-                        (a, b)
-                    }
-                    Boolop::And => {
-                        self.builder.position_at_end(a_bb);
-                        let a = assert_int_val(self.gen_expr(&values[1]).unwrap());
-                        self.builder.build_unconditional_branch(cont_bb);
-                        self.builder.position_at_end(b_bb);
-                        let b = self.ctx.bool_type().const_int(0, false);
-                        self.builder.build_unconditional_branch(cont_bb);
-                        (a, b)
-                    }
-                };
-                self.builder.position_at_end(cont_bb);
-                let phi = self.builder.build_phi(self.ctx.bool_type(), "phi");
-                phi.add_incoming(&[(&a, a_bb), (&b, b_bb)]);
-                phi.as_basic_value()
-            }
-            ExprKind::BinOp { op, left, right } => {
-                let ty1 = self.unifier.get_representative(left.custom.unwrap());
-                let ty2 = self.unifier.get_representative(right.custom.unwrap());
-                let left = self.gen_expr(left).unwrap();
-                let right = self.gen_expr(right).unwrap();
+            zelf
+        }
+        _ => unreachable!(),
+    }
+}
 
-                // we can directly compare the types, because we've got their representatives
-                // which would be unchanged until further unification, which we would never do
-                // when doing code generation for function instances
-                if ty1 == ty2 && [self.primitives.int32, self.primitives.int64].contains(&ty1) {
-                    self.gen_int_ops(op, left, right)
-                } else if ty1 == ty2 && self.primitives.float == ty1 {
-                    self.gen_float_ops(op, left, right)
-                } else {
-                    unimplemented!()
+pub fn gen_func_instance<'ctx, 'a>(
+    ctx: &mut CodeGenContext<'ctx, 'a>,
+    obj: Option<(Type, BasicValueEnum<'ctx>)>,
+    fun: (&FunSignature, &mut TopLevelDef, String),
+) -> String {
+    if let (
+        sign,
+        TopLevelDef::Function {
+            name, instance_to_symbol, instance_to_stmt, var_id, resolver, ..
+        },
+        key,
+    ) = fun
+    {
+        instance_to_symbol.get(&key).cloned().unwrap_or_else(|| {
+            let symbol = format!("{}.{}", name, instance_to_symbol.len());
+            instance_to_symbol.insert(key, symbol.clone());
+            let key = ctx.get_subst_key(obj.map(|a| a.0), sign, Some(var_id));
+            let instance = instance_to_stmt.get(&key).unwrap();
+            let unifiers = ctx.top_level.unifiers.read();
+            let (unifier, primitives) = &unifiers[instance.unifier_id];
+            let mut unifier = Unifier::from_shared_unifier(unifier);
+
+            let mut type_cache = [
+                (ctx.primitives.int32, primitives.int32),
+                (ctx.primitives.int64, primitives.int64),
+                (ctx.primitives.float, primitives.float),
+                (ctx.primitives.bool, primitives.bool),
+                (ctx.primitives.none, primitives.none),
+            ]
+            .iter()
+            .map(|(a, b)| (ctx.unifier.get_representative(*a), unifier.get_representative(*b)))
+            .collect();
+
+            let subst = sign
+                .vars
+                .iter()
+                .map(|(id, ty)| {
+                    (
+                        *instance.subst.get(id).unwrap(),
+                        unifier.copy_from(&mut ctx.unifier, *ty, &mut type_cache),
+                    )
+                })
+                .collect();
+
+            let mut signature = FunSignature {
+                args: sign
+                    .args
+                    .iter()
+                    .map(|arg| FuncArg {
+                        name: arg.name,
+                        ty: unifier.copy_from(&mut ctx.unifier, arg.ty, &mut type_cache),
+                        default_value: arg.default_value.clone(),
+                    })
+                    .collect(),
+                ret: unifier.copy_from(&mut ctx.unifier, sign.ret, &mut type_cache),
+                vars: sign
+                    .vars
+                    .iter()
+                    .map(|(id, ty)| {
+                        (*id, unifier.copy_from(&mut ctx.unifier, *ty, &mut type_cache))
+                    })
+                    .collect(),
+            };
+
+            if let Some(obj) = &obj {
+                signature
+                    .args
+                    .insert(0, FuncArg { name: "self".into(), ty: obj.0, default_value: None });
+            }
+
+            let unifier = (unifier.get_shared_unifier(), *primitives);
+
+            ctx.registry.add_task(CodeGenTask {
+                symbol_name: symbol.clone(),
+                body: instance.body.clone(),
+                resolver: resolver.as_ref().unwrap().clone(),
+                calls: instance.calls.clone(),
+                subst,
+                signature,
+                unifier,
+            });
+            symbol
+        })
+    } else {
+        unreachable!()
+    }
+}
+
+pub fn gen_call<'ctx, 'a, G: CodeGenerator + ?Sized>(
+    generator: &mut G,
+    ctx: &mut CodeGenContext<'ctx, 'a>,
+    obj: Option<(Type, BasicValueEnum<'ctx>)>,
+    fun: (&FunSignature, DefinitionId),
+    params: Vec<(Option<StrRef>, BasicValueEnum<'ctx>)>,
+) -> Option<BasicValueEnum<'ctx>> {
+    let definition = ctx.top_level.definitions.read().get(fun.1 .0).cloned().unwrap();
+    let key = ctx.get_subst_key(obj.map(|a| a.0), fun.0, None);
+    let symbol = {
+        // make sure this lock guard is dropped at the end of this scope...
+        let def = definition.read();
+        match &*def {
+            TopLevelDef::Function { instance_to_symbol, codegen_callback, .. } => {
+                if let Some(callback) = codegen_callback {
+                    return callback.run(ctx, obj, fun, params);
+                }
+                instance_to_symbol.get(&key).cloned()
+            }
+            TopLevelDef::Class { .. } => {
+                return Some(generator.gen_constructor(ctx, fun.0, &*def, params))
+            }
+        }
+    }
+    .unwrap_or_else(|| {
+        generator.gen_func_instance(ctx, obj, (fun.0, &mut *definition.write(), key))
+    });
+    let fun_val = ctx.module.get_function(&symbol).unwrap_or_else(|| {
+        let mut args = fun.0.args.clone();
+        if let Some(obj) = &obj {
+            args.insert(0, FuncArg { name: "self".into(), ty: obj.0, default_value: None });
+        }
+        let params = args.iter().map(|arg| ctx.get_llvm_type(arg.ty)).collect_vec();
+        let fun_ty = if ctx.unifier.unioned(fun.0.ret, ctx.primitives.none) {
+            ctx.ctx.void_type().fn_type(&params, false)
+        } else {
+            ctx.get_llvm_type(fun.0.ret).fn_type(&params, false)
+        };
+        ctx.module.add_function(&symbol, fun_ty, None)
+    });
+    let mut keys = fun.0.args.clone();
+    let mut mapping = HashMap::new();
+    for (key, value) in params.into_iter() {
+        mapping.insert(key.unwrap_or_else(|| keys.remove(0).name), value);
+    }
+    // default value handling
+    for k in keys.into_iter() {
+        mapping.insert(k.name, ctx.gen_symbol_val(&k.default_value.unwrap()));
+    }
+    // reorder the parameters
+    let mut params = fun.0.args.iter().map(|arg| mapping.remove(&arg.name).unwrap()).collect_vec();
+    if let Some(obj) = obj {
+        params.insert(0, obj.1);
+    }
+    ctx.builder.build_call(fun_val, &params, "call").try_as_basic_value().left()
+}
+
+pub fn gen_expr<'ctx, 'a, G: CodeGenerator + ?Sized>(
+    generator: &mut G,
+    ctx: &mut CodeGenContext<'ctx, 'a>,
+    expr: &Expr<Option<Type>>,
+) -> Option<BasicValueEnum<'ctx>> {
+    let zero = ctx.ctx.i32_type().const_int(0, false);
+    Some(match &expr.node {
+        ExprKind::Constant { value, .. } => {
+            let ty = expr.custom.unwrap();
+            ctx.gen_const(value, ty)
+        }
+        ExprKind::Name { id, .. } => {
+            let ptr = ctx.var_assignment.get(id);
+            if let Some(ptr) = ptr {
+                ctx.builder.build_load(*ptr, "load")
+            } else {
+                let resolver = ctx.resolver.clone();
+                resolver.get_symbol_value(*id, ctx).unwrap()
+            }
+        }
+        ExprKind::List { elts, .. } => {
+            // this shall be optimized later for constant primitive lists...
+            // we should use memcpy for that instead of generating thousands of stores
+            let elements = elts.iter().map(|x| generator.gen_expr(ctx, x).unwrap()).collect_vec();
+            let ty = if elements.is_empty() {
+                ctx.ctx.i32_type().into()
+            } else {
+                elements[0].get_type()
+            };
+            let arr_ptr = ctx.builder.build_array_alloca(
+                ty,
+                ctx.ctx.i32_type().const_int(elements.len() as u64, false),
+                "tmparr",
+            );
+            let arr_ty = ctx.ctx.struct_type(
+                &[ctx.ctx.i32_type().into(), ty.ptr_type(AddressSpace::Generic).into()],
+                false,
+            );
+            let arr_str_ptr = ctx.builder.build_alloca(arr_ty, "tmparrstr");
+            unsafe {
+                let len_ptr =
+                    ctx.builder.build_in_bounds_gep(arr_str_ptr, &[zero, zero], "len_ptr");
+                ctx.builder.build_store(
+                    len_ptr,
+                    ctx.ctx.i32_type().const_int(elements.len() as u64, false),
+                );
+                let ptr_to_arr = ctx.builder.build_in_bounds_gep(
+                    arr_str_ptr,
+                    &[zero, ctx.ctx.i32_type().const_int(1, false)],
+                    "ptr_to_arr",
+                );
+                ctx.builder.build_store(ptr_to_arr, arr_ptr);
+                let i32_type = ctx.ctx.i32_type();
+                for (i, v) in elements.iter().enumerate() {
+                    let elem_ptr = ctx.builder.build_in_bounds_gep(
+                        arr_ptr,
+                        &[i32_type.const_int(i as u64, false)],
+                        "elem_ptr",
+                    );
+                    ctx.builder.build_store(elem_ptr, *v);
                 }
             }
-            ExprKind::UnaryOp { op, operand } => {
-                let ty = self.unifier.get_representative(operand.custom.unwrap());
-                let val = self.gen_expr(operand).unwrap();
-                if ty == self.primitives.bool {
-                    let val = assert_int_val(val);
-                    match op {
-                        ast::Unaryop::Invert | ast::Unaryop::Not => {
-                            self.builder.build_not(val, "not").into()
-                        }
-                        _ => val.into(),
-                    }
-                } else if [self.primitives.int32, self.primitives.int64].contains(&ty) {
-                    let val = assert_int_val(val);
-                    match op {
-                        ast::Unaryop::USub => self.builder.build_int_neg(val, "neg").into(),
-                        ast::Unaryop::Invert => self.builder.build_not(val, "not").into(),
-                        ast::Unaryop::Not => self
-                            .builder
-                            .build_int_compare(
-                                inkwell::IntPredicate::EQ,
-                                val,
-                                val.get_type().const_zero(),
-                                "not",
-                            )
-                            .into(),
-                        _ => val.into(),
-                    }
-                } else if ty == self.primitives.float {
-                    let val = if let BasicValueEnum::FloatValue(val) = val {
-                        val
-                    } else {
-                        unreachable!()
-                    };
-                    match op {
-                        ast::Unaryop::USub => self.builder.build_float_neg(val, "neg").into(),
-                        ast::Unaryop::Not => self
-                            .builder
-                            .build_float_compare(
-                                inkwell::FloatPredicate::OEQ,
-                                val,
-                                val.get_type().const_zero(),
-                                "not",
-                            )
-                            .into(),
-                        _ => val.into(),
-                    }
-                } else {
-                    unimplemented!()
+            arr_str_ptr.into()
+        }
+        ExprKind::Tuple { elts, .. } => {
+            let element_val =
+                elts.iter().map(|x| generator.gen_expr(ctx, x).unwrap()).collect_vec();
+            let element_ty = element_val.iter().map(BasicValueEnum::get_type).collect_vec();
+            let tuple_ty = ctx.ctx.struct_type(&element_ty, false);
+            let tuple_ptr = ctx.builder.build_alloca(tuple_ty, "tuple");
+            for (i, v) in element_val.into_iter().enumerate() {
+                unsafe {
+                    let ptr = ctx.builder.build_in_bounds_gep(
+                        tuple_ptr,
+                        &[zero, ctx.ctx.i32_type().const_int(i as u64, false)],
+                        "ptr",
+                    );
+                    ctx.builder.build_store(ptr, v);
                 }
             }
-            ExprKind::Compare { left, ops, comparators } => {
-                izip!(
-                    chain(once(left.as_ref()), comparators.iter()),
-                    comparators.iter(),
-                    ops.iter(),
-                )
+            tuple_ptr.into()
+        }
+        ExprKind::Attribute { value, attr, .. } => {
+            // note that we would handle class methods directly in calls
+            let index = ctx.get_attr_index(value.custom.unwrap(), *attr);
+            let val = generator.gen_expr(ctx, value).unwrap();
+            let ptr = assert_pointer_val(val);
+            unsafe {
+                let ptr = ctx.builder.build_in_bounds_gep(
+                    ptr,
+                    &[zero, ctx.ctx.i32_type().const_int(index as u64, false)],
+                    "attr",
+                );
+                ctx.builder.build_load(ptr, "field")
+            }
+        }
+        ExprKind::BoolOp { op, values } => {
+            // requires conditional branches for short-circuiting...
+            let left = assert_int_val(generator.gen_expr(ctx, &values[0]).unwrap());
+            let current = ctx.builder.get_insert_block().unwrap().get_parent().unwrap();
+            let a_bb = ctx.ctx.append_basic_block(current, "a");
+            let b_bb = ctx.ctx.append_basic_block(current, "b");
+            let cont_bb = ctx.ctx.append_basic_block(current, "cont");
+            ctx.builder.build_conditional_branch(left, a_bb, b_bb);
+            let (a, b) = match op {
+                Boolop::Or => {
+                    ctx.builder.position_at_end(a_bb);
+                    let a = ctx.ctx.bool_type().const_int(1, false);
+                    ctx.builder.build_unconditional_branch(cont_bb);
+                    ctx.builder.position_at_end(b_bb);
+                    let b = assert_int_val(generator.gen_expr(ctx, &values[1]).unwrap());
+                    ctx.builder.build_unconditional_branch(cont_bb);
+                    (a, b)
+                }
+                Boolop::And => {
+                    ctx.builder.position_at_end(a_bb);
+                    let a = assert_int_val(generator.gen_expr(ctx, &values[1]).unwrap());
+                    ctx.builder.build_unconditional_branch(cont_bb);
+                    ctx.builder.position_at_end(b_bb);
+                    let b = ctx.ctx.bool_type().const_int(0, false);
+                    ctx.builder.build_unconditional_branch(cont_bb);
+                    (a, b)
+                }
+            };
+            ctx.builder.position_at_end(cont_bb);
+            let phi = ctx.builder.build_phi(ctx.ctx.bool_type(), "phi");
+            phi.add_incoming(&[(&a, a_bb), (&b, b_bb)]);
+            phi.as_basic_value()
+        }
+        ExprKind::BinOp { op, left, right } => {
+            let ty1 = ctx.unifier.get_representative(left.custom.unwrap());
+            let ty2 = ctx.unifier.get_representative(right.custom.unwrap());
+            let left = generator.gen_expr(ctx, left).unwrap();
+            let right = generator.gen_expr(ctx, right).unwrap();
+
+            // we can directly compare the types, because we've got their representatives
+            // which would be unchanged until further unification, which we would never do
+            // when doing code generation for function instances
+            if ty1 == ty2 && [ctx.primitives.int32, ctx.primitives.int64].contains(&ty1) {
+                ctx.gen_int_ops(op, left, right)
+            } else if ty1 == ty2 && ctx.primitives.float == ty1 {
+                ctx.gen_float_ops(op, left, right)
+            } else {
+                unimplemented!()
+            }
+        }
+        ExprKind::UnaryOp { op, operand } => {
+            let ty = ctx.unifier.get_representative(operand.custom.unwrap());
+            let val = generator.gen_expr(ctx, operand).unwrap();
+            if ty == ctx.primitives.bool {
+                let val = assert_int_val(val);
+                match op {
+                    ast::Unaryop::Invert | ast::Unaryop::Not => {
+                        ctx.builder.build_not(val, "not").into()
+                    }
+                    _ => val.into(),
+                }
+            } else if [ctx.primitives.int32, ctx.primitives.int64].contains(&ty) {
+                let val = assert_int_val(val);
+                match op {
+                    ast::Unaryop::USub => ctx.builder.build_int_neg(val, "neg").into(),
+                    ast::Unaryop::Invert => ctx.builder.build_not(val, "not").into(),
+                    ast::Unaryop::Not => ctx
+                        .builder
+                        .build_int_compare(
+                            inkwell::IntPredicate::EQ,
+                            val,
+                            val.get_type().const_zero(),
+                            "not",
+                        )
+                        .into(),
+                    _ => val.into(),
+                }
+            } else if ty == ctx.primitives.float {
+                let val =
+                    if let BasicValueEnum::FloatValue(val) = val { val } else { unreachable!() };
+                match op {
+                    ast::Unaryop::USub => ctx.builder.build_float_neg(val, "neg").into(),
+                    ast::Unaryop::Not => ctx
+                        .builder
+                        .build_float_compare(
+                            inkwell::FloatPredicate::OEQ,
+                            val,
+                            val.get_type().const_zero(),
+                            "not",
+                        )
+                        .into(),
+                    _ => val.into(),
+                }
+            } else {
+                unimplemented!()
+            }
+        }
+        ExprKind::Compare { left, ops, comparators } => {
+            izip!(chain(once(left.as_ref()), comparators.iter()), comparators.iter(), ops.iter(),)
                 .fold(None, |prev, (lhs, rhs, op)| {
-                    let ty = self.unifier.get_representative(lhs.custom.unwrap());
+                    let ty = ctx.unifier.get_representative(lhs.custom.unwrap());
                     let current =
-                        if [self.primitives.int32, self.primitives.int64, self.primitives.bool]
+                        if [ctx.primitives.int32, ctx.primitives.int64, ctx.primitives.bool]
                             .contains(&ty)
                         {
                             let (lhs, rhs) = if let (
                                 BasicValueEnum::IntValue(lhs),
                                 BasicValueEnum::IntValue(rhs),
-                            ) =
-                                (self.gen_expr(lhs).unwrap(), self.gen_expr(rhs).unwrap())
-                            {
+                            ) = (
+                                generator.gen_expr(ctx, lhs).unwrap(),
+                                generator.gen_expr(ctx, rhs).unwrap(),
+                            ) {
                                 (lhs, rhs)
                             } else {
                                 unreachable!()
@@ -601,14 +613,15 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
                                 ast::Cmpop::GtE => inkwell::IntPredicate::SGE,
                                 _ => unreachable!(),
                             };
-                            self.builder.build_int_compare(op, lhs, rhs, "cmp")
-                        } else if ty == self.primitives.float {
+                            ctx.builder.build_int_compare(op, lhs, rhs, "cmp")
+                        } else if ty == ctx.primitives.float {
                             let (lhs, rhs) = if let (
                                 BasicValueEnum::FloatValue(lhs),
                                 BasicValueEnum::FloatValue(rhs),
-                            ) =
-                                (self.gen_expr(lhs).unwrap(), self.gen_expr(rhs).unwrap())
-                            {
+                            ) = (
+                                generator.gen_expr(ctx, lhs).unwrap(),
+                                generator.gen_expr(ctx, rhs).unwrap(),
+                            ) {
                                 (lhs, rhs)
                             } else {
                                 unreachable!()
@@ -622,128 +635,130 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
                                 ast::Cmpop::GtE => inkwell::FloatPredicate::OGE,
                                 _ => unreachable!(),
                             };
-                            self.builder.build_float_compare(op, lhs, rhs, "cmp")
+                            ctx.builder.build_float_compare(op, lhs, rhs, "cmp")
                         } else {
                             unimplemented!()
                         };
-                    prev.map(|v| self.builder.build_and(v, current, "cmp")).or(Some(current))
+                    prev.map(|v| ctx.builder.build_and(v, current, "cmp")).or(Some(current))
                 })
                 .unwrap()
                 .into() // as there should be at least 1 element, it should never be none
-            }
-            ExprKind::IfExp { test, body, orelse } => {
-                let test = assert_int_val(self.gen_expr(test).unwrap());
-                let current = self.builder.get_insert_block().unwrap().get_parent().unwrap();
-                let then_bb = self.ctx.append_basic_block(current, "then");
-                let else_bb = self.ctx.append_basic_block(current, "else");
-                let cont_bb = self.ctx.append_basic_block(current, "cont");
-                self.builder.build_conditional_branch(test, then_bb, else_bb);
-                self.builder.position_at_end(then_bb);
-                let a = self.gen_expr(body).unwrap();
-                self.builder.build_unconditional_branch(cont_bb);
-                self.builder.position_at_end(else_bb);
-                let b = self.gen_expr(orelse).unwrap();
-                self.builder.build_unconditional_branch(cont_bb);
-                self.builder.position_at_end(cont_bb);
-                let phi = self.builder.build_phi(a.get_type(), "ifexpr");
-                phi.add_incoming(&[(&a, then_bb), (&b, else_bb)]);
-                phi.as_basic_value()
-            }
-            ExprKind::Call { func, args, keywords } => {
-                let mut params =
-                    args.iter().map(|arg| (None, self.gen_expr(arg).unwrap())).collect_vec();
-                let kw_iter = keywords.iter().map(|kw| {
-                    (Some(*kw.node.arg.as_ref().unwrap()), self.gen_expr(&kw.node.value).unwrap())
-                });
-                params.extend(kw_iter);
-                let call = self.calls.get(&expr.location.into());
-                let signature = match call {
-                    Some(call) => self.unifier.get_call_signature(*call).unwrap(),
-                    None => {
-                        let ty = func.custom.unwrap();
-                        if let TypeEnum::TFunc(sign) = &*self.unifier.get_ty(ty) {
-                            sign.borrow().clone()
-                        } else {
-                            unreachable!()
-                        }
-                    }
-                };
-                match &func.as_ref().node {
-                    ExprKind::Name { id, .. } => {
-                        // TODO: handle primitive casts and function pointers
-                        let fun =
-                            self.resolver.get_identifier_def(*id).expect("Unknown identifier");
-                        return self.gen_call(None, (&signature, fun), params);
-                    }
-                    ExprKind::Attribute { value, attr, .. } => {
-                        let val = self.gen_expr(value).unwrap();
-                        let id = if let TypeEnum::TObj { obj_id, .. } =
-                            &*self.unifier.get_ty(value.custom.unwrap())
-                        {
-                            *obj_id
-                        } else {
-                            unreachable!()
-                        };
-                        let fun_id = {
-                            let defs = self.top_level.definitions.read();
-                            let obj_def = defs.get(id.0).unwrap().read();
-                            if let TopLevelDef::Class { methods, .. } = &*obj_def {
-                                let mut fun_id = None;
-                                for (name, _, id) in methods.iter() {
-                                    if name == attr {
-                                        fun_id = Some(*id);
-                                    }
-                                }
-                                fun_id.unwrap()
-                            } else {
-                                unreachable!()
-                            }
-                        };
-                        return self.gen_call(
-                            Some((value.custom.unwrap(), val)),
-                            (&signature, fun_id),
-                            params,
-                        );
-                    }
-                    _ => unimplemented!(),
-                }
-            }
-            ExprKind::Subscript { value, slice, .. } => {
-                if let TypeEnum::TList { .. } = &*self.unifier.get_ty(value.custom.unwrap()) {
-                    if let ExprKind::Slice { .. } = slice.node {
-                        unimplemented!()
+        }
+        ExprKind::IfExp { test, body, orelse } => {
+            let test = assert_int_val(generator.gen_expr(ctx, test).unwrap());
+            let current = ctx.builder.get_insert_block().unwrap().get_parent().unwrap();
+            let then_bb = ctx.ctx.append_basic_block(current, "then");
+            let else_bb = ctx.ctx.append_basic_block(current, "else");
+            let cont_bb = ctx.ctx.append_basic_block(current, "cont");
+            ctx.builder.build_conditional_branch(test, then_bb, else_bb);
+            ctx.builder.position_at_end(then_bb);
+            let a = generator.gen_expr(ctx, body).unwrap();
+            ctx.builder.build_unconditional_branch(cont_bb);
+            ctx.builder.position_at_end(else_bb);
+            let b = generator.gen_expr(ctx, orelse).unwrap();
+            ctx.builder.build_unconditional_branch(cont_bb);
+            ctx.builder.position_at_end(cont_bb);
+            let phi = ctx.builder.build_phi(a.get_type(), "ifexpr");
+            phi.add_incoming(&[(&a, then_bb), (&b, else_bb)]);
+            phi.as_basic_value()
+        }
+        ExprKind::Call { func, args, keywords } => {
+            let mut params =
+                args.iter().map(|arg| (None, generator.gen_expr(ctx, arg).unwrap())).collect_vec();
+            let kw_iter = keywords.iter().map(|kw| {
+                (
+                    Some(*kw.node.arg.as_ref().unwrap()),
+                    generator.gen_expr(ctx, &kw.node.value).unwrap(),
+                )
+            });
+            params.extend(kw_iter);
+            let call = ctx.calls.get(&expr.location.into());
+            let signature = match call {
+                Some(call) => ctx.unifier.get_call_signature(*call).unwrap(),
+                None => {
+                    let ty = func.custom.unwrap();
+                    if let TypeEnum::TFunc(sign) = &*ctx.unifier.get_ty(ty) {
+                        sign.borrow().clone()
                     } else {
-                        // TODO: bound check
-                        let i32_type = self.ctx.i32_type();
-                        let v = assert_pointer_val(self.gen_expr(value).unwrap());
-                        let index = assert_int_val(self.gen_expr(slice).unwrap());
-                        unsafe {
-                            let ptr_to_arr = self.builder.build_in_bounds_gep(
-                                v,
-                                &[i32_type.const_zero(), i32_type.const_int(1, false)],
-                                "ptr_to_arr",
-                            );
-                            let arr_ptr =
-                                assert_pointer_val(self.builder.build_load(ptr_to_arr, "loadptr"));
-                            let ptr = self.builder.build_gep(arr_ptr, &[index], "loadarrgep");
-                            self.builder.build_load(ptr, "loadarr")
-                        }
-                    }
-                } else {
-                    let i32_type = self.ctx.i32_type();
-                    let v = assert_pointer_val(self.gen_expr(value).unwrap());
-                    let index = assert_int_val(self.gen_expr(slice).unwrap());
-                    unsafe {
-                        let ptr_to_elem = self.builder.build_in_bounds_gep(
-                            v,
-                            &[i32_type.const_zero(), index],
-                            "ptr_to_elem",
-                        );
-                        self.builder.build_load(ptr_to_elem, "loadelem")
+                        unreachable!()
                     }
                 }
+            };
+            match &func.as_ref().node {
+                ExprKind::Name { id, .. } => {
+                    // TODO: handle primitive casts and function pointers
+                    let fun = ctx.resolver.get_identifier_def(*id).expect("Unknown identifier");
+                    return generator.gen_call(ctx, None, (&signature, fun), params);
+                }
+                ExprKind::Attribute { value, attr, .. } => {
+                    let val = generator.gen_expr(ctx, value).unwrap();
+                    let id = if let TypeEnum::TObj { obj_id, .. } =
+                        &*ctx.unifier.get_ty(value.custom.unwrap())
+                    {
+                        *obj_id
+                    } else {
+                        unreachable!()
+                    };
+                    let fun_id = {
+                        let defs = ctx.top_level.definitions.read();
+                        let obj_def = defs.get(id.0).unwrap().read();
+                        if let TopLevelDef::Class { methods, .. } = &*obj_def {
+                            let mut fun_id = None;
+                            for (name, _, id) in methods.iter() {
+                                if name == attr {
+                                    fun_id = Some(*id);
+                                }
+                            }
+                            fun_id.unwrap()
+                        } else {
+                            unreachable!()
+                        }
+                    };
+                    return generator.gen_call(
+                        ctx,
+                        Some((value.custom.unwrap(), val)),
+                        (&signature, fun_id),
+                        params,
+                    );
+                }
+                _ => unimplemented!(),
             }
-            _ => unimplemented!(),
-        })
-    }
+        }
+        ExprKind::Subscript { value, slice, .. } => {
+            if let TypeEnum::TList { .. } = &*ctx.unifier.get_ty(value.custom.unwrap()) {
+                if let ExprKind::Slice { .. } = slice.node {
+                    unimplemented!()
+                } else {
+                    // TODO: bound check
+                    let i32_type = ctx.ctx.i32_type();
+                    let v = assert_pointer_val(generator.gen_expr(ctx, value).unwrap());
+                    let index = assert_int_val(generator.gen_expr(ctx, slice).unwrap());
+                    unsafe {
+                        let ptr_to_arr = ctx.builder.build_in_bounds_gep(
+                            v,
+                            &[i32_type.const_zero(), i32_type.const_int(1, false)],
+                            "ptr_to_arr",
+                        );
+                        let arr_ptr =
+                            assert_pointer_val(ctx.builder.build_load(ptr_to_arr, "loadptr"));
+                        let ptr = ctx.builder.build_gep(arr_ptr, &[index], "loadarrgep");
+                        ctx.builder.build_load(ptr, "loadarr")
+                    }
+                }
+            } else {
+                let i32_type = ctx.ctx.i32_type();
+                let v = assert_pointer_val(generator.gen_expr(ctx, value).unwrap());
+                let index = assert_int_val(generator.gen_expr(ctx, slice).unwrap());
+                unsafe {
+                    let ptr_to_elem = ctx.builder.build_in_bounds_gep(
+                        v,
+                        &[i32_type.const_zero(), index],
+                        "ptr_to_elem",
+                    );
+                    ctx.builder.build_load(ptr_to_elem, "loadelem")
+                }
+            }
+        }
+        _ => unimplemented!(),
+    })
 }

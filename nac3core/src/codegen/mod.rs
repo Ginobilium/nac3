@@ -27,10 +27,13 @@ use std::sync::{
 use std::thread;
 
 mod expr;
+mod generator;
 mod stmt;
 
 #[cfg(test)]
 mod test;
+
+pub use generator::{CodeGenerator, DefaultCodeGenerator};
 
 pub struct CodeGenContext<'ctx, 'a> {
     pub ctx: &'ctx Context,
@@ -77,8 +80,8 @@ pub struct WorkerRegistry {
 }
 
 impl WorkerRegistry {
-    pub fn create_workers(
-        names: &[&str],
+    pub fn create_workers<G: CodeGenerator + Send + 'static>(
+        generators: Vec<Box<G>>,
         top_level_ctx: Arc<TopLevelContext>,
         f: Arc<WithCall>,
     ) -> (Arc<WorkerRegistry>, Vec<thread::JoinHandle<()>>) {
@@ -89,21 +92,20 @@ impl WorkerRegistry {
         let registry = Arc::new(WorkerRegistry {
             sender: Arc::new(sender),
             receiver: Arc::new(receiver),
-            thread_count: names.len(),
+            thread_count: generators.len(),
             panicked: AtomicBool::new(false),
             task_count,
             wait_condvar,
         });
 
         let mut handles = Vec::new();
-        for name in names.iter() {
+        for mut generator in generators.into_iter() {
             let top_level_ctx = top_level_ctx.clone();
             let registry = registry.clone();
             let registry2 = registry.clone();
-            let name = name.to_string();
             let f = f.clone();
             let handle = thread::spawn(move || {
-                registry.worker_thread(name, top_level_ctx, f);
+                registry.worker_thread(generator.as_mut(), top_level_ctx, f);
             });
             let handle = thread::spawn(move || {
                 if let Err(e) = handle.join() {
@@ -156,18 +158,19 @@ impl WorkerRegistry {
         self.sender.send(Some(task)).unwrap();
     }
 
-    fn worker_thread(
+    fn worker_thread<G: CodeGenerator>(
         &self,
-        module_name: String,
+        generator: &mut G,
         top_level_ctx: Arc<TopLevelContext>,
         f: Arc<WithCall>,
     ) {
         let context = Context::create();
         let mut builder = context.create_builder();
-        let mut module = context.create_module(&module_name);
+        let mut module = context.create_module(generator.get_name());
 
         while let Some(task) = self.receiver.recv().unwrap() {
-            let result = gen_func(&context, self, builder, module, task, top_level_ctx.clone());
+            let result =
+                gen_func(&context, generator, self, builder, module, task, top_level_ctx.clone());
             builder = result.0;
             module = result.1;
             *self.task_count.lock() -= 1;
@@ -243,8 +246,9 @@ fn get_llvm_type<'ctx>(
     })
 }
 
-pub fn gen_func<'ctx>(
+pub fn gen_func<'ctx, G: CodeGenerator + ?Sized>(
     context: &'ctx Context,
+    generator: &mut G,
     registry: &WorkerRegistry,
     builder: Builder<'ctx>,
     module: Module<'ctx>,
@@ -351,7 +355,7 @@ pub fn gen_func<'ctx>(
 
     let mut returned = false;
     for stmt in task.body.iter() {
-        returned = code_gen_context.gen_stmt(stmt);
+        returned = generator.gen_stmt(&mut code_gen_context, stmt);
         if returned {
             break;
         }

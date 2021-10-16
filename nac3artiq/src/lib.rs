@@ -19,7 +19,7 @@ use rustpython_parser::{
 use parking_lot::{Mutex, RwLock};
 
 use nac3core::{
-    codegen::{CodeGenTask, WithCall, WorkerRegistry},
+    codegen::{CodeGenTask, DefaultCodeGenerator, WithCall, WorkerRegistry},
     symbol_resolver::SymbolResolver,
     toplevel::{composer::TopLevelComposer, DefinitionId, GenCall, TopLevelContext, TopLevelDef},
     typecheck::typedef::{FunSignature, FuncArg},
@@ -423,11 +423,13 @@ impl Nac3 {
                 .expect("couldn't write module to file");
         })));
         let thread_names: Vec<String> = (0..4).map(|i| format!("module{}", i)).collect();
-        let threads: Vec<_> = thread_names.iter().map(|s| s.as_str()).collect();
+        let threads: Vec<_> = thread_names
+            .iter()
+            .map(|s| Box::new(DefaultCodeGenerator::new(s.to_string())))
+            .collect();
 
         py.allow_threads(|| {
-            let (registry, handles) =
-                WorkerRegistry::create_workers(&threads, top_level.clone(), f);
+            let (registry, handles) = WorkerRegistry::create_workers(threads, top_level.clone(), f);
             registry.add_task(task);
             registry.wait_tasks_complete(handles);
         });

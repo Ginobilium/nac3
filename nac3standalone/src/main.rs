@@ -1,12 +1,16 @@
-use std::env;
-use std::fs;
-use inkwell::{OptimizationLevel, passes::{PassManager, PassManagerBuilder}, targets::*};
+use inkwell::{
+    passes::{PassManager, PassManagerBuilder},
+    targets::*,
+    OptimizationLevel,
+};
 use nac3core::typecheck::type_inferencer::PrimitiveStore;
 use rustpython_parser::parser;
+use std::env;
+use std::fs;
 use std::{collections::HashMap, path::Path, sync::Arc, time::SystemTime};
 
 use nac3core::{
-    codegen::{CodeGenTask, WithCall, WorkerRegistry},
+    codegen::{CodeGenTask, DefaultCodeGenerator, WithCall, WorkerRegistry},
     symbol_resolver::SymbolResolver,
     toplevel::{composer::TopLevelComposer, TopLevelDef},
     typecheck::typedef::FunSignature,
@@ -17,7 +21,10 @@ use basic_symbol_resolver::*;
 
 fn main() {
     let demo_name = env::args().nth(1).unwrap();
-    let threads: u32 = env::args().nth(2).map(|s| str::parse(&s).unwrap()).unwrap_or(1);
+    let threads: u32 = env::args()
+        .nth(2)
+        .map(|s| str::parse(&s).unwrap())
+        .unwrap_or(1);
 
     let start = SystemTime::now();
 
@@ -29,7 +36,7 @@ fn main() {
             println!("Cannot open input file: {}", err);
             return;
         }
-   };
+    };
 
     let primitive: PrimitiveStore = TopLevelComposer::make_primitives().0;
     let (mut composer, builtins_def, builtins_ty) = TopLevelComposer::new(vec![]);
@@ -38,23 +45,27 @@ fn main() {
         id_to_type: builtins_ty.into(),
         id_to_def: builtins_def.into(),
         class_names: Default::default(),
-    }.into();
-    let resolver = Arc::new(
-        Resolver(internal_resolver.clone())
-    ) as Arc<dyn SymbolResolver + Send + Sync>;
+    }
+    .into();
+    let resolver =
+        Arc::new(Resolver(internal_resolver.clone())) as Arc<dyn SymbolResolver + Send + Sync>;
     let setup_time = SystemTime::now();
-    println!("setup time: {}ms", setup_time.duration_since(start).unwrap().as_millis());
+    println!(
+        "setup time: {}ms",
+        setup_time.duration_since(start).unwrap().as_millis()
+    );
 
     let parser_result = parser::parse_program(&program).unwrap();
     let parse_time = SystemTime::now();
-    println!("parse time: {}ms", parse_time.duration_since(setup_time).unwrap().as_millis());
+    println!(
+        "parse time: {}ms",
+        parse_time.duration_since(setup_time).unwrap().as_millis()
+    );
 
     for stmt in parser_result.into_iter() {
-        let (name, def_id, ty) = composer.register_top_level(
-            stmt,
-            Some(resolver.clone()),
-            "__main__".into(),
-        ).unwrap();
+        let (name, def_id, ty) = composer
+            .register_top_level(stmt, Some(resolver.clone()), "__main__".into())
+            .unwrap();
 
         internal_resolver.add_id_def(name, def_id);
         if let Some(ty) = ty {
@@ -64,7 +75,13 @@ fn main() {
 
     composer.start_analysis(true).unwrap();
     let analysis_time = SystemTime::now();
-    println!("analysis time: {}ms", analysis_time.duration_since(parse_time).unwrap().as_millis());
+    println!(
+        "analysis time: {}ms",
+        analysis_time
+            .duration_since(parse_time)
+            .unwrap()
+            .as_millis()
+    );
 
     let top_level = Arc::new(composer.make_top_level_context());
 
@@ -119,19 +136,32 @@ fn main() {
             )
             .expect("couldn't create target machine");
         target_machine
-            .write_to_file(module, FileType::Object, Path::new(&format!("{}.o", module.get_name().to_str().unwrap())))
+            .write_to_file(
+                module,
+                FileType::Object,
+                Path::new(&format!("{}.o", module.get_name().to_str().unwrap())),
+            )
             .expect("couldn't write module to file");
 
         // println!("IR:\n{}", module.print_to_string().to_str().unwrap());
-
     })));
-    let threads: Vec<String> = (0..threads).map(|i| format!("module{}", i)).collect();
-    let threads: Vec<_> = threads.iter().map(|s| s.as_str()).collect();
-    let (registry, handles) = WorkerRegistry::create_workers(&threads, top_level, f);
+    let threads = (0..threads)
+        .map(|i| Box::new(DefaultCodeGenerator::new(format!("module{}", i))))
+        .collect();
+    let (registry, handles) = WorkerRegistry::create_workers(threads, top_level, f);
     registry.add_task(task);
     registry.wait_tasks_complete(handles);
 
     let final_time = SystemTime::now();
-    println!("codegen time (including LLVM): {}ms", final_time.duration_since(analysis_time).unwrap().as_millis());
-    println!("total time: {}ms", final_time.duration_since(start).unwrap().as_millis());
+    println!(
+        "codegen time (including LLVM): {}ms",
+        final_time
+            .duration_since(analysis_time)
+            .unwrap()
+            .as_millis()
+    );
+    println!(
+        "total time: {}ms",
+        final_time.duration_since(start).unwrap().as_millis()
+    );
 }

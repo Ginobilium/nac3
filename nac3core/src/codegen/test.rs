@@ -1,5 +1,5 @@
 use crate::{
-    codegen::{CodeGenTask, WithCall, WorkerRegistry, CodeGenContext},
+    codegen::{CodeGenTask, WithCall, WorkerRegistry, CodeGenContext, DefaultCodeGenerator},
     location::Location,
     symbol_resolver::SymbolResolver,
     toplevel::{
@@ -72,7 +72,7 @@ fn test_primitives() {
         class_names: Default::default(),
     }) as Arc<dyn SymbolResolver + Send + Sync>;
 
-    let threads = ["test"];
+    let threads = vec![DefaultCodeGenerator::new("test".into()).into()];
     let signature = FunSignature {
         args: vec![
             FuncArg { name: "a".into(), ty: primitives.int32, default_value: None },
@@ -186,7 +186,7 @@ fn test_primitives() {
         .trim();
         assert_eq!(expected, module.print_to_string().to_str().unwrap().trim());
     })));
-    let (registry, handles) = WorkerRegistry::create_workers(&threads, top_level, f);
+    let (registry, handles) = WorkerRegistry::create_workers(threads, top_level, f);
     registry.add_task(task);
     registry.wait_tasks_complete(handles);
 }
@@ -245,7 +245,7 @@ fn test_simple_call() {
         unreachable!()
     }
 
-    let threads = ["test"];
+    let threads = vec![DefaultCodeGenerator::new("test".into()).into()];
     let mut function_data = FunctionData {
         resolver: resolver.clone(),
         bound_variables: Vec::new(),
@@ -351,7 +351,7 @@ fn test_simple_call() {
         .trim();
         assert_eq!(expected, module.print_to_string().to_str().unwrap().trim());
     })));
-    let (registry, handles) = WorkerRegistry::create_workers(&threads, top_level, f);
+    let (registry, handles) = WorkerRegistry::create_workers(threads, top_level, f);
     registry.add_task(task);
     registry.wait_tasks_complete(handles);
 }
