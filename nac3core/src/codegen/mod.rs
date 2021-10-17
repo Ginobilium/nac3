@@ -12,9 +12,10 @@ use inkwell::{
     builder::Builder,
     context::Context,
     module::Module,
+    passes::{PassManager, PassManagerBuilder},
     types::{BasicType, BasicTypeEnum},
-    values::PointerValue,
-    AddressSpace,
+    values::{FunctionValue, PointerValue},
+    AddressSpace, OptimizationLevel,
 };
 use itertools::Itertools;
 use parking_lot::{Condvar, Mutex};
@@ -168,17 +169,27 @@ impl WorkerRegistry {
         let mut builder = context.create_builder();
         let mut module = context.create_module(generator.get_name());
 
+        let pass_builder = PassManagerBuilder::create();
+        pass_builder.set_optimization_level(OptimizationLevel::Default);
+        let passes = PassManager::create(&module);
+        pass_builder.populate_function_pass_manager(&passes);
+
         while let Some(task) = self.receiver.recv().unwrap() {
             let result =
                 gen_func(&context, generator, self, builder, module, task, top_level_ctx.clone());
             builder = result.0;
             module = result.1;
+            passes.run_on(&result.2);
             *self.task_count.lock() -= 1;
             self.wait_condvar.notify_all();
         }
 
-        // do whatever...
-        module.verify().unwrap();
+        let result = module.verify();
+        if let Err(err) = result {
+            println!("{}", module.print_to_string().to_str().unwrap());
+            println!("{}", err);
+            panic!()
+        }
         f.run(&module);
         let mut lock = self.task_count.lock();
         *lock += 1;
@@ -254,8 +265,7 @@ pub fn gen_func<'ctx, G: CodeGenerator + ?Sized>(
     module: Module<'ctx>,
     task: CodeGenTask,
     top_level_ctx: Arc<TopLevelContext>,
-) -> (Builder<'ctx>, Module<'ctx>) {
-    // unwrap_or(0) is for unit tests without using rayon
+) -> (Builder<'ctx>, Module<'ctx>, FunctionValue<'ctx>) {
     let (mut unifier, primitives) = {
         let (unifier, primitives) = task.unifier;
         (Unifier::from_shared_unifier(&unifier), primitives)
@@ -367,5 +377,5 @@ pub fn gen_func<'ctx, G: CodeGenerator + ?Sized>(
 
     let CodeGenContext { builder, module, .. } = code_gen_context;
 
-    (builder, module)
+    (builder, module, fn_val)
 }
