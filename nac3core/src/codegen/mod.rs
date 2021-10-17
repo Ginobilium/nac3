@@ -3,7 +3,7 @@ use crate::{
     toplevel::{TopLevelContext, TopLevelDef},
     typecheck::{
         type_inferencer::{CodeLocation, PrimitiveStore},
-        typedef::{CallId, FunSignature, SharedUnifier, Type, TypeEnum, Unifier},
+        typedef::{CallId, FuncArg, Type, TypeEnum, Unifier},
     },
 };
 use crossbeam::channel::{unbounded, Receiver, Sender};
@@ -27,6 +27,7 @@ use std::sync::{
 };
 use std::thread;
 
+pub mod concrete_type;
 mod expr;
 mod generator;
 mod stmt;
@@ -34,6 +35,7 @@ mod stmt;
 #[cfg(test)]
 mod test;
 
+use concrete_type::{ConcreteType, ConcreteTypeEnum, ConcreteTypeStore};
 pub use generator::{CodeGenerator, DefaultCodeGenerator};
 
 pub struct CodeGenContext<'ctx, 'a> {
@@ -198,12 +200,13 @@ impl WorkerRegistry {
 }
 
 pub struct CodeGenTask {
-    pub subst: Vec<(Type, Type)>,
+    pub subst: Vec<(Type, ConcreteType)>,
+    pub store: ConcreteTypeStore,
     pub symbol_name: String,
-    pub signature: FunSignature,
+    pub signature: ConcreteType,
     pub body: Arc<Vec<Stmt<Option<Type>>>>,
     pub calls: Arc<HashMap<CodeLocation, CallId>>,
-    pub unifier: (SharedUnifier, PrimitiveStore),
+    pub unifier_index: usize,
     pub resolver: Arc<dyn SymbolResolver + Send + Sync>,
 }
 
@@ -218,7 +221,8 @@ fn get_llvm_type<'ctx>(
     // we assume the type cache should already contain primitive types,
     // and they should be passed by value instead of passing as pointer.
     type_cache.get(&unifier.get_representative(ty)).cloned().unwrap_or_else(|| {
-        match &*unifier.get_ty(ty) {
+        let ty = unifier.get_ty(ty);
+        match &*ty {
             TObj { obj_id, fields, .. } => {
                 // a struct with fields in the order of declaration
                 let top_level_defs = top_level.definitions.read();
@@ -252,7 +256,7 @@ fn get_llvm_type<'ctx>(
                 ctx.struct_type(&fields, false).ptr_type(AddressSpace::Generic).into()
             }
             TVirtual { .. } => unimplemented!(),
-            _ => unreachable!(),
+            _ => unreachable!("{}", ty.get_type_name()),
         }
     })
 }
@@ -267,14 +271,16 @@ pub fn gen_func<'ctx, G: CodeGenerator + ?Sized>(
     top_level_ctx: Arc<TopLevelContext>,
 ) -> (Builder<'ctx>, Module<'ctx>, FunctionValue<'ctx>) {
     let (mut unifier, primitives) = {
-        let (unifier, primitives) = task.unifier;
-        (Unifier::from_shared_unifier(&unifier), primitives)
+        let (unifier, primitives) = &top_level_ctx.unifiers.read()[task.unifier_index];
+        (Unifier::from_shared_unifier(unifier), *primitives)
     };
 
+    let mut cache = HashMap::new();
     for (a, b) in task.subst.iter() {
         // this should be unification between variables and concrete types
         // and should not cause any problem...
-        unifier.unify(*a, *b).unwrap();
+        let b = task.store.to_unifier_type(&mut unifier, &primitives, *b, &mut cache);
+        unifier.unify(*a, b).unwrap();
     }
 
     // rebuild primitive store with unique representatives
@@ -296,26 +302,34 @@ pub fn gen_func<'ctx, G: CodeGenerator + ?Sized>(
     .cloned()
     .collect();
 
-    let params = task
-        .signature
-        .args
+    let (args, ret) = if let ConcreteTypeEnum::TFunc { args, ret, .. } =
+        task.store.get(task.signature)
+    {
+        (
+            args.iter()
+                .map(|arg| FuncArg {
+                    name: arg.name,
+                    ty: task.store.to_unifier_type(&mut unifier, &primitives, arg.ty, &mut cache),
+                    default_value: arg.default_value.clone(),
+                })
+                .collect_vec(),
+            task.store.to_unifier_type(&mut unifier, &primitives, *ret, &mut cache),
+        )
+    } else {
+        unreachable!()
+    };
+    let params = args
         .iter()
         .map(|arg| {
             get_llvm_type(context, &mut unifier, top_level_ctx.as_ref(), &mut type_cache, arg.ty)
         })
         .collect_vec();
 
-    let fn_type = if unifier.unioned(task.signature.ret, primitives.none) {
+    let fn_type = if unifier.unioned(ret, primitives.none) {
         context.void_type().fn_type(&params, false)
     } else {
-        get_llvm_type(
-            context,
-            &mut unifier,
-            top_level_ctx.as_ref(),
-            &mut type_cache,
-            task.signature.ret,
-        )
-        .fn_type(&params, false)
+        get_llvm_type(context, &mut unifier, top_level_ctx.as_ref(), &mut type_cache, ret)
+            .fn_type(&params, false)
     };
 
     let symbol = &task.symbol_name;
@@ -335,7 +349,7 @@ pub fn gen_func<'ctx, G: CodeGenerator + ?Sized>(
     let body_bb = context.append_basic_block(fn_val, "body");
 
     let mut var_assignment = HashMap::new();
-    for (n, arg) in task.signature.args.iter().enumerate() {
+    for (n, arg) in args.iter().enumerate() {
         let param = fn_val.get_nth_param(n as u32).unwrap();
         let alloca = builder.build_alloca(
             get_llvm_type(context, &mut unifier, top_level_ctx.as_ref(), &mut type_cache, arg.ty),

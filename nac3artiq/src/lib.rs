@@ -19,7 +19,10 @@ use rustpython_parser::{
 use parking_lot::{Mutex, RwLock};
 
 use nac3core::{
-    codegen::{CodeGenTask, DefaultCodeGenerator, WithCall, WorkerRegistry},
+    codegen::{
+        concrete_type::ConcreteTypeStore, CodeGenTask, DefaultCodeGenerator, WithCall,
+        WorkerRegistry,
+    },
     symbol_resolver::SymbolResolver,
     toplevel::{composer::TopLevelComposer, DefinitionId, GenCall, TopLevelContext, TopLevelDef},
     typecheck::typedef::{FunSignature, FuncArg},
@@ -354,6 +357,21 @@ impl Nac3 {
             )
             .unwrap();
 
+        let signature = FunSignature {
+            args: vec![],
+            ret: self.primitive.none,
+            vars: HashMap::new(),
+        };
+        let mut store = ConcreteTypeStore::new();
+        let mut cache = HashMap::new();
+        let signature = store.from_signature(
+            &mut self.composer.unifier,
+            &self.primitive,
+            &signature,
+            &mut cache,
+        );
+        let signature = store.add_cty(signature);
+
         self.composer.start_analysis(true).unwrap();
         self.top_level = Some(Arc::new(self.composer.make_top_level_context()));
         let top_level = self.top_level.as_ref().unwrap();
@@ -373,18 +391,14 @@ impl Nac3 {
             }
         };
 
-        let signature = FunSignature {
-            args: vec![],
-            ret: self.primitive.none,
-            vars: HashMap::new(),
-        };
         let task = CodeGenTask {
             subst: Default::default(),
             symbol_name: "__modinit__".to_string(),
             body: instance.body,
             signature,
             resolver,
-            unifier: top_level.unifiers.read()[instance.unifier_id].clone(),
+            store,
+            unifier_index: instance.unifier_id,
             calls: instance.calls,
         };
         let isa = self.isa;

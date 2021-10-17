@@ -10,7 +10,10 @@ use std::fs;
 use std::{collections::HashMap, path::Path, sync::Arc, time::SystemTime};
 
 use nac3core::{
-    codegen::{CodeGenTask, DefaultCodeGenerator, WithCall, WorkerRegistry},
+    codegen::{
+        concrete_type::ConcreteTypeStore, CodeGenTask, DefaultCodeGenerator, WithCall,
+        WorkerRegistry,
+    },
     symbol_resolver::SymbolResolver,
     toplevel::{composer::TopLevelComposer, TopLevelDef},
     typecheck::typedef::FunSignature,
@@ -73,6 +76,16 @@ fn main() {
         }
     }
 
+    let signature = FunSignature {
+        args: vec![],
+        ret: primitive.int32,
+        vars: HashMap::new(),
+    };
+    let mut store = ConcreteTypeStore::new();
+    let mut cache = HashMap::new();
+    let signature = store.from_signature(&mut composer.unifier, &primitive, &signature, &mut cache);
+    let signature = store.add_cty(signature);
+
     composer.start_analysis(true).unwrap();
     let analysis_time = SystemTime::now();
     println!(
@@ -100,11 +113,6 @@ fn main() {
             unreachable!()
         }
     };
-    let signature = FunSignature {
-        args: vec![],
-        ret: primitive.int32,
-        vars: HashMap::new(),
-    };
 
     let task = CodeGenTask {
         subst: Default::default(),
@@ -112,7 +120,8 @@ fn main() {
         body: instance.body,
         signature,
         resolver,
-        unifier: top_level.unifiers.read()[instance.unifier_id].clone(),
+        store,
+        unifier_index: instance.unifier_id,
         calls: instance.calls,
     };
     let f = Arc::new(WithCall::new(Box::new(move |module| {

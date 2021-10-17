@@ -1,5 +1,8 @@
 use crate::{
-    codegen::{CodeGenTask, WithCall, WorkerRegistry, CodeGenContext, DefaultCodeGenerator},
+    codegen::{
+        concrete_type::ConcreteTypeStore, CodeGenContext, CodeGenTask, DefaultCodeGenerator,
+        WithCall, WorkerRegistry,
+    },
     location::Location,
     symbol_resolver::SymbolResolver,
     toplevel::{
@@ -34,11 +37,21 @@ impl Resolver {
 }
 
 impl SymbolResolver for Resolver {
-    fn get_symbol_type(&self, _: &mut Unifier, _: &[Arc<RwLock<TopLevelDef>>], _: &PrimitiveStore, str: StrRef) -> Option<Type> {
+    fn get_symbol_type(
+        &self,
+        _: &mut Unifier,
+        _: &[Arc<RwLock<TopLevelDef>>],
+        _: &PrimitiveStore,
+        str: StrRef,
+    ) -> Option<Type> {
         self.id_to_type.get(&str).cloned()
     }
 
-    fn get_symbol_value<'ctx, 'a>(&self, _: StrRef, _: &mut CodeGenContext<'ctx, 'a>) -> Option<BasicValueEnum<'ctx>> {
+    fn get_symbol_value<'ctx, 'a>(
+        &self,
+        _: StrRef,
+        _: &mut CodeGenContext<'ctx, 'a>,
+    ) -> Option<BasicValueEnum<'ctx>> {
         unimplemented!()
     }
 
@@ -82,6 +95,11 @@ fn test_primitives() {
         vars: HashMap::new(),
     };
 
+    let mut store = ConcreteTypeStore::new();
+    let mut cache = HashMap::new();
+    let signature = store.from_signature(&mut unifier, &primitives, &signature, &mut cache);
+    let signature = store.add_cty(signature);
+
     let mut function_data = FunctionData {
         resolver: resolver.clone(),
         bound_variables: Vec::new(),
@@ -116,15 +134,14 @@ fn test_primitives() {
         personality_symbol: None,
     });
 
-    let unifier = (unifier.get_shared_unifier(), primitives);
-
     let task = CodeGenTask {
         subst: Default::default(),
         symbol_name: "testing".into(),
         body: Arc::new(statements),
-        resolver,
-        unifier,
+        unifier_index: 0,
         calls: Arc::new(calls),
+        resolver,
+        store,
         signature,
     };
     let f = Arc::new(WithCall::new(Box::new(|module| {
@@ -216,6 +233,10 @@ fn test_simple_call() {
         vars: HashMap::new(),
     };
     let fun_ty = unifier.add_ty(TypeEnum::TFunc(RefCell::new(signature.clone())));
+    let mut store = ConcreteTypeStore::new();
+    let mut cache = HashMap::new();
+    let signature = store.from_signature(&mut unifier, &primitives, &signature, &mut cache);
+    let signature = store.add_cty(signature);
 
     let foo_id = top_level.definitions.read().len();
     top_level.definitions.write().push(Arc::new(RwLock::new(TopLevelDef::Function {
@@ -305,16 +326,15 @@ fn test_simple_call() {
         personality_symbol: None,
     });
 
-    let unifier = (unifier.get_shared_unifier(), primitives);
-
     let task = CodeGenTask {
         subst: Default::default(),
         symbol_name: "testing".to_string(),
         body: Arc::new(statements_1),
-        resolver,
-        unifier,
         calls: Arc::new(calls1),
+        unifier_index: 0,
+        resolver,
         signature,
+        store,
     };
     let f = Arc::new(WithCall::new(Box::new(|module| {
         let expected = indoc! {"

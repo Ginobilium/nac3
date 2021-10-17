@@ -13,7 +13,7 @@ use parking_lot::RwLock;
 use rustpython_parser::ast::{Expr, StrRef};
 use inkwell::values::BasicValueEnum;
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Debug)]
 pub enum SymbolValue {
     I32(i32),
     I64(i64),

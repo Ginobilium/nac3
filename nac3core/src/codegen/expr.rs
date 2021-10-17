@@ -1,10 +1,13 @@
 use std::{collections::HashMap, convert::TryInto, iter::once};
 
 use crate::{
-    codegen::{get_llvm_type, CodeGenContext, CodeGenTask},
+    codegen::{
+        concrete_type::{ConcreteFuncArg, ConcreteTypeEnum, ConcreteTypeStore},
+        get_llvm_type, CodeGenContext, CodeGenTask,
+    },
     symbol_resolver::SymbolValue,
     toplevel::{DefinitionId, TopLevelDef},
-    typecheck::typedef::{FunSignature, FuncArg, Type, TypeEnum, Unifier},
+    typecheck::typedef::{FunSignature, FuncArg, Type, TypeEnum},
 };
 use inkwell::{
     types::{BasicType, BasicTypeEnum},
@@ -265,20 +268,9 @@ pub fn gen_func_instance<'ctx, 'a>(
             instance_to_symbol.insert(key, symbol.clone());
             let key = ctx.get_subst_key(obj.map(|a| a.0), sign, Some(var_id));
             let instance = instance_to_stmt.get(&key).unwrap();
-            let unifiers = ctx.top_level.unifiers.read();
-            let (unifier, primitives) = &unifiers[instance.unifier_id];
-            let mut unifier = Unifier::from_shared_unifier(unifier);
 
-            let mut type_cache = [
-                (ctx.primitives.int32, primitives.int32),
-                (ctx.primitives.int64, primitives.int64),
-                (ctx.primitives.float, primitives.float),
-                (ctx.primitives.bool, primitives.bool),
-                (ctx.primitives.none, primitives.none),
-            ]
-            .iter()
-            .map(|(a, b)| (ctx.unifier.get_representative(*a), unifier.get_representative(*b)))
-            .collect();
+            let mut store = ConcreteTypeStore::new();
+            let mut cache = HashMap::new();
 
             let subst = sign
                 .vars
@@ -286,38 +278,27 @@ pub fn gen_func_instance<'ctx, 'a>(
                 .map(|(id, ty)| {
                     (
                         *instance.subst.get(id).unwrap(),
-                        unifier.copy_from(&mut ctx.unifier, *ty, &mut type_cache),
+                        store.from_unifier_type(&mut ctx.unifier, &ctx.primitives, *ty, &mut cache),
                     )
                 })
                 .collect();
 
-            let mut signature = FunSignature {
-                args: sign
-                    .args
-                    .iter()
-                    .map(|arg| FuncArg {
-                        name: arg.name,
-                        ty: unifier.copy_from(&mut ctx.unifier, arg.ty, &mut type_cache),
-                        default_value: arg.default_value.clone(),
-                    })
-                    .collect(),
-                ret: unifier.copy_from(&mut ctx.unifier, sign.ret, &mut type_cache),
-                vars: sign
-                    .vars
-                    .iter()
-                    .map(|(id, ty)| {
-                        (*id, unifier.copy_from(&mut ctx.unifier, *ty, &mut type_cache))
-                    })
-                    .collect(),
-            };
+            let mut signature =
+                store.from_signature(&mut ctx.unifier, &ctx.primitives, sign, &mut cache);
 
             if let Some(obj) = &obj {
-                signature
-                    .args
-                    .insert(0, FuncArg { name: "self".into(), ty: obj.0, default_value: None });
+                let zelf =
+                    store.from_unifier_type(&mut ctx.unifier, &ctx.primitives, obj.0, &mut cache);
+                if let ConcreteTypeEnum::TFunc { args, .. } = &mut signature {
+                    args.insert(
+                        0,
+                        ConcreteFuncArg { name: "self".into(), ty: zelf, default_value: None },
+                    )
+                } else {
+                    unreachable!()
+                }
             }
-
-            let unifier = (unifier.get_shared_unifier(), *primitives);
+            let signature = store.add_cty(signature);
 
             ctx.registry.add_task(CodeGenTask {
                 symbol_name: symbol.clone(),
@@ -326,7 +307,8 @@ pub fn gen_func_instance<'ctx, 'a>(
                 calls: instance.calls.clone(),
                 subst,
                 signature,
-                unifier,
+                store,
+                unifier_index: instance.unifier_id,
             });
             symbol
         })
