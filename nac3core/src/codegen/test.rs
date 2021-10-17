@@ -169,35 +169,10 @@ fn test_primitives() {
 
             define i32 @testing(i32 %0, i32 %1) {
             init:
-              %a = alloca i32, align 4
-              store i32 %0, i32* %a, align 4
-              %b = alloca i32, align 4
-              store i32 %1, i32* %b, align 4
-              %tmp = alloca i32, align 4
-              %tmp4 = alloca i32, align 4
-              br label %body
-
-            body:                                             ; preds = %init
-              %load = load i32, i32* %a, align 4
-              %load1 = load i32, i32* %b, align 4
-              %add = add i32 %load, %load1
-              store i32 %add, i32* %tmp, align 4
-              %load2 = load i32, i32* %tmp, align 4
-              %cmp = icmp eq i32 %load2, 1
-              br i1 %cmp, label %then, label %else
-
-            then:                                             ; preds = %body
-              %load3 = load i32, i32* %a, align 4
-              br label %cont
-
-            else:                                             ; preds = %body
-              br label %cont
-
-            cont:                                             ; preds = %else, %then
-              %ifexpr = phi i32 [ %load3, %then ], [ 0, %else ]
-              store i32 %ifexpr, i32* %tmp4, align 4
-              %load5 = load i32, i32* %tmp4, align 4
-              ret i32 %load5
+              %add = add i32 %0, %1
+              %cmp = icmp eq i32 %add, 1
+              %ifexpr = select i1 %cmp, i32 %0, i32 0
+              ret i32 %ifexpr
             }
        "}
         .trim();
@@ -343,28 +318,14 @@ fn test_simple_call() {
 
             define i32 @testing(i32 %0) {
             init:
-              %a = alloca i32, align 4
-              store i32 %0, i32* %a, align 4
-              br label %body
-
-            body:                                             ; preds = %init
-              %load = load i32, i32* %a, align 4
-              %call = call i32 @foo.0(i32 %load)
-              store i32 %call, i32* %a, align 4
-              %load1 = load i32, i32* %a, align 4
-              %mul = mul i32 %load1, 2
+              %call = call i32 @foo.0(i32 %0)
+              %mul = mul i32 %call, 2
               ret i32 %mul
             }
 
             define i32 @foo.0(i32 %0) {
             init:
-              %a = alloca i32, align 4
-              store i32 %0, i32* %a, align 4
-              br label %body
-
-            body:                                             ; preds = %init
-              %load = load i32, i32* %a, align 4
-              %add = add i32 %load, 1
+              %add = add i32 %0, 1
               ret i32 %add
             }
        "}
