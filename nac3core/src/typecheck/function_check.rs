@@ -6,6 +6,14 @@ use rustpython_parser::ast::{self, Expr, ExprKind, Stmt, StmtKind, StrRef};
 use std::{collections::HashSet, iter::once};
 
 impl<'a> Inferencer<'a> {
+    fn should_have_value(&mut self, expr: &Expr<Option<Type>>) -> Result<(), String> {
+        if matches!(expr.custom, Some(ty) if self.unifier.unioned(ty, self.primitives.none)) {
+            Err(format!("Error at {}: cannot have value none", expr.location))
+        } else {
+            Ok(())
+        }
+    }
+
     fn check_pattern(
         &mut self,
         pattern: &Expr<Option<Type>>,
@@ -16,16 +24,19 @@ impl<'a> Inferencer<'a> {
                 if !defined_identifiers.contains(id) {
                     defined_identifiers.insert(*id);
                 }
+                self.should_have_value(pattern)?;
                 Ok(())
             }
             ExprKind::Tuple { elts, .. } => {
                 for elt in elts.iter() {
                     self.check_pattern(elt, defined_identifiers)?;
+                    self.should_have_value(elt)?;
                 }
                 Ok(())
             }
             ExprKind::Subscript { value, slice, .. } => {
                 self.check_expr(value, defined_identifiers)?;
+                self.should_have_value(value)?;
                 self.check_expr(slice, defined_identifiers)?;
                 if let TypeEnum::TTuple { .. } = &*self.unifier.get_ty(value.custom.unwrap()) {
                     return Err(format!(
@@ -56,6 +67,7 @@ impl<'a> Inferencer<'a> {
         }
         match &expr.node {
             ExprKind::Name { id, .. } => {
+                self.should_have_value(expr)?;
                 if !defined_identifiers.contains(id) {
                     if self
                         .function_data
@@ -82,24 +94,31 @@ impl<'a> Inferencer<'a> {
             | ExprKind::BoolOp { values: elts, .. } => {
                 for elt in elts.iter() {
                     self.check_expr(elt, defined_identifiers)?;
+                    self.should_have_value(elt)?;
                 }
             }
             ExprKind::Attribute { value, .. } => {
                 self.check_expr(value, defined_identifiers)?;
+                self.should_have_value(value)?;
             }
             ExprKind::BinOp { left, right, .. } => {
                 self.check_expr(left, defined_identifiers)?;
                 self.check_expr(right, defined_identifiers)?;
+                self.should_have_value(left)?;
+                self.should_have_value(right)?;
             }
             ExprKind::UnaryOp { operand, .. } => {
                 self.check_expr(operand, defined_identifiers)?;
+                self.should_have_value(operand)?;
             }
             ExprKind::Compare { left, comparators, .. } => {
                 for elt in once(left.as_ref()).chain(comparators.iter()) {
                     self.check_expr(elt, defined_identifiers)?;
+                    self.should_have_value(elt)?;
                 }
             }
             ExprKind::Subscript { value, slice, .. } => {
+                self.should_have_value(value)?;
                 self.check_expr(value, defined_identifiers)?;
                 self.check_expr(slice, defined_identifiers)?;
             }
@@ -110,12 +129,14 @@ impl<'a> Inferencer<'a> {
             }
             ExprKind::Slice { lower, upper, step } => {
                 for elt in [lower.as_ref(), upper.as_ref(), step.as_ref()].iter().flatten() {
+                    self.should_have_value(elt)?;
                     self.check_expr(elt, defined_identifiers)?;
                 }
             }
             ExprKind::Lambda { args, body } => {
                 let mut defined_identifiers = defined_identifiers.clone();
                 for arg in args.args.iter() {
+                    // TODO: should we check the types here?
                     if !defined_identifiers.contains(&arg.node.arg) {
                         defined_identifiers.insert(arg.node.arg);
                     }
@@ -126,10 +147,13 @@ impl<'a> Inferencer<'a> {
                 // in our type inference stage, we already make sure that there is only 1 generator
                 let ast::Comprehension { target, iter, ifs, .. } = &generators[0];
                 self.check_expr(iter, defined_identifiers)?;
+                self.should_have_value(iter)?;
                 let mut defined_identifiers = defined_identifiers.clone();
                 self.check_pattern(target, &mut defined_identifiers)?;
+                self.should_have_value(target)?;
                 for term in once(elt.as_ref()).chain(ifs.iter()) {
                     self.check_expr(term, &mut defined_identifiers)?;
+                    self.should_have_value(term)?;
                 }
             }
             ExprKind::Call { func, args, keywords } => {
@@ -138,6 +162,7 @@ impl<'a> Inferencer<'a> {
                     .chain(keywords.iter().map(|v| v.node.value.as_ref()))
                 {
                     self.check_expr(expr, defined_identifiers)?;
+                    self.should_have_value(expr)?;
                 }
             }
             ExprKind::Constant { .. } => {}
@@ -158,18 +183,22 @@ impl<'a> Inferencer<'a> {
         match &stmt.node {
             StmtKind::For { target, iter, body, orelse, .. } => {
                 self.check_expr(iter, defined_identifiers)?;
+                self.should_have_value(iter)?;
+                let mut local_defined_identifiers = defined_identifiers.clone();
                 for stmt in orelse.iter() {
-                    self.check_stmt(stmt, defined_identifiers)?;
+                    self.check_stmt(stmt, &mut local_defined_identifiers)?;
                 }
-                let mut defined_identifiers = defined_identifiers.clone();
-                self.check_pattern(target, &mut defined_identifiers)?;
+                let mut local_defined_identifiers = defined_identifiers.clone();
+                self.check_pattern(target, &mut local_defined_identifiers)?;
+                self.should_have_value(target)?;
                 for stmt in body.iter() {
-                    self.check_stmt(stmt, &mut defined_identifiers)?;
+                    self.check_stmt(stmt, &mut local_defined_identifiers)?;
                 }
                 Ok(false)
             }
             StmtKind::If { test, body, orelse } => {
                 self.check_expr(test, defined_identifiers)?;
+                self.should_have_value(test)?;
                 let mut body_identifiers = defined_identifiers.clone();
                 let mut orelse_identifiers = defined_identifiers.clone();
                 let body_returned = self.check_block(body, &mut body_identifiers)?;
@@ -184,6 +213,7 @@ impl<'a> Inferencer<'a> {
             }
             StmtKind::While { test, body, orelse } => {
                 self.check_expr(test, defined_identifiers)?;
+                self.should_have_value(test)?;
                 let mut defined_identifiers = defined_identifiers.clone();
                 self.check_block(body, &mut defined_identifiers)?;
                 self.check_block(orelse, &mut defined_identifiers)?;
@@ -195,6 +225,7 @@ impl<'a> Inferencer<'a> {
             }
             StmtKind::Assign { targets, value, .. } => {
                 self.check_expr(value, defined_identifiers)?;
+                self.should_have_value(value)?;
                 for target in targets {
                     self.check_pattern(target, defined_identifiers)?;
                 }
@@ -203,6 +234,7 @@ impl<'a> Inferencer<'a> {
             StmtKind::AnnAssign { target, value, .. } => {
                 if let Some(value) = value {
                     self.check_expr(value, defined_identifiers)?;
+                    self.should_have_value(value)?;
                     self.check_pattern(target, defined_identifiers)?;
                 }
                 Ok(false)
@@ -210,6 +242,7 @@ impl<'a> Inferencer<'a> {
             StmtKind::Return { value } => {
                 if let Some(value) = value {
                     self.check_expr(value, defined_identifiers)?;
+                    self.should_have_value(value)?;
                 }
                 Ok(true)
             }
