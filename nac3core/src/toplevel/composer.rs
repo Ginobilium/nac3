@@ -2,7 +2,10 @@ use std::cell::RefCell;
 
 use rustpython_parser::ast::fold::Fold;
 
-use crate::typecheck::type_inferencer::{FunctionData, Inferencer};
+use crate::{
+    symbol_resolver::SymbolValue,
+    typecheck::type_inferencer::{FunctionData, Inferencer},
+};
 
 use super::*;
 
@@ -42,6 +45,7 @@ impl TopLevelComposer {
         let int64 = primitives.0.int64;
         let float = primitives.0.float;
         let boolean = primitives.0.bool;
+        let range = primitives.0.range;
         let num_ty = primitives.1.get_fresh_var_with_range(&[int32, int64, float, boolean]);
         let var_map: HashMap<_, _> = vec![(num_ty.1, num_ty.0)].into_iter().collect();
 
@@ -67,6 +71,12 @@ impl TopLevelComposer {
                 ))),
                 Arc::new(RwLock::new(Self::make_top_level_class_def(3, None, "bool".into(), None))),
                 Arc::new(RwLock::new(Self::make_top_level_class_def(4, None, "none".into(), None))),
+                Arc::new(RwLock::new(Self::make_top_level_class_def(
+                    5,
+                    None,
+                    "range".into(),
+                    None,
+                ))),
                 Arc::new(RwLock::new(TopLevelDef::Function {
                     name: "int32".into(),
                     simple_name: "int32".into(),
@@ -287,6 +297,81 @@ impl TopLevelComposer {
                         )
                     })))),
                 })),
+                Arc::new(RwLock::new(TopLevelDef::Function {
+                    name: "range".into(),
+                    simple_name: "range".into(),
+                    signature: primitives.1.add_ty(TypeEnum::TFunc(RefCell::new(FunSignature {
+                        args: vec![
+                            FuncArg { name: "start".into(), ty: int32, default_value: None },
+                            FuncArg {
+                                name: "stop".into(),
+                                ty: int32,
+                                // placeholder
+                                default_value: Some(SymbolValue::I32(0)),
+                            },
+                            FuncArg {
+                                name: "step".into(),
+                                ty: int32,
+                                default_value: Some(SymbolValue::I32(1)),
+                            },
+                        ],
+                        ret: range,
+                        vars: Default::default(),
+                    }))),
+                    var_id: Default::default(),
+                    instance_to_symbol: Default::default(),
+                    instance_to_stmt: Default::default(),
+                    resolver: None,
+                    codegen_callback: Some(Arc::new(GenCall::new(Box::new(|ctx, _, _, args| {
+                        let mut start = None;
+                        let mut stop = None;
+                        let mut step = None;
+                        let int32 = ctx.ctx.i32_type();
+                        let zero = int32.const_zero();
+                        for (i, arg) in args.iter().enumerate() {
+                            if arg.0 == Some("start".into()) {
+                                start = Some(arg.1);
+                            } else if arg.0 == Some("stop".into()) {
+                                stop = Some(arg.1);
+                            } else if arg.0 == Some("step".into()) {
+                                step = Some(arg.1);
+                            } else if i == 0 {
+                                start = Some(arg.1);
+                            } else if i == 1 {
+                                stop = Some(arg.1);
+                            } else if i == 2 {
+                                step = Some(arg.1);
+                            }
+                        }
+                        // TODO: error when step == 0
+                        let step = step.unwrap_or_else(|| int32.const_int(1, false).into());
+                        let stop = stop.unwrap_or_else(|| {
+                            let v = start.unwrap();
+                            start = None;
+                            v
+                        });
+                        let start = start.unwrap_or_else(|| int32.const_zero().into());
+                        let ty = int32.array_type(3);
+                        let ptr = ctx.builder.build_alloca(ty, "range");
+                        unsafe {
+                            let a = ctx.builder.build_in_bounds_gep(ptr, &[zero, zero], "start");
+                            let b = ctx.builder.build_in_bounds_gep(
+                                ptr,
+                                &[zero, int32.const_int(1, false)],
+                                "end",
+                            );
+                            let c = ctx.builder.build_in_bounds_gep(
+                                ptr,
+                                &[zero, int32.const_int(2, false)],
+                                "step",
+                            );
+                            ctx.builder.build_store(a, start);
+                            ctx.builder.build_store(b, stop);
+                            ctx.builder.build_store(c, step);
+                        }
+                        Some(ptr.into())
+                    })))),
+                })),
             ];
             let ast_list: Vec<Option<ast::Stmt<()>>> =
                 (0..top_level_def_list.len()).map(|_| None).collect();
@@ -315,7 +400,9 @@ impl TopLevelComposer {
         let mut built_in_id: HashMap<StrRef, DefinitionId> = Default::default();
         let mut built_in_ty: HashMap<StrRef, Type> = Default::default();
 
-        for (id, name) in ["int32", "int64", "float", "round", "round64"].iter().rev().enumerate() {
+        for (id, name) in
+            ["int32", "int64", "float", "round", "round64", "range"].iter().rev().enumerate()
+        {
             let name = (**name).into();
             let id = definition_ast_list.len() - id - 1;
             let def = definition_ast_list[id].0.read();

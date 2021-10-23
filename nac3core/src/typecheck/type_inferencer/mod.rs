@@ -35,6 +35,7 @@ pub struct PrimitiveStore {
     pub float: Type,
     pub bool: Type,
     pub none: Type,
+    pub range: Type,
 }
 
 pub struct FunctionData {
@@ -168,8 +169,12 @@ impl<'a> fold::Fold<()> for Inferencer<'a> {
         };
         match &stmt.node {
             ast::StmtKind::For { target, iter, .. } => {
-                let list = self.unifier.add_ty(TypeEnum::TList { ty: target.custom.unwrap() });
-                self.unify(list, iter.custom.unwrap(), &iter.location)?;
+                if self.unifier.unioned(iter.custom.unwrap(), self.primitives.range) {
+                    self.unify(self.primitives.int32, target.custom.unwrap(), &target.location)?;
+                } else {
+                    let list = self.unifier.add_ty(TypeEnum::TList { ty: target.custom.unwrap() });
+                    self.unify(list, iter.custom.unwrap(), &iter.location)?;
+                }
             }
             ast::StmtKind::If { test, .. } | ast::StmtKind::While { test, .. } => {
                 self.unify(test.custom.unwrap(), self.primitives.bool, &test.location)?;
@@ -445,8 +450,12 @@ impl<'a> Inferencer<'a> {
         new_context.infer_pattern(&generator.target)?;
         let target = new_context.fold_expr(*generator.target)?;
         let iter = new_context.fold_expr(*generator.iter)?;
-        let list = new_context.unifier.add_ty(TypeEnum::TList { ty: target.custom.unwrap() });
-        new_context.unify(iter.custom.unwrap(), list, &iter.location)?;
+        if new_context.unifier.unioned(iter.custom.unwrap(), new_context.primitives.range) {
+            new_context.unify(target.custom.unwrap(), new_context.primitives.int32, &target.location)?;
+        } else {
+            let list = new_context.unifier.add_ty(TypeEnum::TList { ty: target.custom.unwrap() });
+            new_context.unify(iter.custom.unwrap(), list, &iter.location)?;
+        }
         let ifs: Vec<_> = generator
             .ifs
             .into_iter()

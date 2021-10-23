@@ -104,6 +104,17 @@ pub trait CodeGenerator {
         false
     }
 
+    /// Generate code for a while expression.
+    /// Return true if the while loop must early return
+    fn gen_for<'ctx, 'a>(
+        &mut self,
+        ctx: &mut CodeGenContext<'ctx, 'a>,
+        stmt: &Stmt<Option<Type>>,
+    ) -> bool {
+        gen_for(self, ctx, stmt);
+        false
+    }
+
     /// Generate code for an if expression.
     /// Return true if the statement must early return
     fn gen_if<'ctx, 'a>(

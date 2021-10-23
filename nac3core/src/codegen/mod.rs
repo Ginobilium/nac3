@@ -290,6 +290,7 @@ pub fn gen_func<'ctx, G: CodeGenerator + ?Sized>(
         float: unifier.get_representative(primitives.float),
         bool: unifier.get_representative(primitives.bool),
         none: unifier.get_representative(primitives.none),
+        range: unifier.get_representative(primitives.range),
     };
 
     let mut type_cache: HashMap<_, _> = [

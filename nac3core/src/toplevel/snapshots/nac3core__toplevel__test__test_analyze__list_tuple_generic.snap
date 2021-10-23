@@ -4,11 +4,11 @@ expression: res_vec
 
 ---
 [
-    "10: Function {\nname: \"foo\",\nsig: \"fn[[a=list[class0], b=tuple[tvar3, class2]], class11[3->class15, 4->class3]]\",\nvar_id: [3]\n}\n",
-    "11: Class {\nname: \"A\",\ndef_id: DefinitionId(11),\nancestors: [CustomClassKind { id: DefinitionId(11), params: [TypeVarKind(UnificationKey(106)), TypeVarKind(UnificationKey(107))] }],\nfields: [(\"a\", \"tvar3\"), (\"b\", \"tvar4\")],\nmethods: [(\"__init__\", \"fn[[v=tvar4], class4]\", DefinitionId(12)), (\"fun\", \"fn[[a=tvar3], tvar4]\", DefinitionId(13))],\ntype_vars: [UnificationKey(106), UnificationKey(107)]\n}\n",
-    "12: Function {\nname: \"A.__init__\",\nsig: \"fn[[v=tvar4], class4]\",\nvar_id: [3, 4]\n}\n",
-    "13: Function {\nname: \"A.fun\",\nsig: \"fn[[a=tvar3], tvar4]\",\nvar_id: [3, 4]\n}\n",
-    "14: Function {\nname: \"gfun\",\nsig: \"fn[[a=class11[3->list[class2], 4->class0]], class4]\",\nvar_id: []\n}\n",
-    "15: Class {\nname: \"B\",\ndef_id: DefinitionId(15),\nancestors: [CustomClassKind { id: DefinitionId(15), params: [] }],\nfields: [],\nmethods: [(\"__init__\", \"fn[[], class4]\", DefinitionId(16))],\ntype_vars: []\n}\n",
-    "16: Function {\nname: \"B.__init__\",\nsig: \"fn[[], class4]\",\nvar_id: []\n}\n",
+    "12: Function {\nname: \"foo\",\nsig: \"fn[[a=list[class0], b=tuple[tvar3, class2]], class13[3->class17, 4->class3]]\",\nvar_id: [3]\n}\n",
+    "13: Class {\nname: \"A\",\ndef_id: DefinitionId(13),\nancestors: [CustomClassKind { id: DefinitionId(13), params: [TypeVarKind(UnificationKey(108)), TypeVarKind(UnificationKey(109))] }],\nfields: [(\"a\", \"tvar3\"), (\"b\", \"tvar4\")],\nmethods: [(\"__init__\", \"fn[[v=tvar4], class4]\", DefinitionId(14)), (\"fun\", \"fn[[a=tvar3], tvar4]\", DefinitionId(15))],\ntype_vars: [UnificationKey(108), UnificationKey(109)]\n}\n",
+    "14: Function {\nname: \"A.__init__\",\nsig: \"fn[[v=tvar4], class4]\",\nvar_id: [3, 4]\n}\n",
+    "15: Function {\nname: \"A.fun\",\nsig: \"fn[[a=tvar3], tvar4]\",\nvar_id: [3, 4]\n}\n",
+    "16: Function {\nname: \"gfun\",\nsig: \"fn[[a=class13[3->list[class2], 4->class0]], class4]\",\nvar_id: []\n}\n",
+    "17: Class {\nname: \"B\",\ndef_id: DefinitionId(17),\nancestors: [CustomClassKind { id: DefinitionId(17), params: [] }],\nfields: [],\nmethods: [(\"__init__\", \"fn[[], class4]\", DefinitionId(18))],\ntype_vars: []\n}\n",
+    "18: Function {\nname: \"B.__init__\",\nsig: \"fn[[], class4]\",\nvar_id: []\n}\n",
 ]

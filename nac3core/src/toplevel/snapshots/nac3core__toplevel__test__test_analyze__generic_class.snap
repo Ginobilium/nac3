@@ -4,10 +4,10 @@ expression: res_vec
 
 ---
 [
-    "10: Class {\nname: \"Generic_A\",\ndef_id: DefinitionId(10),\nancestors: [CustomClassKind { id: DefinitionId(10), params: [TypeVarKind(UnificationKey(107))] }, CustomClassKind { id: DefinitionId(13), params: [] }],\nfields: [(\"aa\", \"class3\"), (\"a\", \"class1\")],\nmethods: [(\"__init__\", \"fn[[], class4]\", DefinitionId(11)), (\"foo\", \"fn[[b=tvar3], class4]\", DefinitionId(15)), (\"fun\", \"fn[[a=class0], tvar4]\", DefinitionId(12))],\ntype_vars: [UnificationKey(107)]\n}\n",
-    "11: Function {\nname: \"Generic_A.__init__\",\nsig: \"fn[[], class4]\",\nvar_id: [4]\n}\n",
-    "12: Function {\nname: \"Generic_A.fun\",\nsig: \"fn[[a=class0], tvar4]\",\nvar_id: [4]\n}\n",
-    "13: Class {\nname: \"B\",\ndef_id: DefinitionId(13),\nancestors: [CustomClassKind { id: DefinitionId(13), params: [] }],\nfields: [(\"aa\", \"class3\")],\nmethods: [(\"__init__\", \"fn[[], class4]\", DefinitionId(14)), (\"foo\", \"fn[[b=tvar3], class4]\", DefinitionId(15))],\ntype_vars: []\n}\n",
-    "14: Function {\nname: \"B.__init__\",\nsig: \"fn[[], class4]\",\nvar_id: []\n}\n",
-    "15: Function {\nname: \"B.foo\",\nsig: \"fn[[b=tvar3], class4]\",\nvar_id: [3]\n}\n",
+    "12: Class {\nname: \"Generic_A\",\ndef_id: DefinitionId(12),\nancestors: [CustomClassKind { id: DefinitionId(12), params: [TypeVarKind(UnificationKey(109))] }, CustomClassKind { id: DefinitionId(15), params: [] }],\nfields: [(\"aa\", \"class3\"), (\"a\", \"class1\")],\nmethods: [(\"__init__\", \"fn[[], class4]\", DefinitionId(13)), (\"foo\", \"fn[[b=tvar3], class4]\", DefinitionId(17)), (\"fun\", \"fn[[a=class0], tvar4]\", DefinitionId(14))],\ntype_vars: [UnificationKey(109)]\n}\n",
+    "13: Function {\nname: \"Generic_A.__init__\",\nsig: \"fn[[], class4]\",\nvar_id: [4]\n}\n",
+    "14: Function {\nname: \"Generic_A.fun\",\nsig: \"fn[[a=class0], tvar4]\",\nvar_id: [4]\n}\n",
+    "15: Class {\nname: \"B\",\ndef_id: DefinitionId(15),\nancestors: [CustomClassKind { id: DefinitionId(15), params: [] }],\nfields: [(\"aa\", \"class3\")],\nmethods: [(\"__init__\", \"fn[[], class4]\", DefinitionId(16)), (\"foo\", \"fn[[b=tvar3], class4]\", DefinitionId(17))],\ntype_vars: []\n}\n",
+    "16: Function {\nname: \"B.__init__\",\nsig: \"fn[[], class4]\",\nvar_id: []\n}\n",
+    "17: Function {\nname: \"B.foo\",\nsig: \"fn[[b=tvar3], class4]\",\nvar_id: [3]\n}\n",
 ]

@@ -96,6 +96,112 @@ pub fn gen_assign<'ctx, 'a, G: CodeGenerator + ?Sized>(
     }
 }
 
+pub fn gen_for<'ctx, 'a, G: CodeGenerator + ?Sized>(
+    generator: &mut G,
+    ctx: &mut CodeGenContext<'ctx, 'a>,
+    stmt: &Stmt<Option<Type>>,
+) {
+    if let StmtKind::For { iter, target, body, orelse, .. } = &stmt.node {
+        let current = ctx.builder.get_insert_block().unwrap().get_parent().unwrap();
+        let test_bb = ctx.ctx.append_basic_block(current, "test");
+        let body_bb = ctx.ctx.append_basic_block(current, "body");
+        let cont_bb = ctx.ctx.append_basic_block(current, "cont");
+        // if there is no orelse, we just go to cont_bb
+        let orelse_bb =
+            if orelse.is_empty() { cont_bb } else { ctx.ctx.append_basic_block(current, "orelse") };
+        // store loop bb information and restore it later
+        let loop_bb = ctx.loop_bb.replace((test_bb, cont_bb));
+
+        let iter_val = generator.gen_expr(ctx, iter).unwrap();
+        if ctx.unifier.unioned(iter.custom.unwrap(), ctx.primitives.range) {
+            // setup
+            let iter_val = iter_val.into_pointer_value();
+            let i = generator.gen_store_target(ctx, target);
+            let int32 = ctx.ctx.i32_type();
+            let start;
+            let end;
+            let step;
+            unsafe {
+                start = ctx
+                    .builder
+                    .build_load(
+                        ctx.builder.build_in_bounds_gep(
+                            iter_val,
+                            &[int32.const_zero(), int32.const_int(0, false)],
+                            "start_ptr",
+                        ),
+                        "start",
+                    )
+                    .into_int_value();
+                end = ctx
+                    .builder
+                    .build_load(
+                        ctx.builder.build_in_bounds_gep(
+                            iter_val,
+                            &[int32.const_zero(), int32.const_int(1, false)],
+                            "end_ptr",
+                        ),
+                        "end",
+                    )
+                    .into_int_value();
+                step = ctx
+                    .builder
+                    .build_load(
+                        ctx.builder.build_in_bounds_gep(
+                            iter_val,
+                            &[int32.const_zero(), int32.const_int(2, false)],
+                            "step_ptr",
+                        ),
+                        "step",
+                    )
+                    .into_int_value();
+            }
+            ctx.builder.build_store(i, ctx.builder.build_int_sub(start, step, "start_init"));
+            ctx.builder.build_unconditional_branch(test_bb);
+            ctx.builder.position_at_end(test_bb);
+            let sign = ctx.builder.build_int_compare(
+                inkwell::IntPredicate::SGT,
+                step,
+                int32.const_zero(),
+                "sign",
+            );
+            // add and test
+            let tmp = ctx.builder.build_int_add(ctx.builder.build_load(i, "i").into_int_value(), step, "start_loop");
+            ctx.builder.build_store(i, tmp);
+            // // if step > 0, continue when i < end
+            let cmp1 = ctx.builder.build_int_compare(inkwell::IntPredicate::SLT, tmp, end, "cmp1");
+            // if step < 0, continue when i > end
+            let cmp2 = ctx.builder.build_int_compare(inkwell::IntPredicate::SGT, tmp, end, "cmp2");
+            let pos = ctx.builder.build_and(sign, cmp1, "pos");
+            let neg = ctx.builder.build_and(ctx.builder.build_not(sign, "inv"), cmp2, "neg");
+            ctx.builder.build_conditional_branch(
+                ctx.builder.build_or(pos, neg, "or"),
+                body_bb,
+                orelse_bb,
+            );
+        } else {
+            unimplemented!()
+        }
+
+        ctx.builder.position_at_end(body_bb);
+        for stmt in body.iter() {
+            generator.gen_stmt(ctx, stmt);
+        }
+        ctx.builder.build_unconditional_branch(test_bb);
+        if !orelse.is_empty() {
+            ctx.builder.position_at_end(orelse_bb);
+            for stmt in orelse.iter() {
+                generator.gen_stmt(ctx, stmt);
+            }
+            ctx.builder.build_unconditional_branch(cont_bb);
+        }
+        ctx.builder.position_at_end(cont_bb);
+        ctx.loop_bb = loop_bb;
+    } else {
+        unreachable!()
+    }
+}
+
 pub fn gen_while<'ctx, 'a, G: CodeGenerator + ?Sized>(
     generator: &mut G,
     ctx: &mut CodeGenContext<'ctx, 'a>,
@@ -244,7 +350,8 @@ pub fn gen_stmt<'ctx, 'a, G: CodeGenerator + ?Sized>(
         }
         StmtKind::If { .. } => return generator.gen_if(ctx, stmt),
         StmtKind::While { .. } => return generator.gen_while(ctx, stmt),
-        _ => unimplemented!()
+        StmtKind::For { .. } => return generator.gen_for(ctx, stmt),
+        _ => unimplemented!(),
     };
     false
 }
