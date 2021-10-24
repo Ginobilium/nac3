@@ -15,27 +15,21 @@ use inkwell::{
     AddressSpace,
 };
 use itertools::{chain, izip, zip, Itertools};
-use rustpython_parser::ast::{self, Boolop, Constant, Expr, ExprKind, Operator, StrRef};
+use rustpython_parser::ast::{
+    self, Boolop, Comprehension, Constant, Expr, ExprKind, Operator, StrRef,
+};
 
 use super::CodeGenerator;
 
-pub fn assert_int_val(val: BasicValueEnum<'_>) -> IntValue<'_> {
-    if let BasicValueEnum::IntValue(v) = val {
-        v
-    } else {
-        unreachable!()
-    }
-}
-
-pub fn assert_pointer_val(val: BasicValueEnum<'_>) -> PointerValue<'_> {
-    if let BasicValueEnum::PointerValue(v) = val {
-        v
-    } else {
-        unreachable!()
-    }
-}
-
 impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
+    pub fn build_gep_and_load(
+        &mut self,
+        ptr: PointerValue<'ctx>,
+        index: &[IntValue<'ctx>],
+    ) -> BasicValueEnum<'ctx> {
+        unsafe { self.builder.build_load(self.builder.build_gep(ptr, index, "gep"), "load") }
+    }
+
     fn get_subst_key(
         &mut self,
         obj: Option<Type>,
@@ -374,12 +368,55 @@ pub fn gen_call<'ctx, 'a, G: CodeGenerator + ?Sized>(
     ctx.builder.build_call(fun_val, &params, "call").try_as_basic_value().left()
 }
 
+pub fn destructure_range<'ctx, 'a>(
+    ctx: &mut CodeGenContext<'ctx, 'a>,
+    range: PointerValue<'ctx>,
+) -> (IntValue<'ctx>, IntValue<'ctx>, IntValue<'ctx>) {
+    let int32 = ctx.ctx.i32_type();
+    let start = ctx
+        .build_gep_and_load(range, &[int32.const_zero(), int32.const_int(0, false)])
+        .into_int_value();
+    let end = ctx
+        .build_gep_and_load(range, &[int32.const_zero(), int32.const_int(1, false)])
+        .into_int_value();
+    let step = ctx
+        .build_gep_and_load(range, &[int32.const_zero(), int32.const_int(2, false)])
+        .into_int_value();
+    (start, end, step)
+}
+
+pub fn allocate_list<'ctx, 'a>(
+    ctx: &mut CodeGenContext<'ctx, 'a>,
+    ty: BasicTypeEnum<'ctx>,
+    length: IntValue<'ctx>,
+) -> PointerValue<'ctx> {
+    let arr_ptr = ctx.builder.build_array_alloca(ty, length, "tmparr");
+    let arr_ty = ctx.ctx.struct_type(
+        &[ctx.ctx.i32_type().into(), ty.ptr_type(AddressSpace::Generic).into()],
+        false,
+    );
+    let zero = ctx.ctx.i32_type().const_zero();
+    let arr_str_ptr = ctx.builder.build_alloca(arr_ty, "tmparrstr");
+    unsafe {
+        let len_ptr = ctx.builder.build_in_bounds_gep(arr_str_ptr, &[zero, zero], "len_ptr");
+        ctx.builder.build_store(len_ptr, length);
+        let ptr_to_arr = ctx.builder.build_in_bounds_gep(
+            arr_str_ptr,
+            &[zero, ctx.ctx.i32_type().const_int(1, false)],
+            "ptr_to_arr",
+        );
+        ctx.builder.build_store(ptr_to_arr, arr_ptr);
+        arr_str_ptr
+    }
+}
+
 pub fn gen_expr<'ctx, 'a, G: CodeGenerator + ?Sized>(
     generator: &mut G,
     ctx: &mut CodeGenContext<'ctx, 'a>,
     expr: &Expr<Option<Type>>,
 ) -> Option<BasicValueEnum<'ctx>> {
-    let zero = ctx.ctx.i32_type().const_int(0, false);
+    let int32 = ctx.ctx.i32_type();
+    let zero = int32.const_int(0, false);
     Some(match &expr.node {
         ExprKind::Constant { value, .. } => {
             let ty = expr.custom.unwrap();
@@ -398,39 +435,17 @@ pub fn gen_expr<'ctx, 'a, G: CodeGenerator + ?Sized>(
             // this shall be optimized later for constant primitive lists...
             // we should use memcpy for that instead of generating thousands of stores
             let elements = elts.iter().map(|x| generator.gen_expr(ctx, x).unwrap()).collect_vec();
-            let ty = if elements.is_empty() {
-                ctx.ctx.i32_type().into()
-            } else {
-                elements[0].get_type()
-            };
-            let arr_ptr = ctx.builder.build_array_alloca(
-                ty,
-                ctx.ctx.i32_type().const_int(elements.len() as u64, false),
-                "tmparr",
-            );
-            let arr_ty = ctx.ctx.struct_type(
-                &[ctx.ctx.i32_type().into(), ty.ptr_type(AddressSpace::Generic).into()],
-                false,
-            );
-            let arr_str_ptr = ctx.builder.build_alloca(arr_ty, "tmparrstr");
+            let ty = if elements.is_empty() { int32.into() } else { elements[0].get_type() };
+            let length = int32.const_int(elements.len() as u64, false);
+            let arr_str_ptr = allocate_list(ctx, ty, length);
+            let arr_ptr = ctx
+                .build_gep_and_load(arr_str_ptr, &[zero, int32.const_int(1, false)])
+                .into_pointer_value();
             unsafe {
-                let len_ptr =
-                    ctx.builder.build_in_bounds_gep(arr_str_ptr, &[zero, zero], "len_ptr");
-                ctx.builder.build_store(
-                    len_ptr,
-                    ctx.ctx.i32_type().const_int(elements.len() as u64, false),
-                );
-                let ptr_to_arr = ctx.builder.build_in_bounds_gep(
-                    arr_str_ptr,
-                    &[zero, ctx.ctx.i32_type().const_int(1, false)],
-                    "ptr_to_arr",
-                );
-                ctx.builder.build_store(ptr_to_arr, arr_ptr);
-                let i32_type = ctx.ctx.i32_type();
                 for (i, v) in elements.iter().enumerate() {
-                    let elem_ptr = ctx.builder.build_in_bounds_gep(
+                    let elem_ptr = ctx.builder.build_gep(
                         arr_ptr,
-                        &[i32_type.const_int(i as u64, false)],
+                        &[int32.const_int(i as u64, false)],
                         "elem_ptr",
                     );
                     ctx.builder.build_store(elem_ptr, *v);
@@ -448,7 +463,7 @@ pub fn gen_expr<'ctx, 'a, G: CodeGenerator + ?Sized>(
                 unsafe {
                     let ptr = ctx.builder.build_in_bounds_gep(
                         tuple_ptr,
-                        &[zero, ctx.ctx.i32_type().const_int(i as u64, false)],
+                        &[zero, int32.const_int(i as u64, false)],
                         "ptr",
                     );
                     ctx.builder.build_store(ptr, v);
@@ -459,20 +474,12 @@ pub fn gen_expr<'ctx, 'a, G: CodeGenerator + ?Sized>(
         ExprKind::Attribute { value, attr, .. } => {
             // note that we would handle class methods directly in calls
             let index = ctx.get_attr_index(value.custom.unwrap(), *attr);
-            let val = generator.gen_expr(ctx, value).unwrap();
-            let ptr = assert_pointer_val(val);
-            unsafe {
-                let ptr = ctx.builder.build_in_bounds_gep(
-                    ptr,
-                    &[zero, ctx.ctx.i32_type().const_int(index as u64, false)],
-                    "attr",
-                );
-                ctx.builder.build_load(ptr, "field")
-            }
+            let ptr = generator.gen_expr(ctx, value).unwrap().into_pointer_value();
+            ctx.build_gep_and_load(ptr, &[zero, int32.const_int(index as u64, false)])
         }
         ExprKind::BoolOp { op, values } => {
             // requires conditional branches for short-circuiting...
-            let left = assert_int_val(generator.gen_expr(ctx, &values[0]).unwrap());
+            let left = generator.gen_expr(ctx, &values[0]).unwrap().into_int_value();
             let current = ctx.builder.get_insert_block().unwrap().get_parent().unwrap();
             let a_bb = ctx.ctx.append_basic_block(current, "a");
             let b_bb = ctx.ctx.append_basic_block(current, "b");
@@ -484,13 +491,13 @@ pub fn gen_expr<'ctx, 'a, G: CodeGenerator + ?Sized>(
                     let a = ctx.ctx.bool_type().const_int(1, false);
                     ctx.builder.build_unconditional_branch(cont_bb);
                     ctx.builder.position_at_end(b_bb);
-                    let b = assert_int_val(generator.gen_expr(ctx, &values[1]).unwrap());
+                    let b = generator.gen_expr(ctx, &values[1]).unwrap().into_int_value();
                     ctx.builder.build_unconditional_branch(cont_bb);
                     (a, b)
                 }
                 Boolop::And => {
                     ctx.builder.position_at_end(a_bb);
-                    let a = assert_int_val(generator.gen_expr(ctx, &values[1]).unwrap());
+                    let a = generator.gen_expr(ctx, &values[1]).unwrap().into_int_value();
                     ctx.builder.build_unconditional_branch(cont_bb);
                     ctx.builder.position_at_end(b_bb);
                     let b = ctx.ctx.bool_type().const_int(0, false);
@@ -524,7 +531,7 @@ pub fn gen_expr<'ctx, 'a, G: CodeGenerator + ?Sized>(
             let ty = ctx.unifier.get_representative(operand.custom.unwrap());
             let val = generator.gen_expr(ctx, operand).unwrap();
             if ty == ctx.primitives.bool {
-                let val = assert_int_val(val);
+                let val = val.into_int_value();
                 match op {
                     ast::Unaryop::Invert | ast::Unaryop::Not => {
                         ctx.builder.build_not(val, "not").into()
@@ -532,7 +539,7 @@ pub fn gen_expr<'ctx, 'a, G: CodeGenerator + ?Sized>(
                     _ => val.into(),
                 }
             } else if [ctx.primitives.int32, ctx.primitives.int64].contains(&ty) {
-                let val = assert_int_val(val);
+                let val = val.into_int_value();
                 match op {
                     ast::Unaryop::USub => ctx.builder.build_int_neg(val, "neg").into(),
                     ast::Unaryop::Invert => ctx.builder.build_not(val, "not").into(),
@@ -627,7 +634,7 @@ pub fn gen_expr<'ctx, 'a, G: CodeGenerator + ?Sized>(
                 .into() // as there should be at least 1 element, it should never be none
         }
         ExprKind::IfExp { test, body, orelse } => {
-            let test = assert_int_val(generator.gen_expr(ctx, test).unwrap());
+            let test = generator.gen_expr(ctx, test).unwrap().into_int_value();
             let current = ctx.builder.get_insert_block().unwrap().get_parent().unwrap();
             let then_bb = ctx.ctx.append_basic_block(current, "then");
             let else_bb = ctx.ctx.append_basic_block(current, "else");
@@ -712,33 +719,16 @@ pub fn gen_expr<'ctx, 'a, G: CodeGenerator + ?Sized>(
                     unimplemented!()
                 } else {
                     // TODO: bound check
-                    let i32_type = ctx.ctx.i32_type();
-                    let v = assert_pointer_val(generator.gen_expr(ctx, value).unwrap());
-                    let index = assert_int_val(generator.gen_expr(ctx, slice).unwrap());
-                    unsafe {
-                        let ptr_to_arr = ctx.builder.build_in_bounds_gep(
-                            v,
-                            &[i32_type.const_zero(), i32_type.const_int(1, false)],
-                            "ptr_to_arr",
-                        );
-                        let arr_ptr =
-                            assert_pointer_val(ctx.builder.build_load(ptr_to_arr, "loadptr"));
-                        let ptr = ctx.builder.build_gep(arr_ptr, &[index], "loadarrgep");
-                        ctx.builder.build_load(ptr, "loadarr")
-                    }
+                    let v = generator.gen_expr(ctx, value).unwrap().into_pointer_value();
+                    let index = generator.gen_expr(ctx, slice).unwrap().into_int_value();
+                    let arr_ptr =
+                        ctx.build_gep_and_load(v, &[int32.const_zero(), int32.const_int(1, false)]);
+                    ctx.build_gep_and_load(arr_ptr.into_pointer_value(), &[index])
                 }
             } else {
-                let i32_type = ctx.ctx.i32_type();
-                let v = assert_pointer_val(generator.gen_expr(ctx, value).unwrap());
-                let index = assert_int_val(generator.gen_expr(ctx, slice).unwrap());
-                unsafe {
-                    let ptr_to_elem = ctx.builder.build_in_bounds_gep(
-                        v,
-                        &[i32_type.const_zero(), index],
-                        "ptr_to_elem",
-                    );
-                    ctx.builder.build_load(ptr_to_elem, "loadelem")
-                }
+                let v = generator.gen_expr(ctx, value).unwrap().into_pointer_value();
+                let index = generator.gen_expr(ctx, slice).unwrap().into_int_value();
+                ctx.build_gep_and_load(v, &[int32.const_zero(), index])
             }
         }
         _ => unimplemented!(),

@@ -1,7 +1,4 @@
-use super::{
-    expr::{assert_int_val, assert_pointer_val},
-    CodeGenContext, CodeGenerator,
-};
+use super::{expr::destructure_range, CodeGenContext, CodeGenerator};
 use crate::typecheck::typedef::Type;
 use inkwell::values::{BasicValue, BasicValueEnum, PointerValue};
 use rustpython_parser::ast::{Expr, ExprKind, Stmt, StmtKind};
@@ -51,15 +48,12 @@ pub fn gen_store_target<'ctx, 'a, G: CodeGenerator + ?Sized>(
         }
         ExprKind::Subscript { value, slice, .. } => {
             let i32_type = ctx.ctx.i32_type();
-            let v = assert_pointer_val(generator.gen_expr(ctx, value).unwrap());
-            let index = assert_int_val(generator.gen_expr(ctx, slice).unwrap());
+            let v = generator.gen_expr(ctx, value).unwrap().into_pointer_value();
+            let index = generator.gen_expr(ctx, slice).unwrap().into_int_value();
             unsafe {
-                let ptr_to_arr = ctx.builder.build_in_bounds_gep(
-                    v,
-                    &[i32_type.const_zero(), i32_type.const_int(1, false)],
-                    "ptr_to_arr",
-                );
-                let arr_ptr = assert_pointer_val(ctx.builder.build_load(ptr_to_arr, "loadptr"));
+                let arr_ptr = ctx
+                    .build_gep_and_load(v, &[i32_type.const_zero(), i32_type.const_int(1, false)])
+                    .into_pointer_value();
                 ctx.builder.build_gep(arr_ptr, &[index], "loadarrgep")
             }
         }
@@ -77,15 +71,11 @@ pub fn gen_assign<'ctx, 'a, G: CodeGenerator + ?Sized>(
     if let ExprKind::Tuple { elts, .. } = &target.node {
         if let BasicValueEnum::PointerValue(ptr) = value {
             for (i, elt) in elts.iter().enumerate() {
-                unsafe {
-                    let t = ctx.builder.build_in_bounds_gep(
-                        ptr,
-                        &[i32_type.const_zero(), i32_type.const_int(i as u64, false)],
-                        "elem",
-                    );
-                    let v = ctx.builder.build_load(t, "tmpload");
-                    generator.gen_assign(ctx, elt, v);
-                }
+                let v = ctx.build_gep_and_load(
+                    ptr,
+                    &[i32_type.const_zero(), i32_type.const_int(i as u64, false)],
+                );
+                generator.gen_assign(ctx, elt, v);
             }
         } else {
             unreachable!()
@@ -119,44 +109,7 @@ pub fn gen_for<'ctx, 'a, G: CodeGenerator + ?Sized>(
             // setup
             let iter_val = iter_val.into_pointer_value();
             let i = generator.gen_store_target(ctx, target);
-            let start;
-            let end;
-            let step;
-            unsafe {
-                start = ctx
-                    .builder
-                    .build_load(
-                        ctx.builder.build_in_bounds_gep(
-                            iter_val,
-                            &[int32.const_zero(), int32.const_int(0, false)],
-                            "start_ptr",
-                        ),
-                        "start",
-                    )
-                    .into_int_value();
-                end = ctx
-                    .builder
-                    .build_load(
-                        ctx.builder.build_in_bounds_gep(
-                            iter_val,
-                            &[int32.const_zero(), int32.const_int(1, false)],
-                            "end_ptr",
-                        ),
-                        "end",
-                    )
-                    .into_int_value();
-                step = ctx
-                    .builder
-                    .build_load(
-                        ctx.builder.build_in_bounds_gep(
-                            iter_val,
-                            &[int32.const_zero(), int32.const_int(2, false)],
-                            "step_ptr",
-                        ),
-                        "step",
-                    )
-                    .into_int_value();
-            }
+            let (start, end, step) = destructure_range(ctx, iter_val);
             ctx.builder.build_store(i, ctx.builder.build_int_sub(start, step, "start_init"));
             ctx.builder.build_unconditional_branch(test_bb);
             ctx.builder.position_at_end(test_bb);
@@ -189,18 +142,9 @@ pub fn gen_for<'ctx, 'a, G: CodeGenerator + ?Sized>(
             let counter = generator.gen_var_alloc(ctx, ctx.primitives.int32);
             // counter = -1
             ctx.builder.build_store(counter, ctx.ctx.i32_type().const_int(u64::max_value(), true));
-            let len = unsafe {
-                ctx.builder
-                    .build_load(
-                        ctx.builder.build_in_bounds_gep(
-                            iter_val.into_pointer_value(),
-                            &[zero, zero],
-                            "len_ptr",
-                        ),
-                        "len",
-                    )
-                    .into_int_value()
-            };
+            let len = ctx
+                .build_gep_and_load(iter_val.into_pointer_value(), &[zero, zero])
+                .into_int_value();
             ctx.builder.build_unconditional_branch(test_bb);
             ctx.builder.position_at_end(test_bb);
             let tmp = ctx.builder.build_load(counter, "i").into_int_value();
@@ -209,17 +153,14 @@ pub fn gen_for<'ctx, 'a, G: CodeGenerator + ?Sized>(
             let cmp = ctx.builder.build_int_compare(inkwell::IntPredicate::SLT, tmp, len, "cmp");
             ctx.builder.build_conditional_branch(cmp, body_bb, orelse_bb);
             ctx.builder.position_at_end(body_bb);
-            unsafe {
-                let ptr_to_arr = ctx.builder.build_in_bounds_gep(
+            let arr_ptr = ctx
+                .build_gep_and_load(
                     iter_val.into_pointer_value(),
                     &[zero, int32.const_int(1, false)],
-                    "ptr_to_arr",
-                );
-                let arr_ptr = ctx.builder.build_load(ptr_to_arr, "loadptr").into_pointer_value();
-                let ptr = ctx.builder.build_gep(arr_ptr, &[tmp], "loadarrgep");
-                let val = ctx.builder.build_load(ptr, "loadarr");
-                generator.gen_assign(ctx, target, val);
-            }
+                )
+                .into_pointer_value();
+            let val = ctx.build_gep_and_load(arr_ptr, &[tmp]);
+            generator.gen_assign(ctx, target, val);
         }
 
         for stmt in body.iter() {
