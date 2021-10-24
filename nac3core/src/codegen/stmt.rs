@@ -102,6 +102,8 @@ pub fn gen_for<'ctx, 'a, G: CodeGenerator + ?Sized>(
     stmt: &Stmt<Option<Type>>,
 ) {
     if let StmtKind::For { iter, target, body, orelse, .. } = &stmt.node {
+        let int32 = ctx.ctx.i32_type();
+        let zero = int32.const_zero();
         let current = ctx.builder.get_insert_block().unwrap().get_parent().unwrap();
         let test_bb = ctx.ctx.append_basic_block(current, "test");
         let body_bb = ctx.ctx.append_basic_block(current, "body");
@@ -117,7 +119,6 @@ pub fn gen_for<'ctx, 'a, G: CodeGenerator + ?Sized>(
             // setup
             let iter_val = iter_val.into_pointer_value();
             let i = generator.gen_store_target(ctx, target);
-            let int32 = ctx.ctx.i32_type();
             let start;
             let end;
             let step;
@@ -166,7 +167,11 @@ pub fn gen_for<'ctx, 'a, G: CodeGenerator + ?Sized>(
                 "sign",
             );
             // add and test
-            let tmp = ctx.builder.build_int_add(ctx.builder.build_load(i, "i").into_int_value(), step, "start_loop");
+            let tmp = ctx.builder.build_int_add(
+                ctx.builder.build_load(i, "i").into_int_value(),
+                step,
+                "start_loop",
+            );
             ctx.builder.build_store(i, tmp);
             // // if step > 0, continue when i < end
             let cmp1 = ctx.builder.build_int_compare(inkwell::IntPredicate::SLT, tmp, end, "cmp1");
@@ -179,11 +184,44 @@ pub fn gen_for<'ctx, 'a, G: CodeGenerator + ?Sized>(
                 body_bb,
                 orelse_bb,
             );
+            ctx.builder.position_at_end(body_bb);
         } else {
-            unimplemented!()
+            let counter = generator.gen_var_alloc(ctx, ctx.primitives.int32);
+            // counter = -1
+            ctx.builder.build_store(counter, ctx.ctx.i32_type().const_int(u64::max_value(), true));
+            let len = unsafe {
+                ctx.builder
+                    .build_load(
+                        ctx.builder.build_in_bounds_gep(
+                            iter_val.into_pointer_value(),
+                            &[zero, zero],
+                            "len_ptr",
+                        ),
+                        "len",
+                    )
+                    .into_int_value()
+            };
+            ctx.builder.build_unconditional_branch(test_bb);
+            ctx.builder.position_at_end(test_bb);
+            let tmp = ctx.builder.build_load(counter, "i").into_int_value();
+            let tmp = ctx.builder.build_int_add(tmp, int32.const_int(1, false), "inc");
+            ctx.builder.build_store(counter, tmp);
+            let cmp = ctx.builder.build_int_compare(inkwell::IntPredicate::SLT, tmp, len, "cmp");
+            ctx.builder.build_conditional_branch(cmp, body_bb, orelse_bb);
+            ctx.builder.position_at_end(body_bb);
+            unsafe {
+                let ptr_to_arr = ctx.builder.build_in_bounds_gep(
+                    iter_val.into_pointer_value(),
+                    &[zero, int32.const_int(1, false)],
+                    "ptr_to_arr",
+                );
+                let arr_ptr = ctx.builder.build_load(ptr_to_arr, "loadptr").into_pointer_value();
+                let ptr = ctx.builder.build_gep(arr_ptr, &[tmp], "loadarrgep");
+                let val = ctx.builder.build_load(ptr, "loadarr");
+                generator.gen_assign(ctx, target, val);
+            }
         }
 
-        ctx.builder.position_at_end(body_bb);
         for stmt in body.iter() {
             generator.gen_stmt(ctx, stmt);
         }
