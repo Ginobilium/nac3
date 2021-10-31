@@ -1,0 +1,8 @@
+[package]
+name = "runkernel"
+version = "0.1.0"
+authors = ["M-Labs"]
+edition = "2018"
+
+[dependencies]
+libloading = "0.7"
