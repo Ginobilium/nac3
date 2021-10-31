@@ -64,6 +64,10 @@ impl fold::Fold<()> for NaiveFolder {
     }
 }
 
+fn report_error<T>(msg: &str, location: Location) -> Result<T, String> {
+    Err(format!("{} at {}", msg, location))
+}
+
 impl<'a> fold::Fold<()> for Inferencer<'a> {
     type TargetU = Option<Type>;
     type Error = String;
@@ -165,6 +169,14 @@ impl<'a> fold::Fold<()> for Inferencer<'a> {
                 }
                 fold::fold_stmt(self, node)?
             }
+            ast::StmtKind::With { ref items, .. } => {
+                for item in items.iter() {
+                    if let Some(var) = &item.optional_vars {
+                        self.infer_pattern(var)?;
+                    }
+                }
+                fold::fold_stmt(self, node)?
+            }
             _ => fold::fold_stmt(self, node)?,
         };
         match &stmt.node {
@@ -186,19 +198,92 @@ impl<'a> fold::Fold<()> for Inferencer<'a> {
             }
             ast::StmtKind::AnnAssign { .. } | ast::StmtKind::Expr { .. } => {}
             ast::StmtKind::Break | ast::StmtKind::Continue | ast::StmtKind::Pass => {}
+            ast::StmtKind::With { items, .. } => {
+                for item in items.iter() {
+                    let ty = item.context_expr.custom.unwrap();
+                    // if we can simply unify without creating new types...
+                    let mut fast_path = false;
+                    if let TypeEnum::TObj { fields, .. } = &*self.unifier.get_ty(ty) {
+                        let fields = fields.borrow();
+                        fast_path = true;
+                        if let Some(enter) = fields.get(&"__enter__".into()).cloned() {
+                            if let TypeEnum::TFunc(signature) = &*self.unifier.get_ty(enter) {
+                                let signature = signature.borrow();
+                                if !signature.args.is_empty() {
+                                    return report_error(
+                                        "__enter__ method should take no argument other than self",
+                                        stmt.location
+                                    )
+                                }
+                                if let Some(var) = &item.optional_vars {
+                                    if signature.vars.is_empty() {
+                                        self.unify(signature.ret, var.custom.unwrap(), &stmt.location)?;
+                                    } else {
+                                        fast_path = false;
+                                    }
+                                }
+                            } else {
+                                fast_path = false;
+                            }
+                        } else {
+                            return report_error(
+                                "__enter__ method is required for context manager",
+                                stmt.location
+                            );
+                        }
+                        if let Some(exit) = fields.get(&"__exit__".into()).cloned() {
+                            if let TypeEnum::TFunc(signature) = &*self.unifier.get_ty(exit) {
+                                let signature = signature.borrow();
+                                if !signature.args.is_empty() {
+                                    return report_error(
+                                        "__exit__ method should take no argument other than self",
+                                        stmt.location
+                                    )
+                                }
+                            } else {
+                                fast_path = false;
+                            }
+                        } else {
+                            return report_error(
+                                "__exit__ method is required for context manager",
+                                stmt.location
+                            );
+                        }
+                    }
+                    if !fast_path {
+                        let enter = TypeEnum::TFunc(RefCell::new(FunSignature {
+                            args: vec![],
+                            ret: item.optional_vars.as_ref().map_or_else(|| self.unifier.get_fresh_var().0, |var| var.custom.unwrap()),
+                            vars: Default::default()
+                        }));
+                        let enter = self.unifier.add_ty(enter);
+                        let exit = TypeEnum::TFunc(RefCell::new(FunSignature {
+                            args: vec![],
+                            ret: self.unifier.get_fresh_var().0,
+                            vars: Default::default()
+                        }));
+                        let exit = self.unifier.add_ty(exit);
+                        let mut fields = HashMap::new();
+                        fields.insert("__enter__".into(), enter);
+                        fields.insert("__exit__".into(), exit);
+                        let record = self.unifier.add_record(fields);
+                        self.unify(ty, record, &stmt.location)?;
+                    }
+                }
+            }
             ast::StmtKind::Return { value } => match (value, self.function_data.return_type) {
                 (Some(v), Some(v1)) => {
                     self.unify(v.custom.unwrap(), v1, &v.location)?;
                 }
                 (Some(_), None) => {
-                    return Err("Unexpected return value".to_string());
+                    return report_error("Unexpected return value", stmt.location);
                 }
                 (None, Some(_)) => {
-                    return Err("Expected return value".to_string());
+                    return report_error("Expected return value", stmt.location);
                 }
                 (None, None) => {}
             },
-            _ => return Err("Unsupported statement type".to_string()),
+            _ => return report_error("Unsupported statement type", stmt.location),
         };
         Ok(stmt)
     }

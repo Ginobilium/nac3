@@ -5,7 +5,8 @@ from numpy import int32, int64
 
 import nac3artiq
 
-__all__ = ["KernelInvariant", "extern", "kernel", "portable", "ms", "us", "ns", "Core", "TTLOut"]
+__all__ = ["KernelInvariant", "extern", "kernel", "portable", "ms", "us", "ns",
+           "Core", "TTLOut", "parallel", "sequential"]
 
 
 import device_db
@@ -14,7 +15,6 @@ core_arguments = device_db.device_db["core"]["arguments"]
 nac3 = nac3artiq.NAC3(core_arguments["target"])
 allow_module_registration = True
 registered_ids = set()
-
 
 def KernelInvariant(t):
     return t
@@ -83,6 +83,14 @@ def rtio_input_timestamp(timeout_mu: int64, channel: int32) -> int64:
 def rtio_input_data(channel: int32) -> int32:
     raise NotImplementedError("syscall not simulated")
 
+def at_mu(_):
+    raise NotImplementedError("at_mu not simulated")
+
+def now_mu() -> int32:
+    raise NotImplementedError("now_mu not simulated")
+
+def delay_mu(_):
+    raise NotImplementedError("delay_mu not simulated")
 
 @kernel
 class Core:
@@ -169,3 +177,17 @@ class TTLOut:
         self.on()
         self.core.delay(duration)
         self.off()
+
+@portable
+class KernelContextManager:
+    @kernel
+    def __enter__(self):
+        pass
+
+    @kernel
+    def __exit__(self):
+        pass
+
+parallel = KernelContextManager()
+sequential = KernelContextManager()
+

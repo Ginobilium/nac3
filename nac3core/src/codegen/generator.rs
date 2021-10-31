@@ -125,6 +125,14 @@ pub trait CodeGenerator {
         gen_if(self, ctx, stmt)
     }
 
+    fn gen_with<'ctx, 'a>(
+        &mut self,
+        ctx: &mut CodeGenContext<'ctx, 'a>,
+        stmt: &Stmt<Option<Type>>,
+    ) -> bool {
+        gen_with(self, ctx, stmt)
+    }
+
     /// Generate code for a statement
     /// Return true if the statement must early return
     fn gen_stmt<'ctx, 'a>(
