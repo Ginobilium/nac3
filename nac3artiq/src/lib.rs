@@ -57,6 +57,7 @@ pub struct PrimitivePythonId {
 #[pyclass(unsendable, name = "NAC3")]
 struct Nac3 {
     isa: Isa,
+    time_fns: &'static (dyn TimeFns + Sync),
     primitive: PrimitiveStore,
     builtins_ty: HashMap<StrRef, Type>,
     builtins_def: HashMap<StrRef, DefinitionId>,
@@ -284,6 +285,7 @@ impl Nac3 {
 
         Ok(Nac3 {
             isa,
+            time_fns,
             primitive,
             builtins_ty,
             builtins_def,
@@ -438,14 +440,10 @@ impl Nac3 {
                 )
                 .expect("couldn't write module to file");
         })));
-        let time_fns: &(dyn TimeFns + Sync) = match isa {
-            Isa::RiscV => &timeline::NOW_PINNING_TIME_FNS,
-            Isa::CortexA9 => &timeline::EXTERN_TIME_FNS,
-        };
         let thread_names: Vec<String> = (0..4).map(|i| format!("module{}", i)).collect();
         let threads: Vec<_> = thread_names
             .iter()
-            .map(|s| Box::new(ArtiqCodeGenerator::new(s.to_string(), time_fns)))
+            .map(|s| Box::new(ArtiqCodeGenerator::new(s.to_string(), self.time_fns)))
             .collect();
 
         py.allow_threads(|| {
