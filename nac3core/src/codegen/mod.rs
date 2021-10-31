@@ -28,9 +28,9 @@ use std::sync::{
 use std::thread;
 
 pub mod concrete_type;
-mod expr;
+pub mod expr;
+pub mod stmt;
 mod generator;
-mod stmt;
 
 #[cfg(test)]
 mod test;

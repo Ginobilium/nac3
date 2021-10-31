@@ -219,6 +219,17 @@ impl<'a> Inferencer<'a> {
                 self.check_block(orelse, &mut defined_identifiers)?;
                 Ok(false)
             }
+            StmtKind::With { items, body, .. } => {
+                let mut new_defined_identifiers = defined_identifiers.clone();
+                for item in items.iter() {
+                    self.check_expr(&item.context_expr, defined_identifiers)?;
+                    if let Some(var) = item.optional_vars.as_ref() {
+                        self.check_pattern(var, &mut new_defined_identifiers)?;
+                    }
+                }
+                self.check_block(body, &mut new_defined_identifiers)?;
+                Ok(false)
+            }
             StmtKind::Expr { value } => {
                 self.check_expr(value, defined_identifiers)?;
                 Ok(false)

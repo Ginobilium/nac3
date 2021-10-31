@@ -19,18 +19,16 @@ use rustpython_parser::{
 use parking_lot::{Mutex, RwLock};
 
 use nac3core::{
-    codegen::{
-        concrete_type::ConcreteTypeStore, CodeGenTask, DefaultCodeGenerator, WithCall,
-        WorkerRegistry,
-    },
+    codegen::{concrete_type::ConcreteTypeStore, CodeGenTask, WithCall, WorkerRegistry},
     symbol_resolver::SymbolResolver,
     toplevel::{composer::TopLevelComposer, DefinitionId, GenCall, TopLevelContext, TopLevelDef},
     typecheck::typedef::{FunSignature, FuncArg},
     typecheck::{type_inferencer::PrimitiveStore, typedef::Type},
 };
 
-use crate::symbol_resolver::Resolver;
+use crate::{codegen::ArtiqCodeGenerator, symbol_resolver::Resolver};
 
+mod codegen;
 mod symbol_resolver;
 mod timeline;
 
@@ -436,10 +434,14 @@ impl Nac3 {
                 )
                 .expect("couldn't write module to file");
         })));
+        let time_fns: &(dyn TimeFns + Sync) = match isa {
+            Isa::RiscV => &timeline::NOW_PINNING_TIME_FNS,
+            Isa::CortexA9 => &timeline::EXTERN_TIME_FNS,
+        };
         let thread_names: Vec<String> = (0..4).map(|i| format!("module{}", i)).collect();
         let threads: Vec<_> = thread_names
             .iter()
-            .map(|s| Box::new(DefaultCodeGenerator::new(s.to_string())))
+            .map(|s| Box::new(ArtiqCodeGenerator::new(s.to_string(), time_fns)))
             .collect();
 
         py.allow_threads(|| {

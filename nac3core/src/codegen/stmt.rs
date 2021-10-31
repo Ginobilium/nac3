@@ -291,6 +291,15 @@ pub fn gen_if<'ctx, 'a, G: CodeGenerator + ?Sized>(
     }
 }
 
+pub fn gen_with<'ctx, 'a, G: CodeGenerator + ?Sized>(
+    _: &mut G,
+    _: &mut CodeGenContext<'ctx, 'a>,
+    _: &Stmt<Option<Type>>,
+) -> bool {
+    // TODO: Implement with statement after finishing exceptions
+    unimplemented!()
+}
+
 pub fn gen_stmt<'ctx, 'a, G: CodeGenerator + ?Sized>(
     generator: &mut G,
     ctx: &mut CodeGenContext<'ctx, 'a>,
@@ -330,6 +339,7 @@ pub fn gen_stmt<'ctx, 'a, G: CodeGenerator + ?Sized>(
         StmtKind::If { .. } => return generator.gen_if(ctx, stmt),
         StmtKind::While { .. } => return generator.gen_while(ctx, stmt),
         StmtKind::For { .. } => return generator.gen_for(ctx, stmt),
+        StmtKind::With { .. } => return generator.gen_with(ctx, stmt),
         _ => unimplemented!(),
     };
     false
