@@ -455,11 +455,13 @@ impl Nac3 {
         let mut linker_args = vec![
             "-shared".to_string(),
             "--eh-frame-hdr".to_string(),
-            "-Tkernel.ld".to_string(),
             "-x".to_string(),
             "-o".to_string(),
             "module.elf".to_string(),
         ];
+        if isa != Isa::Host {
+            linker_args.push("-Tkernel.ld".to_string());
+        }
         linker_args.extend(thread_names.iter().map(|name| name.to_owned() + ".o"));
         if let Ok(linker_status) = Command::new("ld.lld").args(linker_args).status() {
             if !linker_status.success() {
