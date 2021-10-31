@@ -38,6 +38,7 @@ use timeline::TimeFns;
 
 #[derive(PartialEq, Clone, Copy)]
 enum Isa {
+    Host,
     RiscV,
     CortexA9,
 }
@@ -184,11 +185,13 @@ impl Nac3 {
     #[new]
     fn new(isa: &str, py: Python) -> PyResult<Self> {
         let isa = match isa {
+            "host" => Isa::Host,
             "riscv" => Isa::RiscV,
             "cortexa9" => Isa::CortexA9,
             _ => return Err(exceptions::PyValueError::new_err("invalid ISA")),
         };
         let time_fns: &(dyn TimeFns + Sync) = match isa {
+            Isa::Host => &timeline::EXTERN_TIME_FNS,
             Isa::RiscV => &timeline::NOW_PINNING_TIME_FNS,
             Isa::CortexA9 => &timeline::EXTERN_TIME_FNS,
         };
@@ -410,10 +413,11 @@ impl Nac3 {
             passes.run_on(module);
 
             let (triple, features) = match isa {
-                Isa::RiscV => (TargetTriple::create("riscv32-unknown-linux"), "+a,+m"),
+                Isa::Host => (TargetMachine::get_default_triple(), TargetMachine::get_host_cpu_features().to_string()),
+                Isa::RiscV => (TargetTriple::create("riscv32-unknown-linux"), "+a,+m".to_string()),
                 Isa::CortexA9 => (
                     TargetTriple::create("armv7-unknown-linux-gnueabihf"),
-                    "+dsp,+fp16,+neon,+vfp3",
+                    "+dsp,+fp16,+neon,+vfp3".to_string(),
                 ),
             };
             let target =
@@ -422,7 +426,7 @@ impl Nac3 {
                 .create_target_machine(
                     &triple,
                     "",
-                    features,
+                    &features,
                     OptimizationLevel::Default,
                     RelocMode::PIC,
                     CodeModel::Default,
