@@ -111,6 +111,7 @@ impl TestEnvironment {
             (2, "float".into()),
             (3, "bool".into()),
             (4, "none".into()),
+            (5, "range".into()),
         ]
         .iter()
         .cloned()
