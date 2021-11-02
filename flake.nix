@@ -12,7 +12,7 @@
           pkgs.rustPlatform.buildRustPackage {
             name = "nac3artiq";
             src = self;
-            cargoSha256 = "0cml3irmc72f42dqmka9w4l3k397b2rnns768vm132mh2zyv85lp";
+            cargoSha256 = "sha256-si/yuVrRnXXLp8fMo5ZORHXa5JUqI2YqQ9U4R3UEUL0=";
             nativeBuildInputs = [ pkgs.python3 pkgs.llvm_12 ];
             buildInputs = [ pkgs.python3 pkgs.libffi pkgs.libxml2 pkgs.llvm_12 ];
             cargoBuildFlags = [ "--package" "nac3artiq" ];
