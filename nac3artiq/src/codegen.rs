@@ -6,7 +6,7 @@ use nac3core::{
 
 use rustpython_parser::ast::{Expr, ExprKind, Located, Stmt, StmtKind, StrRef};
 
-use inkwell::values::BasicValueEnum;
+use inkwell::values::{BasicValueEnum, IntValue};
 
 use crate::timeline::TimeFns;
 
@@ -30,6 +30,17 @@ impl<'a> ArtiqCodeGenerator<'a> {
     }
 }
 
+fn max_val<'ctx, 'a>(
+    ctx: &mut CodeGenContext<'ctx, 'a>,
+    a: IntValue<'ctx>,
+    b: IntValue<'ctx>,
+) -> IntValue<'ctx> {
+    let cmp = ctx
+        .builder
+        .build_int_compare(inkwell::IntPredicate::SGT, a, b, "gt");
+    ctx.builder.build_select(cmp, a, b, "max").into_int_value()
+}
+
 impl<'b> CodeGenerator for ArtiqCodeGenerator<'b> {
     fn get_name(&self) -> &str {
         &self.name
@@ -46,20 +57,7 @@ impl<'b> CodeGenerator for ArtiqCodeGenerator<'b> {
         if let Some(end) = self.end.clone() {
             let old_end = self.gen_expr(ctx, &end).unwrap();
             let now = self.timeline.emit_now_mu(ctx);
-            let smax = ctx.module.get_function("llvm.smax.i64").unwrap_or_else(|| {
-                let i64 = ctx.ctx.i64_type();
-                ctx.module.add_function(
-                    "llvm.smax.i64",
-                    i64.fn_type(&[i64.into(), i64.into()], false),
-                    None,
-                )
-            });
-            let max = ctx
-                .builder
-                .build_call(smax, &[old_end, now], "smax")
-                .try_as_basic_value()
-                .left()
-                .unwrap();
+            let max = max_val(ctx, old_end.into_int_value(), now.into_int_value());
             let end_store = self.gen_store_target(ctx, &end);
             ctx.builder.build_store(end_store, max);
         }
@@ -154,20 +152,11 @@ impl<'b> CodeGenerator for ArtiqCodeGenerator<'b> {
                         // inside a parallel block, should update the outer max now_mu
                         if let Some(old_end) = &old_end {
                             let outer_end_val = self.gen_expr(ctx, old_end).unwrap();
-                            let smax = ctx.module.get_function("llvm.smax.i64").unwrap_or_else(|| {
-                                let i64 = ctx.ctx.i64_type();
-                                ctx.module.add_function(
-                                    "llvm.smax.i64",
-                                    i64.fn_type(&[i64.into(), i64.into()], false),
-                                    None,
-                                )
-                            });
-                            let max = ctx
-                                .builder
-                                .build_call(smax, &[end_val, outer_end_val], "smax")
-                                .try_as_basic_value()
-                                .left()
-                                .unwrap();
+                            let max = max_val(
+                                ctx,
+                                end_val.into_int_value(),
+                                outer_end_val.into_int_value(),
+                            );
                             let outer_end = self.gen_store_target(ctx, old_end);
                             ctx.builder.build_store(outer_end, max);
                         }
