@@ -13,8 +13,8 @@
             name = "nac3artiq";
             src = self;
             cargoSha256 = "0cml3irmc72f42dqmka9w4l3k397b2rnns768vm132mh2zyv85lp";
-            nativeBuildInputs = [ pkgs.python3 pkgs.llvm_11 ];
-            buildInputs = [ pkgs.python3 pkgs.libffi pkgs.libxml2 pkgs.llvm_11 ];
+            nativeBuildInputs = [ pkgs.python3 pkgs.llvm_12 ];
+            buildInputs = [ pkgs.python3 pkgs.libffi pkgs.libxml2 pkgs.llvm_12 ];
             cargoBuildFlags = [ "--package" "nac3artiq" ];
             cargoTestFlags = [ "--package" "nac3core" "--package" "nac3artiq" ];
             installPhase =
@@ -30,9 +30,9 @@
       devShell.x86_64-linux = pkgs.mkShell {
         name = "nac3-dev-shell";
         buildInputs = with pkgs; [
-          llvm_11
-          clang_11
-          lld_11
+          llvm_12
+          clang_12
+          lld_12
           cargo
           rustc
           libffi
