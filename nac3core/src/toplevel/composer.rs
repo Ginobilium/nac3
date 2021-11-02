@@ -390,6 +390,7 @@ impl TopLevelComposer {
             "bool".into(),
             "none".into(),
             "None".into(),
+            "range".into(),
             "self".into(),
             "Kernel".into(),
             "KernelImmutable".into(),
