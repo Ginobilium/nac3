@@ -46,6 +46,7 @@ impl TopLevelComposer {
         let float = primitives.0.float;
         let boolean = primitives.0.bool;
         let range = primitives.0.range;
+        let string = primitives.0.str;
         let num_ty = primitives.1.get_fresh_var_with_range(&[int32, int64, float, boolean]);
         let var_map: HashMap<_, _> = vec![(num_ty.1, num_ty.0)].into_iter().collect();
 
@@ -75,6 +76,12 @@ impl TopLevelComposer {
                     5,
                     None,
                     "range".into(),
+                    None,
+                ))),
+                Arc::new(RwLock::new(Self::make_top_level_class_def(
+                    6,
+                    None,
+                    "str".into(),
                     None,
                 ))),
                 Arc::new(RwLock::new(TopLevelDef::Function {
@@ -372,6 +379,22 @@ impl TopLevelComposer {
                         Some(ptr.into())
                     })))),
                 })),
+                Arc::new(RwLock::new(TopLevelDef::Function {
+                    name: "str".into(),
+                    simple_name: "str".into(),
+                    signature: primitives.1.add_ty(TypeEnum::TFunc(RefCell::new(FunSignature {
+                        args: vec![FuncArg { name: "_".into(), ty: string, default_value: None }],
+                        ret: string,
+                        vars: Default::default(),
+                    }))),
+                    var_id: Default::default(),
+                    instance_to_symbol: Default::default(),
+                    instance_to_stmt: Default::default(),
+                    resolver: None,
+                    codegen_callback: Some(Arc::new(GenCall::new(Box::new(|_, _, _, args|
+                        Some(args[0].1)
+                    )))),
+                })),
             ];
             let ast_list: Vec<Option<ast::Stmt<()>>> =
                 (0..top_level_def_list.len()).map(|_| None).collect();
@@ -391,6 +414,7 @@ impl TopLevelComposer {
             "none".into(),
             "None".into(),
             "range".into(),
+            "str".into(),
             "self".into(),
             "Kernel".into(),
             "KernelImmutable".into(),
@@ -402,7 +426,7 @@ impl TopLevelComposer {
         let mut built_in_ty: HashMap<StrRef, Type> = Default::default();
 
         for (id, name) in
-            ["int32", "int64", "float", "round", "round64", "range"].iter().rev().enumerate()
+            ["int32", "int64", "float", "round", "round64", "range", "str"].iter().rev().enumerate()
         {
             let name = (**name).into();
             let id = definition_ast_list.len() - id - 1;

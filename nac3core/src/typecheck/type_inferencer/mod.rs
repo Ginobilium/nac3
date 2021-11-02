@@ -36,6 +36,7 @@ pub struct PrimitiveStore {
     pub bool: Type,
     pub none: Type,
     pub range: Type,
+    pub str: Type,
 }
 
 pub struct FunctionData {
@@ -731,6 +732,7 @@ impl<'a> Inferencer<'a> {
                 let ty: Result<Vec<_>, _> = vals.iter().map(|x| self.infer_constant(x)).collect();
                 Ok(self.unifier.add_ty(TypeEnum::TTuple { ty: ty? }))
             }
+            ast::Constant::Str(_) => Ok(self.primitives.str),
             _ => Err("not supported".into()),
         }
     }

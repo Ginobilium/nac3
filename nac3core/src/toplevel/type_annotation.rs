@@ -41,6 +41,8 @@ pub fn parse_ast_to_type_annotation_kinds<T>(
                 Ok(TypeAnnotation::PrimitiveKind(primitives.bool))
             } else if id == &"None".into() {
                 Ok(TypeAnnotation::PrimitiveKind(primitives.none))
+            } else if id == &"str".into() {
+                Ok(TypeAnnotation::PrimitiveKind(primitives.str))
             } else if let Some(obj_id) = resolver.get_identifier_def(*id) {
                 let type_vars = {
                     let def_read = top_level_defs[obj_id.0].try_read();

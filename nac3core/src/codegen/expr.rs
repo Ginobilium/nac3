@@ -135,6 +135,10 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
                 let ty = self.ctx.struct_type(&types, false);
                 ty.const_named_struct(&values).into()
             }
+            Constant::Str(v) => {
+                assert!(self.unifier.unioned(ty, self.primitives.str));
+                self.builder.build_global_string_ptr(v, "const").as_pointer_value().into()
+            }
             _ => unreachable!(),
         }
     }

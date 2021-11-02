@@ -4,5 +4,5 @@ expression: res_vec
 
 ---
 [
-    "12: Class {\nname: \"A\",\ndef_id: DefinitionId(12),\nancestors: [CustomClassKind { id: DefinitionId(12), params: [] }],\nfields: [],\nmethods: [],\ntype_vars: []\n}\n",
+    "14: Class {\nname: \"A\",\ndef_id: DefinitionId(14),\nancestors: [CustomClassKind { id: DefinitionId(14), params: [] }],\nfields: [],\nmethods: [],\ntype_vars: []\n}\n",
 ]

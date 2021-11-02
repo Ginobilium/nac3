@@ -291,6 +291,7 @@ pub fn gen_func<'ctx, G: CodeGenerator + ?Sized>(
         bool: unifier.get_representative(primitives.bool),
         none: unifier.get_representative(primitives.none),
         range: unifier.get_representative(primitives.range),
+        str: unifier.get_representative(primitives.str),
     };
 
     let mut type_cache: HashMap<_, _> = [
@@ -298,6 +299,7 @@ pub fn gen_func<'ctx, G: CodeGenerator + ?Sized>(
         (unifier.get_representative(primitives.int64), context.i64_type().into()),
         (unifier.get_representative(primitives.float), context.f64_type().into()),
         (unifier.get_representative(primitives.bool), context.bool_type().into()),
+        (unifier.get_representative(primitives.str), context.i8_type().ptr_type(AddressSpace::Generic).into()),
     ]
     .iter()
     .cloned()

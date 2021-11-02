@@ -87,7 +87,12 @@ impl TopLevelComposer {
             fields: HashMap::new().into(),
             params: HashMap::new().into(),
         });
-        let primitives = PrimitiveStore { int32, int64, float, bool, none, range };
+        let str = unifier.add_ty(TypeEnum::TObj {
+            obj_id: DefinitionId(6),
+            fields: HashMap::new().into(),
+            params: HashMap::new().into(),
+        });
+        let primitives = PrimitiveStore { int32, int64, float, bool, none, range, str };
         crate::typecheck::magic_methods::set_primitives_magic_methods(&primitives, &mut unifier);
         (primitives, unifier)
     }
