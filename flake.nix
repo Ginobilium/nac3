@@ -34,6 +34,7 @@
           clang_12
           lld_12
           cargo
+          cargo-insta
           rustc
           libffi
           libxml2
