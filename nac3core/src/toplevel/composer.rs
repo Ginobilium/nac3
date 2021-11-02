@@ -1396,6 +1396,7 @@ impl TopLevelComposer {
                     }
                 }
                 ast::StmtKind::Pass => {}
+                ast::StmtKind::Expr { value: _ } => {} // typically a docstring; ignoring all expressions matches CPython behavior
                 _ => return Err("unsupported statement type in class definition body".into()),
             }
         }
