@@ -8,20 +8,17 @@
 //! For example, one could do this:
 //!
 //! ```
-//! use rustpython_parser::{parser, ast};
+//! use nac3parser::{parser, ast};
 //!
 //! let python_source = "print('Hello world')";
 //! let python_ast = parser::parse_expression(python_source).unwrap();
 //!
 //! ```
 
-#![doc(html_logo_url = "https://raw.githubusercontent.com/RustPython/RustPython/master/logo.png")]
-#![doc(html_root_url = "https://docs.rs/rustpython-parser/")]
-
 #[macro_use]
 extern crate log;
 use lalrpop_util::lalrpop_mod;
-pub use rustpython_ast as ast;
+pub use nac3ast as ast;
 
 pub mod error;
 mod fstring;

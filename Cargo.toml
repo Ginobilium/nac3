@@ -1,5 +1,7 @@
 [workspace]
 members = [
+  "nac3ast",
+  "nac3parser",
   "nac3core",
   "nac3standalone",
   "nac3artiq",

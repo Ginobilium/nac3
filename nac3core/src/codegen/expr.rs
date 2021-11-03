@@ -15,7 +15,7 @@ use inkwell::{
     AddressSpace,
 };
 use itertools::{chain, izip, zip, Itertools};
-use rustpython_parser::ast::{
+use nac3parser::ast::{
     self, Boolop, Comprehension, Constant, Expr, ExprKind, Operator, StrRef,
 };
 

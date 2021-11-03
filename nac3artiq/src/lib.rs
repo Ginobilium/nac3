@@ -11,7 +11,7 @@ use inkwell::{
 };
 use pyo3::prelude::*;
 use pyo3::{exceptions, types::PyList};
-use rustpython_parser::{
+use nac3parser::{
     ast::{self, StrRef},
     parser::{self, parse_program},
 };

@@ -1,7 +1,7 @@
 use super::{expr::destructure_range, CodeGenContext, CodeGenerator};
 use crate::typecheck::typedef::Type;
 use inkwell::values::{BasicValue, BasicValueEnum, PointerValue};
-use rustpython_parser::ast::{Expr, ExprKind, Stmt, StmtKind};
+use nac3parser::ast::{Expr, ExprKind, Stmt, StmtKind};
 
 pub fn gen_var<'ctx, 'a>(ctx: &mut CodeGenContext<'ctx, 'a>, ty: Type) -> PointerValue<'ctx> {
     // put the alloca in init block

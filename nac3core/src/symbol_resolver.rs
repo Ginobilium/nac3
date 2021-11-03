@@ -10,7 +10,7 @@ use crate::typecheck::{
 use crate::{location::Location, typecheck::typedef::TypeEnum};
 use itertools::{chain, izip};
 use parking_lot::RwLock;
-use rustpython_parser::ast::{Expr, StrRef};
+use nac3parser::ast::{Expr, StrRef};
 use inkwell::values::BasicValueEnum;
 
 #[derive(Clone, PartialEq, Debug)]
@@ -61,7 +61,7 @@ pub fn parse_type_annotation<T>(
     primitives: &PrimitiveStore,
     expr: &Expr<T>,
 ) -> Result<Type, String> {
-    use rustpython_parser::ast::ExprKind::*;
+    use nac3parser::ast::ExprKind::*;
     let ids = IDENTIFIER_ID.with(|ids| {
         *ids
     });

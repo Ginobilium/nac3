@@ -19,7 +19,7 @@ use inkwell::{
 };
 use itertools::Itertools;
 use parking_lot::{Condvar, Mutex};
-use rustpython_parser::ast::{Stmt, StrRef};
+use nac3parser::ast::{Stmt, StrRef};
 use std::collections::HashMap;
 use std::sync::{
     atomic::{AtomicBool, Ordering},

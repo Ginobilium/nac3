@@ -5,7 +5,7 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use std::{borrow::Cow, collections::HashSet};
 
-use rustpython_parser::ast::StrRef;
+use nac3parser::ast::StrRef;
 
 use super::unification_table::{UnificationKey, UnificationTable};
 use crate::symbol_resolver::SymbolValue;

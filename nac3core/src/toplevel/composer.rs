@@ -1,6 +1,6 @@
 use std::cell::RefCell;
 
-use rustpython_parser::ast::fold::Fold;
+use nac3parser::ast::fold::Fold;
 
 use crate::{
     symbol_resolver::SymbolValue,

@@ -7,7 +7,7 @@ use crate::{
     },
 };
 
-use rustpython_parser::ast::StrRef;
+use nac3parser::ast::StrRef;
 use std::collections::HashMap;
 
 pub struct ConcreteTypeStore {

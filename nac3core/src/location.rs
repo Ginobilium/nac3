@@ -1,4 +1,4 @@
-use rustpython_parser::ast;
+use nac3parser::ast;
 use std::vec::Vec;
 
 #[derive(Clone, Copy, PartialEq)]

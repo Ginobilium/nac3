@@ -4,7 +4,7 @@ use crate::{
     typecheck::typedef::{FunSignature, Type},
 };
 use inkwell::values::{BasicValueEnum, PointerValue};
-use rustpython_parser::ast::{Expr, Stmt, StrRef};
+use nac3parser::ast::{Expr, Stmt, StrRef};
 
 pub trait CodeGenerator {
     /// Return the module name for the code generator.

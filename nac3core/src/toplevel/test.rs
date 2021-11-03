@@ -10,7 +10,7 @@ use crate::{
 };
 use indoc::indoc;
 use parking_lot::Mutex;
-use rustpython_parser::{ast::fold::Fold, parser::parse_program};
+use nac3parser::{ast::fold::Fold, parser::parse_program};
 use std::{collections::HashMap, sync::Arc};
 use test_case::test_case;
 

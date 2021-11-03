@@ -16,7 +16,7 @@ use crate::{
 use indoc::indoc;
 use inkwell::values::BasicValueEnum;
 use parking_lot::RwLock;
-use rustpython_parser::{
+use nac3parser::{
     ast::{fold::Fold, StrRef},
     parser::parse_program,
 };

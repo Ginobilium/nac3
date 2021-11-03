@@ -1,10 +1,9 @@
 [package]
-name = "rustpython-parser"
+name = "nac3parser"
 version = "0.1.2"
 description = "Parser for python code."
-authors = [ "RustPython Team" ]
+authors = [ "RustPython Team", "M-Labs" ]
 build = "build.rs"
-repository = "https://github.com/RustPython/RustPython"
 license = "MIT"
 edition = "2018"
 
@@ -12,7 +11,7 @@ edition = "2018"
 lalrpop = "0.19.6"
 
 [dependencies]
-rustpython-ast = { path = "../ast" }
+nac3ast = { path = "../nac3ast" }
 lalrpop-util = "0.19.6"
 log = "0.4.1"
 num-bigint = "0.4.0"

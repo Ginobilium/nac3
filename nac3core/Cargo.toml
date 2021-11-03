@@ -8,11 +8,11 @@ edition = "2018"
 num-bigint = "0.3"
 num-traits = "0.2"
 inkwell = { git = "https://github.com/TheDan64/inkwell", branch = "master", features = ["llvm12-0"] }
-rustpython-parser = { git = "https://github.com/m-labs/RustPython", branch = "parser-mod" }
 itertools = "0.10.1"
 crossbeam = "0.8.1"
 parking_lot = "0.11.1"
 rayon = "1.5.1"
+nac3parser = { path = "../nac3parser" }
 
 [dev-dependencies]
 test-case = "1.2.0"

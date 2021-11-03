@@ -9,7 +9,7 @@ use indoc::indoc;
 use inkwell::values::BasicValueEnum;
 use itertools::zip;
 use parking_lot::RwLock;
-use rustpython_parser::parser::parse_program;
+use nac3parser::parser::parse_program;
 use test_case::test_case;
 
 struct Resolver {

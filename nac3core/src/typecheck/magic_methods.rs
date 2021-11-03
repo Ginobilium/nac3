@@ -2,8 +2,8 @@ use crate::typecheck::{
     type_inferencer::*,
     typedef::{FunSignature, FuncArg, Type, TypeEnum, Unifier},
 };
-use rustpython_parser::ast;
-use rustpython_parser::ast::{Cmpop, Operator, Unaryop};
+use nac3parser::ast;
+use nac3parser::ast::{Cmpop, Operator, Unaryop};
 use std::borrow::Borrow;
 use std::collections::HashMap;
 

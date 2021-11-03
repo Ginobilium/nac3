@@ -10,7 +10,7 @@ use nac3core::{
     },
 };
 use parking_lot::{Mutex, RwLock};
-use rustpython_parser::ast::StrRef;
+use nac3parser::ast::StrRef;
 use std::{collections::HashMap, sync::Arc};
 
 pub struct ResolverInternal {

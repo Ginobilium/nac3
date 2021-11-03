@@ -2,7 +2,7 @@ use crate::typecheck::typedef::TypeEnum;
 
 use super::type_inferencer::Inferencer;
 use super::typedef::Type;
-use rustpython_parser::ast::{self, Expr, ExprKind, Stmt, StmtKind, StrRef};
+use nac3parser::ast::{self, Expr, ExprKind, Stmt, StmtKind, StrRef};
 use std::{collections::HashSet, iter::once};
 
 impl<'a> Inferencer<'a> {

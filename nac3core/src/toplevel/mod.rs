@@ -16,7 +16,7 @@ use crate::{
 };
 use itertools::{izip, Itertools};
 use parking_lot::RwLock;
-use rustpython_parser::ast::{self, Stmt, StrRef};
+use nac3parser::ast::{self, Stmt, StrRef};
 use inkwell::values::BasicValueEnum;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Hash, Debug)]

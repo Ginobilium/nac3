@@ -4,7 +4,7 @@ use nac3core::{
     typecheck::typedef::{FunSignature, Type},
 };
 
-use rustpython_parser::ast::{Expr, ExprKind, Located, Stmt, StmtKind, StrRef};
+use nac3parser::ast::{Expr, ExprKind, Located, Stmt, StmtKind, StrRef};
 
 use inkwell::values::BasicValueEnum;
 

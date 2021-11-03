@@ -14,7 +14,7 @@ use pyo3::{
     types::{PyList, PyModule, PyTuple},
     PyAny, PyObject, PyResult, Python,
 };
-use rustpython_parser::ast::StrRef;
+use nac3parser::ast::StrRef;
 use std::{
     cell::RefCell,
     collections::{HashMap, HashSet},

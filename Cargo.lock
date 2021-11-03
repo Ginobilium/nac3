@@ -489,9 +489,20 @@ version = "0.1.0"
 dependencies = [
  "inkwell",
  "nac3core",
+ "nac3parser",
  "parking_lot",
  "pyo3",
- "rustpython-parser",
+]
+
+[[package]]
+name = "nac3ast"
+version = "0.1.0"
+dependencies = [
+ "fxhash",
+ "lazy_static",
+ "num-bigint 0.4.2",
+ "parking_lot",
+ "string-interner",
 ]
 
 [[package]]
@@ -503,12 +514,30 @@ dependencies = [
  "inkwell",
  "insta",
  "itertools",
+ "nac3parser",
  "num-bigint 0.3.3",
  "num-traits",
  "parking_lot",
  "rayon",
- "rustpython-parser",
  "test-case",
+]
+
+[[package]]
+name = "nac3parser"
+version = "0.1.2"
+dependencies = [
+ "ahash",
+ "insta",
+ "lalrpop",
+ "lalrpop-util",
+ "log",
+ "nac3ast",
+ "num-bigint 0.4.2",
+ "num-traits",
+ "phf",
+ "unic-emoji-char",
+ "unic-ucd-ident",
+ "unicode_names2",
 ]
 
 [[package]]
@@ -517,8 +546,8 @@ version = "0.1.0"
 dependencies = [
  "inkwell",
  "nac3core",
+ "nac3parser",
  "parking_lot",
- "rustpython-parser",
 ]
 
 [[package]]
@@ -896,36 +925,6 @@ name = "runkernel"
 version = "0.1.0"
 dependencies = [
  "libloading",
-]
-
-[[package]]
-name = "rustpython-ast"
-version = "0.1.0"
-source = "git+https://github.com/m-labs/RustPython?branch=parser-mod#efdf7829ba1a5f87d30df8eaff12a330544f3cbd"
-dependencies = [
- "fxhash",
- "lazy_static",
- "num-bigint 0.4.2",
- "parking_lot",
- "string-interner",
-]
-
-[[package]]
-name = "rustpython-parser"
-version = "0.1.2"
-source = "git+https://github.com/m-labs/RustPython?branch=parser-mod#efdf7829ba1a5f87d30df8eaff12a330544f3cbd"
-dependencies = [
- "ahash",
- "lalrpop",
- "lalrpop-util",
- "log",
- "num-bigint 0.4.2",
- "num-traits",
- "phf",
- "rustpython-ast",
- "unic-emoji-char",
- "unic-ucd-ident",
- "unicode_names2",
 ]
 
 [[package]]

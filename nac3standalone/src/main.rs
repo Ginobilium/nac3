@@ -4,7 +4,7 @@ use inkwell::{
     OptimizationLevel,
 };
 use nac3core::typecheck::type_inferencer::PrimitiveStore;
-use rustpython_parser::parser;
+use nac3parser::parser;
 use std::env;
 use std::fs;
 use std::{collections::HashMap, path::Path, sync::Arc, time::SystemTime};
