@@ -1,5 +1,6 @@
 use crate::constant;
 use crate::fold::Fold;
+use crate::StrRef;
 
 pub(crate) trait Foldable<T, U> {
     type Mapped;
@@ -67,6 +68,7 @@ simple_fold!(
     usize,
     String,
     bool,
+    StrRef,
     constant::Constant,
     constant::ConversionFlag
 );

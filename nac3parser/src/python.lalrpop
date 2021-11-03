@@ -246,7 +246,7 @@ ImportStatement: ast::Stmt = {
             location,
             node: ast::StmtKind::ImportFrom {
                 level,
-                module,
+                module: module.map(|s| s.into()),
                 names
             },
         }
@@ -272,24 +272,25 @@ ImportAsNames: Vec<ast::Alias> = {
     "(" <i:OneOrMore<ImportAsAlias<Identifier>>> ","? ")" => i,
     "*" => {
         // Star import all
-        vec![ast::Alias { name: "*".to_string(), asname: None }]
+        vec![ast::Alias { name: "*".into(), asname: None }]
     },
 };
 
 
 #[inline]
 ImportAsAlias<I>: ast::Alias = {
-    <name:I> <a: ("as" Identifier)?> => ast::Alias { name, asname: a.map(|a| a.1) },
+    <name:I> <a: ("as" Identifier)?> => ast::Alias { name: name.into(), asname: a.map(|a| a.1) },
 };
 
 // A name like abc or abc.def.ghi
 DottedName: String = {
-    <n:name> => n,
+    <n:name> => n.into(),
     <n:name> <n2: ("." Identifier)+>  => {
-        let mut r = n.to_string();
+        let lock = ast::get_str_ref_lock();
+        let mut r = ast::get_str_from_ref(&lock, n).to_string();
         for x in n2 {
             r.push_str(".");
-            r.push_str(&x.1);
+            r.push_str(&ast::get_str_from_ref(&lock, x.1));
         }
         r
     },
@@ -1157,7 +1158,7 @@ FunctionArgument: (Option<(ast::Location, Option<String>)>, ast::Expr) = {
         };
         (None, expr)
     },
-    <location:@L> <i:Identifier> "=" <e:Test> => (Some((location, Some(i))), e),
+    <location:@L> <i:Identifier> "=" <e:Test> => (Some((location, Some(i.into()))), e),
     <location:@L> "*" <e:Test> => {
         let expr = ast::Expr::new(
             location,
@@ -1199,7 +1200,7 @@ Bytes: Vec<u8> = {
     },
 };
 
-Identifier: String = <s:name> => s;
+Identifier: ast::StrRef = <s:name> => s;
 
 // Hook external lexer:
 extern {
@@ -1299,7 +1300,7 @@ extern {
         complex => lexer::Tok::Complex { real: <f64>, imag: <f64> },
         string => lexer::Tok::String { value: <String>, is_fstring: <bool> },
         bytes => lexer::Tok::Bytes { value: <Vec<u8>> },
-        name => lexer::Tok::Name { name: <String> },
+        name => lexer::Tok::Name { name: <ast::StrRef> },
         "\n" => lexer::Tok::Newline,
         ";" => lexer::Tok::Semi,
     }

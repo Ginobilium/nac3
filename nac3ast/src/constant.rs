@@ -1,6 +1,6 @@
 use num_bigint::BigInt;
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Constant {
     None,
     Bool(bool),
