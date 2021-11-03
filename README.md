@@ -1,11 +1,16 @@
 # NAC3 compiler
 
 This repository contains:
+- nac3ast: Python abstract syntax tree definition (based on RustPython).
+- nac3parser: Python parser (based on RustPython).
 - nac3core: Core compiler library, containing type-checking and code
   generation.
+- nac3standalone: Standalone compiler tool (core language only).
 - nac3artiq: Integration with ARTIQ and implementation of ARTIQ-specific
   extensions to the core language.
-- nac3standalone: Standalone compiler tool (core language only).
+- runkernel: Simple program that runs compiled ARTIQ kernels on the host
+  and displays RTIO operations. Useful for testing without hardware.
+
 
 The core compiler knows nothing about symbol resolution, host variables
 etc. nac3artiq and nac3standalone provide (implement) the
