@@ -16,7 +16,7 @@
             nativeBuildInputs = [ pkgs.python3 pkgs.llvm_12 ];
             buildInputs = [ pkgs.python3 pkgs.libffi pkgs.libxml2 pkgs.llvm_12 ];
             cargoBuildFlags = [ "--package" "nac3artiq" ];
-            cargoTestFlags = [ "--package" "nac3core" "--package" "nac3artiq" ];
+            cargoTestFlags = [ "--package" "nac3ast" "--package" "nac3parser" "--package" "nac3core" "--package" "nac3artiq" ];
             installPhase =
               ''
               TARGET_DIR=$out/${pkgs.python3Packages.python.sitePackages}
