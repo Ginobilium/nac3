@@ -65,6 +65,7 @@ pub struct Lexer<T: Iterator<Item = char>> {
     chr1: Option<char>,
     chr2: Option<char>,
     location: Location,
+    config_comment_prefix: Option<&'static str>
 }
 
 pub static KEYWORDS: phf::Map<&'static str, Tok> = phf::phf_map! {
@@ -196,6 +197,7 @@ where
             location: start,
             chr1: None,
             chr2: None,
+            config_comment_prefix: Some(" nac3:")
         };
         lxr.next_char();
         lxr.next_char();
@@ -415,17 +417,45 @@ where
         }
     }
 
-    /// Skip everything until end of line
-    fn lex_comment(&mut self) {
+    /// Skip everything until end of line, may produce nac3 pseudocomment
+    fn lex_comment(&mut self) -> Option<Spanned> {
         self.next_char();
+        // if possibly nac3 pseudocomment, special handling for `# nac3:`
+        let (mut prefix, mut is_comment) = self
+            .config_comment_prefix
+            .map_or_else(|| ("".chars(), false), |v| (v.chars(), true));
+        // for the correct location of config comment
+        let mut start_loc = self.location;
+        start_loc.go_left();
         loop {
             match self.chr0 {
-                Some('\n') => return,
-                Some(_) => {}
-                None => return,
+                Some('\n') => return None,
+                None => return None,
+                Some(c) => {
+                    if let (true, Some(p)) = (is_comment, prefix.next()) {
+                        is_comment = is_comment && c == p
+                    } else {
+                        // done checking prefix, if is comment then return the spanned
+                        if is_comment {
+                            let mut content = String::new();
+                            loop {
+                                match self.chr0 {
+                                    Some('\n') | None => break,
+                                    Some(c) => content.push(c),
+                                }
+                                self.next_char();
+                            }
+                            return Some((
+                                start_loc,
+                                Tok::ConfigComment { content: content.trim().into() },
+                                self.location
+                            ));
+                        }
+                    }
+                }
             }
             self.next_char();
-        }
+        };
     }
 
     fn unicode_literal(&mut self, literal_number: usize) -> Result<char, LexicalError> {
@@ -658,10 +688,11 @@ where
     }
 
     /// Given we are at the start of a line, count the number of spaces and/or tabs until the first character.
-    fn eat_indentation(&mut self) -> Result<IndentationLevel, LexicalError> {
+    fn eat_indentation(&mut self) -> Result<(IndentationLevel, Option<Spanned>), LexicalError> {
         // Determine indentation:
         let mut spaces: usize = 0;
         let mut tabs: usize = 0;
+        let mut nac3comment: Option<Spanned> = None;
         loop {
             match self.chr0 {
                 Some(' ') => {
@@ -693,7 +724,14 @@ where
                     tabs += 1;
                 }
                 Some('#') => {
-                    self.lex_comment();
+                    nac3comment = self.lex_comment();
+                    // if is nac3comment, we need to add newline, so it is not begin of line
+                    // and we should break from the loop, else in the next loop it will be
+                    // regarded as a empty line
+                    if nac3comment.is_some() {
+                        self.at_begin_of_line = false;
+                        break;
+                    }
                     spaces = 0;
                     tabs = 0;
                 }
@@ -722,11 +760,12 @@ where
             }
         }
 
-        Ok(IndentationLevel { tabs, spaces })
+        Ok((IndentationLevel { tabs, spaces }, nac3comment))
     }
 
     fn handle_indentations(&mut self) -> Result<(), LexicalError> {
-        let indentation_level = self.eat_indentation()?;
+        let eat_result = self.eat_indentation()?;
+        let indentation_level = eat_result.0;
 
         if self.nesting == 0 {
             // Determine indent or dedent:
@@ -770,6 +809,10 @@ where
                     }
                 }
             }
+        };
+
+        if let Some(comment) = eat_result.1 {
+            self.emit(comment);
         }
 
         Ok(())
@@ -833,7 +876,9 @@ where
                 self.emit(number);
             }
             '#' => {
-                self.lex_comment();
+                if let Some(c) = self.lex_comment() {
+                    self.emit(c);
+                };
             }
             '"' | '\'' => {
                 let string = self.lex_string(false, false, false, false)?;
@@ -1285,6 +1330,85 @@ mod tests {
     pub fn lex_source(source: &str) -> Vec<Tok> {
         let lexer = make_tokenizer(source);
         lexer.map(|x| x.unwrap().1).collect()
+    }
+
+    #[test]
+    fn test_nac3comment() {
+        let src = "\
+a: int32
+# nac3: 
+b: int64";
+        let tokens = lex_source(src);
+        assert_eq!(
+            tokens,
+            vec![
+                Tok::Name { name: "a".into() },
+                Tok::Colon,
+                Tok::Name { name: "int32".into() },
+                Tok::Newline,
+                Tok::ConfigComment { content: "".into() },
+                Tok::Newline,
+                Tok::Name { name: "b".into() },
+                Tok::Colon,
+                Tok::Name { name: "int64".into() },
+                Tok::Newline,
+            ]
+        );
+    }
+
+    #[test]
+    fn test_class_lex_with_nac3comment() {
+        use Tok::*;
+        let source = "\
+class Foo(A, B):
+# normal comment
+# nac3: no indent
+    # nac3: correct indent
+    b: int32
+    a: int32 # nac3: no need indent
+    def __init__(self):
+        pass";
+        let tokens = lex_source(source);
+        assert_eq!(
+            tokens,
+            vec![
+                Class,
+                Name { name: "Foo".into() },
+                Lpar,
+                Name { name: "A".into() },
+                Comma,
+                Name { name: "B".into() },
+                Rpar,
+                Colon,
+                Newline,
+                ConfigComment { content: "no indent".into() },
+                Newline,
+                Indent,
+                ConfigComment { content: "correct indent".into() },
+                Newline,
+                Name { name: "b".into() },
+                Colon,
+                Name { name: "int32".into() },
+                Newline,
+                Name { name: "a".into() },
+                Colon,
+                Name { name: "int32".into() },
+                ConfigComment { content: "no need indent".into() },
+                Newline,
+                Def,
+                Name { name: "__init__".into() },
+                Lpar,
+                Name { name: "self".into() },
+                Rpar,
+                Colon,
+                Newline,
+                Indent,
+                Pass,
+                Newline,
+                Dedent,
+                Dedent
+            ]
+        )
     }
 
     #[test]
