@@ -196,7 +196,7 @@ impl<'a> Inferencer<'a> {
                 }
                 Ok(false)
             }
-            StmtKind::If { test, body, orelse } => {
+            StmtKind::If { test, body, orelse, .. } => {
                 self.check_expr(test, defined_identifiers)?;
                 self.should_have_value(test)?;
                 let mut body_identifiers = defined_identifiers.clone();
@@ -211,7 +211,7 @@ impl<'a> Inferencer<'a> {
                 }
                 Ok(body_returned && orelse_returned)
             }
-            StmtKind::While { test, body, orelse } => {
+            StmtKind::While { test, body, orelse, .. } => {
                 self.check_expr(test, defined_identifiers)?;
                 self.should_have_value(test)?;
                 let mut defined_identifiers = defined_identifiers.clone();
@@ -230,7 +230,7 @@ impl<'a> Inferencer<'a> {
                 self.check_block(body, &mut new_defined_identifiers)?;
                 Ok(false)
             }
-            StmtKind::Expr { value } => {
+            StmtKind::Expr { value, .. } => {
                 self.check_expr(value, defined_identifiers)?;
                 Ok(false)
             }
@@ -250,7 +250,7 @@ impl<'a> Inferencer<'a> {
                 }
                 Ok(false)
             }
-            StmtKind::Return { value } => {
+            StmtKind::Return { value, .. } => {
                 if let Some(value) = value {
                     self.check_expr(value, defined_identifiers)?;
                     self.should_have_value(value)?;

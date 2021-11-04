@@ -337,7 +337,7 @@ impl TopLevelComposer {
                 ast::StmtKind::With { body, .. } => {
                     result.extend(Self::get_all_assigned_field(body.as_slice())?);
                 }
-                ast::StmtKind::Pass => {}
+                ast::StmtKind::Pass { .. } => {}
                 ast::StmtKind::Assert { .. } => {}
                 ast::StmtKind::Expr { .. } => {}
 
