@@ -72,7 +72,7 @@ pub fn get_str_from_ref<'a>(lock: &'a MutexGuard<Interner>, id: StrRef) -> &'a s
     lock.resolve(id.0).unwrap()
 }
 
-type Ident = StrRef;
+pub type Ident = StrRef;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Located<T, U = ()> {
@@ -114,6 +114,7 @@ pub enum StmtKind<U = ()> {
         decorator_list: Vec<Expr<U>>,
         returns: Option<Box<Expr<U>>>,
         type_comment: Option<String>,
+        config_comment: Vec<Ident>,
     },
     AsyncFunctionDef {
         name: Ident,
@@ -122,6 +123,7 @@ pub enum StmtKind<U = ()> {
         decorator_list: Vec<Expr<U>>,
         returns: Option<Box<Expr<U>>>,
         type_comment: Option<String>,
+        config_comment: Vec<Ident>,
     },
     ClassDef {
         name: Ident,
@@ -129,28 +131,34 @@ pub enum StmtKind<U = ()> {
         keywords: Vec<Keyword<U>>,
         body: Vec<Stmt<U>>,
         decorator_list: Vec<Expr<U>>,
+        config_comment: Vec<Ident>,
     },
     Return {
         value: Option<Box<Expr<U>>>,
+        config_comment: Vec<Ident>,
     },
     Delete {
         targets: Vec<Expr<U>>,
+        config_comment: Vec<Ident>,
     },
     Assign {
         targets: Vec<Expr<U>>,
         value: Box<Expr<U>>,
         type_comment: Option<String>,
+        config_comment: Vec<Ident>,
     },
     AugAssign {
         target: Box<Expr<U>>,
         op: Operator,
         value: Box<Expr<U>>,
+        config_comment: Vec<Ident>,
     },
     AnnAssign {
         target: Box<Expr<U>>,
         annotation: Box<Expr<U>>,
         value: Option<Box<Expr<U>>>,
         simple: bool,
+        config_comment: Vec<Ident>,
     },
     For {
         target: Box<Expr<U>>,
@@ -158,6 +166,7 @@ pub enum StmtKind<U = ()> {
         body: Vec<Stmt<U>>,
         orelse: Vec<Stmt<U>>,
         type_comment: Option<String>,
+        config_comment: Vec<Ident>,
     },
     AsyncFor {
         target: Box<Expr<U>>,
@@ -165,61 +174,80 @@ pub enum StmtKind<U = ()> {
         body: Vec<Stmt<U>>,
         orelse: Vec<Stmt<U>>,
         type_comment: Option<String>,
+        config_comment: Vec<Ident>,
     },
     While {
         test: Box<Expr<U>>,
         body: Vec<Stmt<U>>,
         orelse: Vec<Stmt<U>>,
+        config_comment: Vec<Ident>,
     },
     If {
         test: Box<Expr<U>>,
         body: Vec<Stmt<U>>,
         orelse: Vec<Stmt<U>>,
+        config_comment: Vec<Ident>,
     },
     With {
         items: Vec<Withitem<U>>,
         body: Vec<Stmt<U>>,
         type_comment: Option<String>,
+        config_comment: Vec<Ident>,
     },
     AsyncWith {
         items: Vec<Withitem<U>>,
         body: Vec<Stmt<U>>,
         type_comment: Option<String>,
+        config_comment: Vec<Ident>,
     },
     Raise {
         exc: Option<Box<Expr<U>>>,
         cause: Option<Box<Expr<U>>>,
+        config_comment: Vec<Ident>,
     },
     Try {
         body: Vec<Stmt<U>>,
         handlers: Vec<Excepthandler<U>>,
         orelse: Vec<Stmt<U>>,
         finalbody: Vec<Stmt<U>>,
+        config_comment: Vec<Ident>,
     },
     Assert {
         test: Box<Expr<U>>,
         msg: Option<Box<Expr<U>>>,
+        config_comment: Vec<Ident>,
     },
     Import {
         names: Vec<Alias>,
+        config_comment: Vec<Ident>,
     },
     ImportFrom {
         module: Option<Ident>,
         names: Vec<Alias>,
         level: usize,
+        config_comment: Vec<Ident>,
     },
     Global {
         names: Vec<Ident>,
+        config_comment: Vec<Ident>,
     },
     Nonlocal {
         names: Vec<Ident>,
+        config_comment: Vec<Ident>,
     },
     Expr {
         value: Box<Expr<U>>,
+        config_comment: Vec<Ident>,
     },
-    Pass,
-    Break,
-    Continue,
+    Pass {
+        config_comment: Vec<Ident>,
+    },
+    Break {
+        config_comment: Vec<Ident>,
+    },
+    Continue {
+        config_comment: Vec<Ident>,
+    },
 }
 pub type Stmt<U = ()> = Located<StmtKind<U>, U>;
 
@@ -558,7 +586,7 @@ pub mod fold {
     pub fn fold_stmt<U, F: Fold<U> + ?Sized>(#[allow(unused)] folder: &mut F, node: Stmt<U>) -> Result<Stmt<F::TargetU>, F::Error> {
     fold_located(folder, node, |folder, node| {
         match node {
-            StmtKind::FunctionDef { name,args,body,decorator_list,returns,type_comment } => {
+            StmtKind::FunctionDef { name,args,body,decorator_list,returns,type_comment,config_comment } => {
                 Ok(StmtKind::FunctionDef {
                     name: Foldable::fold(name, folder)?,
                     args: Foldable::fold(args, folder)?,
@@ -566,9 +594,10 @@ pub mod fold {
                     decorator_list: Foldable::fold(decorator_list, folder)?,
                     returns: Foldable::fold(returns, folder)?,
                     type_comment: Foldable::fold(type_comment, folder)?,
+                    config_comment: Foldable::fold(config_comment, folder)?,
                 })
             }
-            StmtKind::AsyncFunctionDef { name,args,body,decorator_list,returns,type_comment } => {
+            StmtKind::AsyncFunctionDef { name,args,body,decorator_list,returns,type_comment,config_comment } => {
                 Ok(StmtKind::AsyncFunctionDef {
                     name: Foldable::fold(name, folder)?,
                     args: Foldable::fold(args, folder)?,
@@ -576,152 +605,176 @@ pub mod fold {
                     decorator_list: Foldable::fold(decorator_list, folder)?,
                     returns: Foldable::fold(returns, folder)?,
                     type_comment: Foldable::fold(type_comment, folder)?,
+                    config_comment: Foldable::fold(config_comment, folder)?,
                 })
             }
-            StmtKind::ClassDef { name,bases,keywords,body,decorator_list } => {
+            StmtKind::ClassDef { name,bases,keywords,body,decorator_list,config_comment } => {
                 Ok(StmtKind::ClassDef {
                     name: Foldable::fold(name, folder)?,
                     bases: Foldable::fold(bases, folder)?,
                     keywords: Foldable::fold(keywords, folder)?,
                     body: Foldable::fold(body, folder)?,
                     decorator_list: Foldable::fold(decorator_list, folder)?,
+                    config_comment: Foldable::fold(config_comment, folder)?,
                 })
             }
-            StmtKind::Return { value } => {
+            StmtKind::Return { value,config_comment } => {
                 Ok(StmtKind::Return {
                     value: Foldable::fold(value, folder)?,
+                    config_comment: Foldable::fold(config_comment, folder)?,
                 })
             }
-            StmtKind::Delete { targets } => {
+            StmtKind::Delete { targets,config_comment } => {
                 Ok(StmtKind::Delete {
                     targets: Foldable::fold(targets, folder)?,
+                    config_comment: Foldable::fold(config_comment, folder)?,
                 })
             }
-            StmtKind::Assign { targets,value,type_comment } => {
+            StmtKind::Assign { targets,value,type_comment,config_comment } => {
                 Ok(StmtKind::Assign {
                     targets: Foldable::fold(targets, folder)?,
                     value: Foldable::fold(value, folder)?,
                     type_comment: Foldable::fold(type_comment, folder)?,
+                    config_comment: Foldable::fold(config_comment, folder)?,
                 })
             }
-            StmtKind::AugAssign { target,op,value } => {
+            StmtKind::AugAssign { target,op,value,config_comment } => {
                 Ok(StmtKind::AugAssign {
                     target: Foldable::fold(target, folder)?,
                     op: Foldable::fold(op, folder)?,
                     value: Foldable::fold(value, folder)?,
+                    config_comment: Foldable::fold(config_comment, folder)?,
                 })
             }
-            StmtKind::AnnAssign { target,annotation,value,simple } => {
+            StmtKind::AnnAssign { target,annotation,value,simple,config_comment } => {
                 Ok(StmtKind::AnnAssign {
                     target: Foldable::fold(target, folder)?,
                     annotation: Foldable::fold(annotation, folder)?,
                     value: Foldable::fold(value, folder)?,
                     simple: Foldable::fold(simple, folder)?,
+                    config_comment: Foldable::fold(config_comment, folder)?,
                 })
             }
-            StmtKind::For { target,iter,body,orelse,type_comment } => {
+            StmtKind::For { target,iter,body,orelse,type_comment,config_comment } => {
                 Ok(StmtKind::For {
                     target: Foldable::fold(target, folder)?,
                     iter: Foldable::fold(iter, folder)?,
                     body: Foldable::fold(body, folder)?,
                     orelse: Foldable::fold(orelse, folder)?,
                     type_comment: Foldable::fold(type_comment, folder)?,
+                    config_comment: Foldable::fold(config_comment, folder)?,
                 })
             }
-            StmtKind::AsyncFor { target,iter,body,orelse,type_comment } => {
+            StmtKind::AsyncFor { target,iter,body,orelse,type_comment,config_comment } => {
                 Ok(StmtKind::AsyncFor {
                     target: Foldable::fold(target, folder)?,
                     iter: Foldable::fold(iter, folder)?,
                     body: Foldable::fold(body, folder)?,
                     orelse: Foldable::fold(orelse, folder)?,
                     type_comment: Foldable::fold(type_comment, folder)?,
+                    config_comment: Foldable::fold(config_comment, folder)?,
                 })
             }
-            StmtKind::While { test,body,orelse } => {
+            StmtKind::While { test,body,orelse,config_comment } => {
                 Ok(StmtKind::While {
                     test: Foldable::fold(test, folder)?,
                     body: Foldable::fold(body, folder)?,
                     orelse: Foldable::fold(orelse, folder)?,
+                    config_comment: Foldable::fold(config_comment, folder)?,
                 })
             }
-            StmtKind::If { test,body,orelse } => {
+            StmtKind::If { test,body,orelse,config_comment } => {
                 Ok(StmtKind::If {
                     test: Foldable::fold(test, folder)?,
                     body: Foldable::fold(body, folder)?,
                     orelse: Foldable::fold(orelse, folder)?,
+                    config_comment: Foldable::fold(config_comment, folder)?,
                 })
             }
-            StmtKind::With { items,body,type_comment } => {
+            StmtKind::With { items,body,type_comment,config_comment } => {
                 Ok(StmtKind::With {
                     items: Foldable::fold(items, folder)?,
                     body: Foldable::fold(body, folder)?,
                     type_comment: Foldable::fold(type_comment, folder)?,
+                    config_comment: Foldable::fold(config_comment, folder)?,
                 })
             }
-            StmtKind::AsyncWith { items,body,type_comment } => {
+            StmtKind::AsyncWith { items,body,type_comment,config_comment } => {
                 Ok(StmtKind::AsyncWith {
                     items: Foldable::fold(items, folder)?,
                     body: Foldable::fold(body, folder)?,
                     type_comment: Foldable::fold(type_comment, folder)?,
+                    config_comment: Foldable::fold(config_comment, folder)?,
                 })
             }
-            StmtKind::Raise { exc,cause } => {
+            StmtKind::Raise { exc,cause,config_comment } => {
                 Ok(StmtKind::Raise {
                     exc: Foldable::fold(exc, folder)?,
                     cause: Foldable::fold(cause, folder)?,
+                    config_comment: Foldable::fold(config_comment, folder)?,
                 })
             }
-            StmtKind::Try { body,handlers,orelse,finalbody } => {
+            StmtKind::Try { body,handlers,orelse,finalbody,config_comment } => {
                 Ok(StmtKind::Try {
                     body: Foldable::fold(body, folder)?,
                     handlers: Foldable::fold(handlers, folder)?,
                     orelse: Foldable::fold(orelse, folder)?,
                     finalbody: Foldable::fold(finalbody, folder)?,
+                    config_comment: Foldable::fold(config_comment, folder)?,
                 })
             }
-            StmtKind::Assert { test,msg } => {
+            StmtKind::Assert { test,msg,config_comment } => {
                 Ok(StmtKind::Assert {
                     test: Foldable::fold(test, folder)?,
                     msg: Foldable::fold(msg, folder)?,
+                    config_comment: Foldable::fold(config_comment, folder)?,
                 })
             }
-            StmtKind::Import { names } => {
+            StmtKind::Import { names,config_comment } => {
                 Ok(StmtKind::Import {
                     names: Foldable::fold(names, folder)?,
+                    config_comment: Foldable::fold(config_comment, folder)?,
                 })
             }
-            StmtKind::ImportFrom { module,names,level } => {
+            StmtKind::ImportFrom { module,names,level,config_comment } => {
                 Ok(StmtKind::ImportFrom {
                     module: Foldable::fold(module, folder)?,
                     names: Foldable::fold(names, folder)?,
                     level: Foldable::fold(level, folder)?,
+                    config_comment: Foldable::fold(config_comment, folder)?,
                 })
             }
-            StmtKind::Global { names } => {
+            StmtKind::Global { names,config_comment } => {
                 Ok(StmtKind::Global {
                     names: Foldable::fold(names, folder)?,
+                    config_comment: Foldable::fold(config_comment, folder)?,
                 })
             }
-            StmtKind::Nonlocal { names } => {
+            StmtKind::Nonlocal { names,config_comment } => {
                 Ok(StmtKind::Nonlocal {
                     names: Foldable::fold(names, folder)?,
+                    config_comment: Foldable::fold(config_comment, folder)?,
                 })
             }
-            StmtKind::Expr { value } => {
+            StmtKind::Expr { value,config_comment } => {
                 Ok(StmtKind::Expr {
                     value: Foldable::fold(value, folder)?,
+                    config_comment: Foldable::fold(config_comment, folder)?,
                 })
             }
-            StmtKind::Pass {  } => {
+            StmtKind::Pass { config_comment } => {
                 Ok(StmtKind::Pass {
+                    config_comment: Foldable::fold(config_comment, folder)?,
                 })
             }
-            StmtKind::Break {  } => {
+            StmtKind::Break { config_comment } => {
                 Ok(StmtKind::Break {
+                    config_comment: Foldable::fold(config_comment, folder)?,
                 })
             }
-            StmtKind::Continue {  } => {
+            StmtKind::Continue { config_comment } => {
                 Ok(StmtKind::Continue {
+                    config_comment: Foldable::fold(config_comment, folder)?,
                 })
             }
         }
