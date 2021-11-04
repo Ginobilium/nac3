@@ -1,5 +1,5 @@
 ---
-source: parser/src/parser.rs
+source: nac3parser/src/parser.rs
 expression: parse_ast
 
 ---
@@ -60,6 +60,7 @@ expression: parse_ast
                     keywords: [],
                 },
             },
+            config_comment: [],
         },
     },
 ]

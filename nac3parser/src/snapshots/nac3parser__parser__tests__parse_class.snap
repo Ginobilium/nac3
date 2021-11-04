@@ -1,6 +1,7 @@
 ---
-source: parser/src/parser.rs
+source: nac3parser/src/parser.rs
 expression: parse_program(&source).unwrap()
+
 ---
 [
     Located {
@@ -74,12 +75,15 @@ expression: parse_program(&source).unwrap()
                                     column: 3,
                                 },
                                 custom: (),
-                                node: Pass,
+                                node: Pass {
+                                    config_comment: [],
+                                },
                             },
                         ],
                         decorator_list: [],
                         returns: None,
                         type_comment: None,
+                        config_comment: [],
                     },
                 },
                 Located {
@@ -145,16 +149,20 @@ expression: parse_program(&source).unwrap()
                                     column: 3,
                                 },
                                 custom: (),
-                                node: Pass,
+                                node: Pass {
+                                    config_comment: [],
+                                },
                             },
                         ],
                         decorator_list: [],
                         returns: None,
                         type_comment: None,
+                        config_comment: [],
                     },
                 },
             ],
             decorator_list: [],
+            config_comment: [],
         },
     },
 ]
