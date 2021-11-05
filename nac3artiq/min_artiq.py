@@ -5,14 +5,15 @@ from numpy import int32, int64
 
 import nac3artiq
 
-__all__ = ["KernelInvariant", "extern", "kernel", "portable", "ms", "us", "ns",
+__all__ = ["KernelInvariant", "extern", "kernel", "portable", "nac3",
+           "ms", "us", "ns",
            "Core", "TTLOut", "parallel", "sequential"]
 
 
 import device_db
 core_arguments = device_db.device_db["core"]["arguments"]
 
-nac3 = nac3artiq.NAC3(core_arguments["target"])
+compiler = nac3artiq.NAC3(core_arguments["target"])
 allow_module_registration = True
 registered_ids = set()
 
@@ -26,29 +27,38 @@ def register_module_of(obj):
     module = getmodule(obj)
     module_id = id(module)
     if module_id not in registered_ids:
-        nac3.register_module(module)
+        compiler.register_module(module)
         registered_ids.add(module_id)
 
 
 def extern(function):
+    """Decorates a function declaration defined by the core device runtime."""
     register_module_of(function)
     return function
 
 
 def kernel(class_or_function):
+    """Decorates a function or method to be executed on the core device."""
     register_module_of(class_or_function)
-    if isclass(class_or_function):
-        return class_or_function
-    else:
-        @wraps(class_or_function)
-        def device_only(*args, **kwargs):
-            raise RuntimeError("Kernels must not be called directly, use core.run(kernel_function) instead")
-        return device_only
+    @wraps(class_or_function)
+    def device_only(*args, **kwargs):
+        raise RuntimeError("Kernels must not be called directly, use core.run(kernel_function) instead")
+    return device_only
 
 
 def portable(function):
+    """Decorates a function or method to be executed on the same device (host/core device) as the caller."""
     register_module_of(function)
     return function
+
+
+def nac3(cls):
+    """
+    Decorates a class to be analyzed by NAC3.
+    All classes containing kernels or portable methods must use this decorator.
+    """
+    register_module_of(cls)
+    return cls
 
 
 ms = 1e-3
@@ -80,7 +90,7 @@ def rtio_input_data(channel: int32) -> int32:
     raise NotImplementedError("syscall not simulated")
 
 
-@kernel
+@nac3
 class Core:
     ref_period: float
 
@@ -90,7 +100,7 @@ class Core:
     def run(self, method, *args, **kwargs):
         global allow_module_registration
         if allow_module_registration:
-            nac3.analyze()
+            compiler.analyze()
             allow_module_registration = False
 
         if hasattr(method, "__self__"):
@@ -100,7 +110,7 @@ class Core:
             obj = method
             name = ""
 
-        nac3.compile_method(obj, name, args)
+        compiler.compile_method(obj, name, args)
 
     @kernel
     def reset(self):
@@ -126,7 +136,7 @@ class Core:
         delay_mu(self.seconds_to_mu(dt))
 
 
-@kernel
+@nac3
 class TTLOut:
     core: Core
     channel: int32
@@ -166,7 +176,7 @@ class TTLOut:
         self.core.delay(duration)
         self.off()
 
-@portable
+@nac3
 class KernelContextManager:
     @kernel
     def __enter__(self):
@@ -178,4 +188,3 @@ class KernelContextManager:
 
 parallel = KernelContextManager()
 sequential = KernelContextManager()
-

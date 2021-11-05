@@ -1,6 +1,6 @@
 from min_artiq import *
 
-@kernel
+@nac3
 class Demo:
     core: Core
     led0: TTLOut
