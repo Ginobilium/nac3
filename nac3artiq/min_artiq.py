@@ -51,10 +51,6 @@ def portable(function):
     return function
 
 
-def get_defined_class(method):
-    return vars(sys.modules[method.__module__])[method.__qualname__.split('.')[0]]
-
-
 ms = 1e-3
 us = 1e-6
 ns = 1e-9
@@ -83,14 +79,6 @@ def rtio_input_timestamp(timeout_mu: int64, channel: int32) -> int64:
 def rtio_input_data(channel: int32) -> int32:
     raise NotImplementedError("syscall not simulated")
 
-def at_mu(_):
-    raise NotImplementedError("at_mu not simulated")
-
-def now_mu() -> int32:
-    raise NotImplementedError("now_mu not simulated")
-
-def delay_mu(_):
-    raise NotImplementedError("delay_mu not simulated")
 
 @kernel
 class Core:
