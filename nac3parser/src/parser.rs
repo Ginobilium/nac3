@@ -164,4 +164,67 @@ class Foo(A, B):
         let parse_ast = parse_expression(&source).unwrap();
         insta::assert_debug_snapshot!(parse_ast);
     }
+    
+    #[test]
+    fn test_more_comment() {
+        let source = "\
+a: int # nac3: sf1
+# nac3: sdf4
+for i in (1, '12'): # nac3: sf2
+    a: int
+# nac3: 3
+# nac3: 5
+while i < 2: # nac3: 4
+    # nac3: real pass
+    pass
+    # nac3: expr1
+    # nac3: expr3
+    1 + 2 # nac3: expr2
+    # nac3: if3
+    # nac3: if1
+    if 1: # nac3: if2
+        3";
+        insta::assert_debug_snapshot!(parse_program(&source).unwrap());
+    }
+    
+    #[test]
+    fn test_sample_comment() {
+        let source = "\
+# nac3: while1 
+# nac3: while2 
+# normal comment 
+while test: # nac3: while3 
+    # nac3: simple assign0 
+    a = 3 # nac3: simple assign1
+";
+        insta::assert_debug_snapshot!(parse_program(&source).unwrap());
+    }
+
+    #[test]
+    fn test_comment_ambiguity() {
+        let source = "\
+if a: d; # nac3: for d
+if b: c # nac3: for c
+if d: # nac3: for if d
+    b; b + 3; # nac3: for b + 3
+a = 3; a + 3; b = a; # nac3: notif
+# nac3: smallsingle1
+# nac3: smallsingle3
+aa = 3 # nac3: smallsingle2
+if a: # nac3: small2
+    a
+for i in a: # nac3: for1
+    pass
+";
+        insta::assert_debug_snapshot!(parse_program(&source).unwrap());
+    }
+
+    #[test]
+    fn test_comment_should_fail() {
+        let source = "\
+if a: # nac3: something
+a = 3
+";
+        assert!(parse_program(&source).is_err());
+    }
 }

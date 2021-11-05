@@ -1,0 +1,313 @@
+---
+source: nac3parser/src/parser.rs
+expression: parse_program(&source).unwrap()
+
+---
+[
+    Located {
+        location: Location {
+            row: 1,
+            column: 1,
+        },
+        custom: (),
+        node: AnnAssign {
+            target: Located {
+                location: Location {
+                    row: 1,
+                    column: 1,
+                },
+                custom: (),
+                node: Name {
+                    id: "a",
+                    ctx: Load,
+                },
+            },
+            annotation: Located {
+                location: Location {
+                    row: 1,
+                    column: 4,
+                },
+                custom: (),
+                node: Name {
+                    id: "int",
+                    ctx: Load,
+                },
+            },
+            value: None,
+            simple: true,
+            config_comment: [
+                "sf1",
+            ],
+        },
+    },
+    Located {
+        location: Location {
+            row: 2,
+            column: 1,
+        },
+        custom: (),
+        node: For {
+            target: Located {
+                location: Location {
+                    row: 3,
+                    column: 5,
+                },
+                custom: (),
+                node: Name {
+                    id: "i",
+                    ctx: Load,
+                },
+            },
+            iter: Located {
+                location: Location {
+                    row: 3,
+                    column: 11,
+                },
+                custom: (),
+                node: Tuple {
+                    elts: [
+                        Located {
+                            location: Location {
+                                row: 3,
+                                column: 11,
+                            },
+                            custom: (),
+                            node: Constant {
+                                value: Int(
+                                    1,
+                                ),
+                                kind: None,
+                            },
+                        },
+                        Located {
+                            location: Location {
+                                row: 3,
+                                column: 15,
+                            },
+                            custom: (),
+                            node: Constant {
+                                value: Str(
+                                    "12",
+                                ),
+                                kind: None,
+                            },
+                        },
+                    ],
+                    ctx: Load,
+                },
+            },
+            body: [
+                Located {
+                    location: Location {
+                        row: 4,
+                        column: 5,
+                    },
+                    custom: (),
+                    node: AnnAssign {
+                        target: Located {
+                            location: Location {
+                                row: 4,
+                                column: 5,
+                            },
+                            custom: (),
+                            node: Name {
+                                id: "a",
+                                ctx: Load,
+                            },
+                        },
+                        annotation: Located {
+                            location: Location {
+                                row: 4,
+                                column: 8,
+                            },
+                            custom: (),
+                            node: Name {
+                                id: "int",
+                                ctx: Load,
+                            },
+                        },
+                        value: None,
+                        simple: true,
+                        config_comment: [],
+                    },
+                },
+            ],
+            orelse: [],
+            type_comment: None,
+            config_comment: [
+                "sdf4",
+                "sf2",
+            ],
+        },
+    },
+    Located {
+        location: Location {
+            row: 5,
+            column: 1,
+        },
+        custom: (),
+        node: While {
+            test: Located {
+                location: Location {
+                    row: 7,
+                    column: 9,
+                },
+                custom: (),
+                node: Compare {
+                    left: Located {
+                        location: Location {
+                            row: 7,
+                            column: 7,
+                        },
+                        custom: (),
+                        node: Name {
+                            id: "i",
+                            ctx: Load,
+                        },
+                    },
+                    ops: [
+                        Lt,
+                    ],
+                    comparators: [
+                        Located {
+                            location: Location {
+                                row: 7,
+                                column: 11,
+                            },
+                            custom: (),
+                            node: Constant {
+                                value: Int(
+                                    2,
+                                ),
+                                kind: None,
+                            },
+                        },
+                    ],
+                },
+            },
+            body: [
+                Located {
+                    location: Location {
+                        row: 9,
+                        column: 5,
+                    },
+                    custom: (),
+                    node: Pass {
+                        config_comment: [
+                            "real pass",
+                        ],
+                    },
+                },
+                Located {
+                    location: Location {
+                        row: 12,
+                        column: 5,
+                    },
+                    custom: (),
+                    node: Expr {
+                        value: Located {
+                            location: Location {
+                                row: 12,
+                                column: 7,
+                            },
+                            custom: (),
+                            node: BinOp {
+                                left: Located {
+                                    location: Location {
+                                        row: 12,
+                                        column: 5,
+                                    },
+                                    custom: (),
+                                    node: Constant {
+                                        value: Int(
+                                            1,
+                                        ),
+                                        kind: None,
+                                    },
+                                },
+                                op: Add,
+                                right: Located {
+                                    location: Location {
+                                        row: 12,
+                                        column: 9,
+                                    },
+                                    custom: (),
+                                    node: Constant {
+                                        value: Int(
+                                            2,
+                                        ),
+                                        kind: None,
+                                    },
+                                },
+                            },
+                        },
+                        config_comment: [
+                            "expr1",
+                            "expr3",
+                            "expr2",
+                        ],
+                    },
+                },
+                Located {
+                    location: Location {
+                        row: 13,
+                        column: 5,
+                    },
+                    custom: (),
+                    node: If {
+                        test: Located {
+                            location: Location {
+                                row: 15,
+                                column: 8,
+                            },
+                            custom: (),
+                            node: Constant {
+                                value: Int(
+                                    1,
+                                ),
+                                kind: None,
+                            },
+                        },
+                        body: [
+                            Located {
+                                location: Location {
+                                    row: 16,
+                                    column: 9,
+                                },
+                                custom: (),
+                                node: Expr {
+                                    value: Located {
+                                        location: Location {
+                                            row: 16,
+                                            column: 9,
+                                        },
+                                        custom: (),
+                                        node: Constant {
+                                            value: Int(
+                                                3,
+                                            ),
+                                            kind: None,
+                                        },
+                                    },
+                                    config_comment: [],
+                                },
+                            },
+                        ],
+                        orelse: [],
+                        config_comment: [
+                            "if3",
+                            "if1",
+                            "if2",
+                        ],
+                    },
+                },
+            ],
+            orelse: [],
+            config_comment: [
+                "3",
+                "5",
+                "4",
+            ],
+        },
+    },
+]

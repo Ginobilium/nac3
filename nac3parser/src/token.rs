@@ -13,6 +13,7 @@ pub enum Tok {
     Complex { real: f64, imag: f64 },
     String { value: String, is_fstring: bool },
     Bytes { value: Vec<u8> },
+    ConfigComment { content: ast::StrRef },
     Newline,
     Indent,
     Dedent,
@@ -134,6 +135,7 @@ impl fmt::Display for Tok {
                 }
                 f.write_str("\"")
             }
+            ConfigComment { content } => write!(f, "ConfigComment: '{}'", ast::get_str_from_ref(&ast::get_str_ref_lock(), *content)),
             Newline => f.write_str("Newline"),
             Indent => f.write_str("Indent"),
             Dedent => f.write_str("Dedent"),

@@ -80,7 +80,7 @@ impl<'a> fold::Fold<()> for Inferencer<'a> {
     fn fold_stmt(&mut self, node: ast::Stmt<()>) -> Result<ast::Stmt<Self::TargetU>, Self::Error> {
         let stmt = match node.node {
             // we don't want fold over type annotation
-            ast::StmtKind::AnnAssign { target, annotation, value, simple } => {
+            ast::StmtKind::AnnAssign { target, annotation, value, simple, config_comment } => {
                 self.infer_pattern(&target)?;
                 let target = Box::new(self.fold_expr(*target)?);
                 let value = if let Some(v) = value {
@@ -105,14 +105,14 @@ impl<'a> fold::Fold<()> for Inferencer<'a> {
                 Located {
                     location: node.location,
                     custom: None,
-                    node: ast::StmtKind::AnnAssign { target, annotation, value, simple },
+                    node: ast::StmtKind::AnnAssign { target, annotation, value, simple, config_comment },
                 }
             }
             ast::StmtKind::For { ref target, .. } => {
                 self.infer_pattern(target)?;
                 fold::fold_stmt(self, node)?
             }
-            ast::StmtKind::Assign { ref targets, .. } => {
+            ast::StmtKind::Assign { ref targets, ref config_comment, .. } => {
                 if targets.iter().all(|t| matches!(t.node, ast::ExprKind::Name { .. })) {
                     if let ast::StmtKind::Assign { targets, value, .. } = node.node {
                         let value = self.fold_expr(*value)?;
@@ -158,6 +158,7 @@ impl<'a> fold::Fold<()> for Inferencer<'a> {
                                 targets,
                                 value: Box::new(value),
                                 type_comment: None,
+                                config_comment: config_comment.clone()
                             },
                             custom: None,
                         });
@@ -198,7 +199,7 @@ impl<'a> fold::Fold<()> for Inferencer<'a> {
                 }
             }
             ast::StmtKind::AnnAssign { .. } | ast::StmtKind::Expr { .. } => {}
-            ast::StmtKind::Break | ast::StmtKind::Continue | ast::StmtKind::Pass => {}
+            ast::StmtKind::Break { .. } | ast::StmtKind::Continue { .. } | ast::StmtKind::Pass { .. } => {}
             ast::StmtKind::With { items, .. } => {
                 for item in items.iter() {
                     let ty = item.context_expr.custom.unwrap();
@@ -272,7 +273,7 @@ impl<'a> fold::Fold<()> for Inferencer<'a> {
                     }
                 }
             }
-            ast::StmtKind::Return { value } => match (value, self.function_data.return_type) {
+            ast::StmtKind::Return { value, .. } => match (value, self.function_data.return_type) {
                 (Some(v), Some(v1)) => {
                     self.unify(v.custom.unwrap(), v1, &v.location)?;
                 }

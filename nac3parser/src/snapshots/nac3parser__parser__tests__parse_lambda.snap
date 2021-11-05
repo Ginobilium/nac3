@@ -1,6 +1,7 @@
 ---
-source: parser/src/parser.rs
+source: nac3parser/src/parser.rs
 expression: parse_ast
+
 ---
 [
     Located {
@@ -85,6 +86,7 @@ expression: parse_ast
                     },
                 },
             },
+            config_comment: [],
         },
     },
 ]

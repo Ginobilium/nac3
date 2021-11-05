@@ -186,7 +186,7 @@ pub fn gen_while<'ctx, 'a, G: CodeGenerator + ?Sized>(
     ctx: &mut CodeGenContext<'ctx, 'a>,
     stmt: &Stmt<Option<Type>>,
 ) {
-    if let StmtKind::While { test, body, orelse } = &stmt.node {
+    if let StmtKind::While { test, body, orelse, .. } = &stmt.node {
         let current = ctx.builder.get_insert_block().unwrap().get_parent().unwrap();
         let test_bb = ctx.ctx.append_basic_block(current, "test");
         let body_bb = ctx.ctx.append_basic_block(current, "body");
@@ -228,7 +228,7 @@ pub fn gen_if<'ctx, 'a, G: CodeGenerator + ?Sized>(
     ctx: &mut CodeGenContext<'ctx, 'a>,
     stmt: &Stmt<Option<Type>>,
 ) -> bool {
-    if let StmtKind::If { test, body, orelse } = &stmt.node {
+    if let StmtKind::If { test, body, orelse, .. } = &stmt.node {
         let current = ctx.builder.get_insert_block().unwrap().get_parent().unwrap();
         let test_bb = ctx.ctx.append_basic_block(current, "test");
         let body_bb = ctx.ctx.append_basic_block(current, "body");
@@ -306,11 +306,11 @@ pub fn gen_stmt<'ctx, 'a, G: CodeGenerator + ?Sized>(
     stmt: &Stmt<Option<Type>>,
 ) -> bool {
     match &stmt.node {
-        StmtKind::Pass => {}
-        StmtKind::Expr { value } => {
+        StmtKind::Pass { .. }  => {}
+        StmtKind::Expr { value, .. } => {
             generator.gen_expr(ctx, value);
         }
-        StmtKind::Return { value } => {
+        StmtKind::Return { value, .. } => {
             let value = value.as_ref().map(|v| generator.gen_expr(ctx, v).unwrap());
             let value = value.as_ref().map(|v| v as &dyn BasicValue);
             ctx.builder.build_return(value);
@@ -328,11 +328,11 @@ pub fn gen_stmt<'ctx, 'a, G: CodeGenerator + ?Sized>(
                 generator.gen_assign(ctx, target, value);
             }
         }
-        StmtKind::Continue => {
+        StmtKind::Continue { .. } => {
             ctx.builder.build_unconditional_branch(ctx.loop_bb.unwrap().0);
             return true;
         }
-        StmtKind::Break => {
+        StmtKind::Break { .. }=> {
             ctx.builder.build_unconditional_branch(ctx.loop_bb.unwrap().1);
             return true;
         }

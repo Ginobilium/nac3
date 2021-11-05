@@ -10,43 +10,45 @@ module Python
 
     stmt = FunctionDef(identifier name, arguments args,
                        stmt* body, expr* decorator_list, expr? returns,
-                       string? type_comment)
+                       string? type_comment, identifier* config_comment)
           | AsyncFunctionDef(identifier name, arguments args,
                              stmt* body, expr* decorator_list, expr? returns,
-                             string? type_comment)
+                             string? type_comment, identifier* config_comment)
 
           | ClassDef(identifier name,
              expr* bases,
              keyword* keywords,
              stmt* body,
-             expr* decorator_list)
-          | Return(expr? value)
+             expr* decorator_list, identifier* config_comment)
+          | Return(expr? value, identifier* config_comment)
 
-          | Delete(expr* targets)
-          | Assign(expr* targets, expr value, string? type_comment)
-          | AugAssign(expr target, operator op, expr value)
+          | Delete(expr* targets, identifier* config_comment)
+          | Assign(expr* targets, expr value, string? type_comment, identifier* config_comment)
+          | AugAssign(expr target, operator op, expr value, identifier* config_comment)
           -- 'simple' indicates that we annotate simple name without parens
-          | AnnAssign(expr target, expr annotation, expr? value, bool simple)
+          | AnnAssign(expr target, expr annotation, expr? value, bool simple, identifier* config_comment)
 
           -- use 'orelse' because else is a keyword in target languages
-          | For(expr target, expr iter, stmt* body, stmt* orelse, string? type_comment)
-          | AsyncFor(expr target, expr iter, stmt* body, stmt* orelse, string? type_comment)
-          | While(expr test, stmt* body, stmt* orelse)
-          | If(expr test, stmt* body, stmt* orelse)
-          | With(withitem* items, stmt* body, string? type_comment)
-          | AsyncWith(withitem* items, stmt* body, string? type_comment)
+          | For(expr target, expr iter, stmt* body, stmt* orelse, string? type_comment, identifier* config_comment)
+          | AsyncFor(expr target, expr iter, stmt* body, stmt* orelse, string? type_comment, identifier* config_comment)
+          | While(expr test, stmt* body, stmt* orelse, identifier* config_comment)
+          | If(expr test, stmt* body, stmt* orelse, identifier* config_comment)
+          | With(withitem* items, stmt* body, string? type_comment, identifier* config_comment)
+          | AsyncWith(withitem* items, stmt* body, string? type_comment, identifier* config_comment)
 
-          | Raise(expr? exc, expr? cause)
-          | Try(stmt* body, excepthandler* handlers, stmt* orelse, stmt* finalbody)
-          | Assert(expr test, expr? msg)
+          | Raise(expr? exc, expr? cause, identifier* config_comment)
+          | Try(stmt* body, excepthandler* handlers, stmt* orelse, stmt* finalbody, identifier* config_comment)
+          | Assert(expr test, expr? msg, identifier* config_comment)
 
-          | Import(alias* names)
-          | ImportFrom(identifier? module, alias* names, int level)
+          | Import(alias* names, identifier* config_comment)
+          | ImportFrom(identifier? module, alias* names, int level, identifier* config_comment)
 
-          | Global(identifier* names)
-          | Nonlocal(identifier* names)
-          | Expr(expr value)
-          | Pass | Break | Continue
+          | Global(identifier* names, identifier* config_comment)
+          | Nonlocal(identifier* names, identifier* config_comment)
+          | Expr(expr value, identifier* config_comment)
+          | Pass(identifier* config_comment)
+          | Break(identifier* config_comment)
+          | Continue(identifier* config_comment)
 
           -- col_offset is the byte offset in the utf8 string the parser uses
           attributes (int lineno, int col_offset, int? end_lineno, int? end_col_offset)

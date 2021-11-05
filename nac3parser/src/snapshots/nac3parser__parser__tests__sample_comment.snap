@@ -1,0 +1,75 @@
+---
+source: nac3parser/src/parser.rs
+expression: parse_program(&source).unwrap()
+
+---
+[
+    Located {
+        location: Location {
+            row: 1,
+            column: 1,
+        },
+        custom: (),
+        node: While {
+            test: Located {
+                location: Location {
+                    row: 4,
+                    column: 7,
+                },
+                custom: (),
+                node: Name {
+                    id: "test",
+                    ctx: Load,
+                },
+            },
+            body: [
+                Located {
+                    location: Location {
+                        row: 6,
+                        column: 5,
+                    },
+                    custom: (),
+                    node: Assign {
+                        targets: [
+                            Located {
+                                location: Location {
+                                    row: 6,
+                                    column: 5,
+                                },
+                                custom: (),
+                                node: Name {
+                                    id: "a",
+                                    ctx: Load,
+                                },
+                            },
+                        ],
+                        value: Located {
+                            location: Location {
+                                row: 6,
+                                column: 9,
+                            },
+                            custom: (),
+                            node: Constant {
+                                value: Int(
+                                    3,
+                                ),
+                                kind: None,
+                            },
+                        },
+                        type_comment: None,
+                        config_comment: [
+                            "simple assign0",
+                            "simple assign1",
+                        ],
+                    },
+                },
+            ],
+            orelse: [],
+            config_comment: [
+                "while1",
+                "while2",
+                "while3",
+            ],
+        },
+    },
+]

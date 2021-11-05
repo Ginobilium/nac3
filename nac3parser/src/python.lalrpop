@@ -9,8 +9,11 @@ use crate::ast;
 use crate::fstring::parse_located_fstring;
 use crate::function::{ArgumentList, parse_args, parse_params};
 use crate::error::LexicalError;
+use crate::error::LexicalErrorType;
 use crate::lexer;
+use crate::config_comment_helper::*;
 
+use lalrpop_util::ParseError;
 use num_bigint::BigInt;
 
 grammar;
@@ -47,10 +50,11 @@ Statement: ast::Suite = {
 };
 
 SimpleStatement: ast::Suite = {
-    <s1:SmallStatement> <s2:(";" SmallStatement)*> ";"? "\n" => {
+    <com_loc:@L> <nac3com_above:(config_comment "\n")*> <s1:SmallStatement> <s2:(";" SmallStatement)*> ";"? <nac3com_end:config_comment?> "\n" =>? {
         let mut statements = vec![s1];
         statements.extend(s2.into_iter().map(|e| e.1));
-        statements
+        handle_small_stmt(&mut statements, nac3com_above, nac3com_end, com_loc)?;
+        Ok(statements)
     }
 };
 
@@ -70,7 +74,7 @@ PassStatement: ast::Stmt = {
         ast::Stmt {
             location,
             custom: (),
-            node: ast::StmtKind::Pass,
+            node: ast::StmtKind::Pass { config_comment: vec![] },
         }
     },
 };
@@ -80,7 +84,7 @@ DelStatement: ast::Stmt = {
         ast::Stmt {
             location,
             custom: (),
-            node: ast::StmtKind::Delete { targets },
+            node: ast::StmtKind::Delete { targets, config_comment: vec![] },
         }
     },
 };
@@ -92,7 +96,7 @@ ExpressionStatement: ast::Stmt = {
             ast::Stmt {
                 custom: (),
                 location,
-                node: ast::StmtKind::Expr { value: Box::new(expression) }
+                node: ast::StmtKind::Expr { value: Box::new(expression), config_comment: vec![] }
             }
         } else {
             let mut targets = vec![expression];
@@ -107,7 +111,7 @@ ExpressionStatement: ast::Stmt = {
             ast::Stmt {
                 custom: (),
                 location,
-                node: ast::StmtKind::Assign { targets, value, type_comment: None },
+                node: ast::StmtKind::Assign { targets, value, type_comment: None, config_comment: vec![] },
             }
         }
     },
@@ -118,7 +122,8 @@ ExpressionStatement: ast::Stmt = {
             node: ast::StmtKind::AugAssign {
                 target: Box::new(target),
                 op,
-                value: Box::new(rhs)
+                value: Box::new(rhs),
+                config_comment: vec![],
             },
         }
     },
@@ -132,6 +137,7 @@ ExpressionStatement: ast::Stmt = {
                 annotation: Box::new(annotation),
                 value: rhs.map(Box::new),
                 simple,
+                config_comment: vec![],
             },
         }
     },
@@ -187,28 +193,28 @@ FlowStatement: ast::Stmt = {
         ast::Stmt {
             custom: (),
             location,
-            node: ast::StmtKind::Break,
+            node: ast::StmtKind::Break { config_comment: vec![] },
         }
     },
     <location:@L> "continue" => {
         ast::Stmt {
             custom: (),
             location,
-            node: ast::StmtKind::Continue,
+            node: ast::StmtKind::Continue { config_comment: vec![] },
         }
     },
     <location:@L> "return" <value:TestList?> => {
         ast::Stmt {
             custom: (),
             location,
-            node: ast::StmtKind::Return { value: value.map(Box::new) },
+            node: ast::StmtKind::Return { value: value.map(Box::new), config_comment: vec![] },
         }
     },
     <location:@L> <expression:YieldExpr> => {
         ast::Stmt {
             custom: (),
             location,
-            node: ast::StmtKind::Expr { value: Box::new(expression) },
+            node: ast::StmtKind::Expr { value: Box::new(expression), config_comment: vec![] },
         }
     },
     RaiseStatement,
@@ -219,14 +225,14 @@ RaiseStatement: ast::Stmt = {
         ast::Stmt {
             custom: (),
             location,
-            node: ast::StmtKind::Raise { exc: None, cause: None },
+            node: ast::StmtKind::Raise { exc: None, cause: None, config_comment: vec![] },
         }
     },
     <location:@L> "raise" <t:Test> <c:("from" Test)?> => {
         ast::Stmt {
             custom: (),
             location,
-            node: ast::StmtKind::Raise { exc: Some(Box::new(t)), cause: c.map(|x| Box::new(x.1)) },
+            node: ast::StmtKind::Raise { exc: Some(Box::new(t)), cause: c.map(|x| Box::new(x.1)), config_comment: vec![] },
         }
     },
 };
@@ -236,7 +242,7 @@ ImportStatement: ast::Stmt = {
         ast::Stmt {
             custom: (),
             location,
-            node: ast::StmtKind::Import { names },
+            node: ast::StmtKind::Import { names, config_comment: vec![] },
         }
     },
     <location:@L> "from" <source:ImportFromLocation> "import" <names: ImportAsNames> => {
@@ -247,7 +253,8 @@ ImportStatement: ast::Stmt = {
             node: ast::StmtKind::ImportFrom {
                 level,
                 module: module.map(|s| s.into()),
-                names
+                names,
+                config_comment: vec![]
             },
         }
     },
@@ -301,7 +308,7 @@ GlobalStatement: ast::Stmt = {
         ast::Stmt {
             custom: (),
             location,
-            node: ast::StmtKind::Global { names }
+            node: ast::StmtKind::Global { names, config_comment: vec![] }
         }
     },
 };
@@ -311,7 +318,7 @@ NonlocalStatement: ast::Stmt = {
         ast::Stmt {
             custom: (),
             location,
-            node: ast::StmtKind::Nonlocal { names }
+            node: ast::StmtKind::Nonlocal { names, config_comment: vec![] }
         }
     },
 };
@@ -323,7 +330,8 @@ AssertStatement: ast::Stmt = {
             location,
             node: ast::StmtKind::Assert {
                 test: Box::new(test),
-                msg: msg.map(|e| Box::new(e.1))
+                msg: msg.map(|e| Box::new(e.1)),
+                config_comment: vec![],
             }
         }
     },
@@ -340,7 +348,7 @@ CompoundStatement: ast::Stmt = {
 };
 
 IfStatement: ast::Stmt = {
-    <location:@L> "if" <test:NamedExpressionTest> ":" <body:Suite> <s2:(@L "elif" NamedExpressionTest ":" Suite)*> <s3:("else" ":" Suite)?> => {
+    <location:@L> <nac3com_above:(config_comment "\n")*> <stmt_loc:@L> "if" <test:NamedExpressionTest> ":" <nac3com_end:config_comment?> <body:Suite> <s2:(@L "elif" NamedExpressionTest ":" Suite)*> <s3:("else" ":" Suite)?> =>? {
         // Determine last else:
         let mut last = s3.map(|s| s.2).unwrap_or_default();
 
@@ -349,54 +357,74 @@ IfStatement: ast::Stmt = {
             let x = ast::Stmt {
                 custom: (),
                 location: i.0,
-                node: ast::StmtKind::If { test: Box::new(i.2), body: i.4, orelse: last },
+                node: ast::StmtKind::If { test: Box::new(i.2), body: i.4, orelse: last, config_comment: vec![] },
             };
             last = vec![x];
         }
 
-        ast::Stmt {
+        Ok(ast::Stmt {
             custom: (),
             location,
-            node: ast::StmtKind::If { test: Box::new(test), body, orelse: last }
-        }
+            node: ast::StmtKind::If {
+                test: Box::new(test),
+                body,
+                orelse: last,
+                config_comment: make_config_comment(location, stmt_loc, nac3com_above, nac3com_end)?
+            }
+        })
     },
 };
 
 WhileStatement: ast::Stmt = {
-    <location:@L> "while" <test:NamedExpressionTest> ":" <body:Suite> <s2:("else" ":" Suite)?> => {
+    <location:@L> <nac3com_above:(config_comment "\n")*> <stmt_loc:@L> "while" <test:NamedExpressionTest> ":" <nac3com_end:config_comment?> <body:Suite> <s2:("else" ":" Suite)?> =>? {
         let orelse = s2.map(|s| s.2).unwrap_or_default();
-        ast::Stmt {
+        Ok(ast::Stmt {
             custom: (),
             location,
             node: ast::StmtKind::While {
                 test: Box::new(test),
                 body,
-                orelse
+                orelse,
+                config_comment: make_config_comment(location, stmt_loc, nac3com_above, nac3com_end)?
             },
-        }
+        })
     },
 };
 
 ForStatement: ast::Stmt = {
-    <location:@L> <is_async:"async"?> "for" <target:ExpressionList> "in" <iter:TestList> ":" <body:Suite> <s2:("else" ":" Suite)?> => {
+    <location:@L> <nac3com_above:(config_comment "\n")*> <stmt_loc:@L> <is_async:"async"?> "for" <target:ExpressionList> "in" <iter:TestList> ":" <nac3com_end:config_comment?> <body:Suite> <s2:("else" ":" Suite)?> =>? {
         let orelse = s2.map(|s| s.2).unwrap_or_default();
         let target = Box::new(target);
         let iter = Box::new(iter);
         let type_comment = None;
         let node = if is_async.is_some() {
-            ast::StmtKind::AsyncFor { target, iter, body, orelse, type_comment }
+            ast::StmtKind::AsyncFor {
+                target,
+                iter,
+                body,
+                orelse,
+                type_comment,
+                config_comment: make_config_comment(location, stmt_loc, nac3com_above, nac3com_end)?
+            }
         } else {
-            ast::StmtKind::For { target, iter, body, orelse, type_comment }
+            ast::StmtKind::For {
+                target,
+                iter,
+                body,
+                orelse,
+                type_comment,
+                config_comment: make_config_comment(location, stmt_loc, nac3com_above, nac3com_end)?
+            }
         };
-        ast::Stmt::new(location, node)
+        Ok(ast::Stmt::new(location, node))
     },
 };
 
 TryStatement: ast::Stmt = {
-    <location:@L> "try" ":" <body:Suite> <handlers:ExceptClause+> <else_suite:("else" ":" Suite)?> <finally:("finally" ":" Suite)?> => {
+    <location:@L> <nac3com_above:(config_comment "\n")*> <stmt_loc:@L> "try" ":" <nac3com_end:config_comment?> <body:Suite> <handlers:ExceptClause+> <else_suite:("else" ":" Suite)?> <finally:("finally" ":" Suite)?> =>? {
         let orelse = else_suite.map(|s| s.2).unwrap_or_default();
         let finalbody = finally.map(|s| s.2).unwrap_or_default();
-        ast::Stmt {
+        Ok(ast::Stmt {
             custom: (),
             location,
             node: ast::StmtKind::Try {
@@ -404,14 +432,15 @@ TryStatement: ast::Stmt = {
                 handlers,
                 orelse,
                 finalbody,
+                config_comment: make_config_comment(location, stmt_loc, nac3com_above, nac3com_end)?
             },
-        }
+        })
     },
-    <location:@L> "try" ":" <body:Suite> <finally:("finally" ":" Suite)> => {
+    <location:@L> <nac3com_above:(config_comment "\n")*> <stmt_loc:@L> "try" ":" <nac3com_end:config_comment?> <body:Suite> <finally:("finally" ":" Suite)> =>? {
         let handlers = vec![];
         let orelse = vec![];
         let finalbody = finally.2;
-        ast::Stmt {
+        Ok(ast::Stmt {
             custom: (),
             location,
             node: ast::StmtKind::Try {
@@ -419,8 +448,9 @@ TryStatement: ast::Stmt = {
                 handlers,
                 orelse,
                 finalbody,
+                config_comment: make_config_comment(location, stmt_loc, nac3com_above, nac3com_end)?
             },
-        }
+        })
     },
 };
 
@@ -448,14 +478,24 @@ ExceptClause: ast::Excepthandler = {
 };
 
 WithStatement: ast::Stmt = {
-    <location:@L> <is_async:"async"?> "with" <items:OneOrMore<WithItem>> ":" <body:Suite> => {
+    <location:@L> <nac3com_above:(config_comment "\n")*> <stmt_loc:@L> <is_async:"async"?> "with" <items:OneOrMore<WithItem>> ":" <nac3com_end:config_comment?> <body:Suite> =>? {
         let type_comment = None;
         let node = if is_async.is_some() {
-            ast::StmtKind::AsyncWith { items, body, type_comment }
+            ast::StmtKind::AsyncWith {
+                items,
+                body,
+                type_comment,
+                config_comment: make_config_comment(location, stmt_loc, nac3com_above, nac3com_end)?
+            }
         } else {
-            ast::StmtKind::With { items, body, type_comment }
+            ast::StmtKind::With {
+                items,
+                body,
+                type_comment,
+                config_comment: make_config_comment(location, stmt_loc, nac3com_above, nac3com_end)?
+            }
         };
-        ast::Stmt::new(location, node)
+        Ok(ast::Stmt::new(location, node))
     },
 };
 
@@ -468,16 +508,32 @@ WithItem: ast::Withitem = {
 };
 
 FuncDef: ast::Stmt = {
-    <decorator_list:Decorator*> <location:@L> <is_async:"async"?> "def" <name:Identifier> <args:Parameters> <r:("->" Test)?> ":" <body:Suite> => {
+    <decorator_list:Decorator*> <location:@L> <nac3com_above:(config_comment "\n")*> <stmt_loc:@L> <is_async:"async"?> "def" <name:Identifier> <args:Parameters> <r:("->" Test)?> ":" <nac3com_end:config_comment?> <body:Suite> =>? {
         let args = Box::new(args);
         let returns = r.map(|x| Box::new(x.1));
         let type_comment = None;
         let node = if is_async.is_some() {
-            ast::StmtKind::AsyncFunctionDef { name, args, body, decorator_list, returns, type_comment }
+            ast::StmtKind::AsyncFunctionDef {
+                name,
+                args,
+                body,
+                decorator_list,
+                returns,
+                type_comment,
+                config_comment: make_config_comment(location, stmt_loc, nac3com_above, nac3com_end)?
+            }
         } else {
-            ast::StmtKind::FunctionDef { name, args, body, decorator_list, returns, type_comment }
+            ast::StmtKind::FunctionDef {
+                name,
+                args,
+                body,
+                decorator_list,
+                returns,
+                type_comment,
+                config_comment: make_config_comment(location, stmt_loc, nac3com_above, nac3com_end)?
+            }
         };
-        ast::Stmt::new(location, node)
+        Ok(ast::Stmt::new(location, node))
     },
 };
 
@@ -615,12 +671,12 @@ KwargParameter<ArgType>: Option<Box<ast::Arg>> = {
 };
 
 ClassDef: ast::Stmt = {
-    <decorator_list:Decorator*> <location:@L> "class" <name:Identifier> <a:("(" ArgumentList ")")?> ":" <body:Suite> => {
+    <decorator_list:Decorator*> <location:@L> <nac3com_above:(config_comment "\n")*> <stmt_loc:@L> "class" <name:Identifier> <a:("(" ArgumentList ")")?> ":" <nac3com_end:config_comment?> <body:Suite> =>? {
         let (bases, keywords) = match a {
             Some((_, arg, _)) => (arg.args, arg.keywords),
             None => (vec![], vec![]),
         };
-        ast::Stmt {
+        Ok(ast::Stmt {
             custom: (),
             location,
             node: ast::StmtKind::ClassDef {
@@ -629,8 +685,9 @@ ClassDef: ast::Stmt = {
                 keywords,
                 body,
                 decorator_list,
+                config_comment: make_config_comment(location, stmt_loc, nac3com_above, nac3com_end)?
             },
-        }
+        })
     },
 };
 
@@ -1301,6 +1358,7 @@ extern {
         string => lexer::Tok::String { value: <String>, is_fstring: <bool> },
         bytes => lexer::Tok::Bytes { value: <Vec<u8>> },
         name => lexer::Tok::Name { name: <ast::StrRef> },
+        config_comment => lexer::Tok::ConfigComment { content: <ast::StrRef> },
         "\n" => lexer::Tok::Newline,
         ";" => lexer::Tok::Semi,
     }

@@ -32,3 +32,4 @@ lalrpop_mod!(
     python
 );
 pub mod token;
+pub mod config_comment_helper;

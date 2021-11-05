@@ -1,5 +1,5 @@
 ---
-source: parser/src/parser.rs
+source: nac3parser/src/parser.rs
 expression: parse_ast
 
 ---
@@ -45,6 +45,7 @@ expression: parse_ast
                                 kind: None,
                             },
                         },
+                        config_comment: [],
                     },
                 },
             ],
@@ -90,6 +91,7 @@ expression: parse_ast
                                             kind: None,
                                         },
                                     },
+                                    config_comment: [],
                                 },
                             },
                         ],
@@ -114,12 +116,15 @@ expression: parse_ast
                                             kind: None,
                                         },
                                     },
+                                    config_comment: [],
                                 },
                             },
                         ],
+                        config_comment: [],
                     },
                 },
             ],
+            config_comment: [],
         },
     },
 ]
