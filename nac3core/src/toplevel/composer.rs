@@ -1,6 +1,7 @@
 use std::cell::RefCell;
 
 use nac3parser::ast::fold::Fold;
+use inkwell::FloatPredicate;
 
 use crate::{
     symbol_resolver::SymbolValue,
@@ -78,12 +79,7 @@ impl TopLevelComposer {
                     "range".into(),
                     None,
                 ))),
-                Arc::new(RwLock::new(Self::make_top_level_class_def(
-                    6,
-                    None,
-                    "str".into(),
-                    None,
-                ))),
+                Arc::new(RwLock::new(Self::make_top_level_class_def(6, None, "str".into(), None))),
                 Arc::new(RwLock::new(TopLevelDef::Function {
                     name: "int32".into(),
                     simple_name: "int32".into(),
@@ -391,8 +387,56 @@ impl TopLevelComposer {
                     instance_to_symbol: Default::default(),
                     instance_to_stmt: Default::default(),
                     resolver: None,
-                    codegen_callback: Some(Arc::new(GenCall::new(Box::new(|_, _, _, args|
+                    codegen_callback: Some(Arc::new(GenCall::new(Box::new(|_, _, _, args| {
                         Some(args[0].1)
+                    })))),
+                })),
+                Arc::new(RwLock::new(TopLevelDef::Function {
+                    name: "bool".into(),
+                    simple_name: "bool".into(),
+                    signature: primitives.1.add_ty(TypeEnum::TFunc(RefCell::new(FunSignature {
+                        args: vec![FuncArg { name: "_".into(), ty: num_ty.0, default_value: None }],
+                        ret: primitives.0.bool,
+                        vars: Default::default(),
+                    }))),
+                    var_id: Default::default(),
+                    instance_to_symbol: Default::default(),
+                    instance_to_stmt: Default::default(),
+                    resolver: None,
+                    codegen_callback: Some(Arc::new(GenCall::new(Box::new(
+                        |ctx, _, fun, args| {
+                            let int32 = ctx.primitives.int32;
+                            let int64 = ctx.primitives.int64;
+                            let float = ctx.primitives.float;
+                            let boolean = ctx.primitives.bool;
+                            let arg_ty = fun.0.args[0].ty;
+                            let arg = args[0].1;
+                            if ctx.unifier.unioned(arg_ty, boolean) {
+                                Some(arg)
+                            } else if ctx.unifier.unioned(arg_ty, int32) || ctx.unifier.unioned(arg_ty, int64) {
+                                Some(
+                                    ctx.builder
+                                        .build_int_truncate(
+                                            arg.into_int_value(),
+                                            ctx.ctx.bool_type(),
+                                            "trunc",
+                                        )
+                                        .into(),
+                                )
+                            } else if ctx.unifier.unioned(arg_ty, float) {
+                                let val = ctx.builder.
+                                    build_float_compare(
+                                        // UEQ as bool(nan) is True
+                                        FloatPredicate::UEQ,
+                                        arg.into_float_value(),
+                                        ctx.ctx.f64_type().const_zero(),
+                                        "bool"
+                                    ).into();
+                                Some(val)
+                            } else {
+                                unreachable!()
+                            }
+                        },
                     )))),
                 })),
             ];
@@ -426,7 +470,7 @@ impl TopLevelComposer {
         let mut built_in_ty: HashMap<StrRef, Type> = Default::default();
 
         for (id, name) in
-            ["int32", "int64", "float", "round", "round64", "range", "str"].iter().rev().enumerate()
+            ["int32", "int64", "float", "round", "round64", "range", "str", "bool"].iter().rev().enumerate()
         {
             let name = (**name).into();
             let id = definition_ast_list.len() - id - 1;
