@@ -20,6 +20,28 @@ pub enum TypeAnnotation {
     TupleKind(Vec<TypeAnnotation>),
 }
 
+impl TypeAnnotation {
+    pub fn stringify(&self, unifier: &mut Unifier) -> String {
+        use TypeAnnotation::*;
+        match self {
+            PrimitiveKind(ty) | TypeVarKind(ty) => unifier.default_stringify(*ty),
+            CustomClassKind { id, params } => {
+                let class_name = match unifier.top_level {
+                    Some(ref top) => if let TopLevelDef::Class { name, .. } = &*top.definitions.read()[id.0].read() {
+                        (*name).into()
+                    } else {
+                        format!("def_{}", id.0)
+                    }
+                    None => format!("def_{}", id.0)
+                };
+                format!("{{class: {}, params: {:?}}}", class_name, params.iter().map(|p| p.stringify(unifier)).collect_vec())
+            }
+            VirtualKind(ty) | ListKind(ty) => ty.stringify(unifier),
+            TupleKind(types) => format!("({:?})", types.iter().map(|p| p.stringify(unifier)).collect_vec()),
+        }
+    }
+}
+
 pub fn parse_ast_to_type_annotation_kinds<T>(
     resolver: &(dyn SymbolResolver + Send + Sync),
     top_level_defs: &[Arc<RwLock<TopLevelDef>>],

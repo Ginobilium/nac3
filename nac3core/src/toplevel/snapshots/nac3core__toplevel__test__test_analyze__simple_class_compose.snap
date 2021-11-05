@@ -4,15 +4,15 @@ expression: res_vec
 
 ---
 [
-    "14: Class {\nname: \"A\",\ndef_id: DefinitionId(14),\nancestors: [CustomClassKind { id: DefinitionId(14), params: [] }],\nfields: [(\"a\", \"class0\")],\nmethods: [(\"__init__\", \"fn[[], class4]\", DefinitionId(15)), (\"fun\", \"fn[[b=class18], class4]\", DefinitionId(16)), (\"foo\", \"fn[[a=tvar3, b=tvar4], class4]\", DefinitionId(17))],\ntype_vars: []\n}\n",
-    "15: Function {\nname: \"A.__init__\",\nsig: \"fn[[], class4]\",\nvar_id: []\n}\n",
-    "16: Function {\nname: \"A.fun\",\nsig: \"fn[[b=class18], class4]\",\nvar_id: []\n}\n",
-    "17: Function {\nname: \"A.foo\",\nsig: \"fn[[a=tvar3, b=tvar4], class4]\",\nvar_id: [3, 4]\n}\n",
-    "18: Class {\nname: \"B\",\ndef_id: DefinitionId(18),\nancestors: [CustomClassKind { id: DefinitionId(18), params: [] }, CustomClassKind { id: DefinitionId(20), params: [] }, CustomClassKind { id: DefinitionId(14), params: [] }],\nfields: [(\"a\", \"class0\")],\nmethods: [(\"__init__\", \"fn[[], class4]\", DefinitionId(19)), (\"fun\", \"fn[[b=class18], class4]\", DefinitionId(22)), (\"foo\", \"fn[[a=tvar3, b=tvar4], class4]\", DefinitionId(17))],\ntype_vars: []\n}\n",
-    "19: Function {\nname: \"B.__init__\",\nsig: \"fn[[], class4]\",\nvar_id: []\n}\n",
-    "20: Class {\nname: \"C\",\ndef_id: DefinitionId(20),\nancestors: [CustomClassKind { id: DefinitionId(20), params: [] }, CustomClassKind { id: DefinitionId(14), params: [] }],\nfields: [(\"a\", \"class0\")],\nmethods: [(\"__init__\", \"fn[[], class4]\", DefinitionId(21)), (\"fun\", \"fn[[b=class18], class4]\", DefinitionId(22)), (\"foo\", \"fn[[a=tvar3, b=tvar4], class4]\", DefinitionId(17))],\ntype_vars: []\n}\n",
-    "21: Function {\nname: \"C.__init__\",\nsig: \"fn[[], class4]\",\nvar_id: []\n}\n",
-    "22: Function {\nname: \"C.fun\",\nsig: \"fn[[b=class18], class4]\",\nvar_id: []\n}\n",
-    "23: Function {\nname: \"foo\",\nsig: \"fn[[a=class14], class4]\",\nvar_id: []\n}\n",
-    "24: Function {\nname: \"ff\",\nsig: \"fn[[a=tvar3], tvar4]\",\nvar_id: [3, 4]\n}\n",
+    "Class {\nname: \"A\",\nancestors: [\"{class: A, params: []}\"],\nfields: [\"a\"],\nmethods: [(\"__init__\", \"fn[[], none]\"), (\"fun\", \"fn[[b=B], none]\"), (\"foo\", \"fn[[a=var3, b=var4], none]\")],\ntype_vars: []\n}\n",
+    "Function {\nname: \"A.__init__\",\nsig: \"fn[[], none]\",\nvar_id: []\n}\n",
+    "Function {\nname: \"A.fun\",\nsig: \"fn[[b=B], none]\",\nvar_id: []\n}\n",
+    "Function {\nname: \"A.foo\",\nsig: \"fn[[a=var3, b=var4], none]\",\nvar_id: [3, 4]\n}\n",
+    "Class {\nname: \"B\",\nancestors: [\"{class: B, params: []}\", \"{class: C, params: []}\", \"{class: A, params: []}\"],\nfields: [\"a\"],\nmethods: [(\"__init__\", \"fn[[], none]\"), (\"fun\", \"fn[[b=B], none]\"), (\"foo\", \"fn[[a=var3, b=var4], none]\")],\ntype_vars: []\n}\n",
+    "Function {\nname: \"B.__init__\",\nsig: \"fn[[], none]\",\nvar_id: []\n}\n",
+    "Class {\nname: \"C\",\nancestors: [\"{class: C, params: []}\", \"{class: A, params: []}\"],\nfields: [\"a\"],\nmethods: [(\"__init__\", \"fn[[], none]\"), (\"fun\", \"fn[[b=B], none]\"), (\"foo\", \"fn[[a=var3, b=var4], none]\")],\ntype_vars: []\n}\n",
+    "Function {\nname: \"C.__init__\",\nsig: \"fn[[], none]\",\nvar_id: []\n}\n",
+    "Function {\nname: \"C.fun\",\nsig: \"fn[[b=B], none]\",\nvar_id: []\n}\n",
+    "Function {\nname: \"foo\",\nsig: \"fn[[a=A], none]\",\nvar_id: []\n}\n",
+    "Function {\nname: \"ff\",\nsig: \"fn[[a=var3], var4]\",\nvar_id: [3, 4]\n}\n",
 ]

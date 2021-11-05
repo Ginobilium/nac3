@@ -598,7 +598,7 @@ impl Unifier {
         Ok(())
     }
 
-    fn internal_stringify(&mut self, ty: Type) -> String {
+    pub fn default_stringify(&mut self, ty: Type) -> String {
         let top_level = self.top_level.clone();
         self.stringify(
             ty,
@@ -698,8 +698,8 @@ impl Unifier {
     fn incompatible_types(&mut self, a: Type, b: Type) -> Result<(), String> {
         Err(format!(
             "Cannot unify {} with {}",
-            self.internal_stringify(a),
-            self.internal_stringify(b)
+            self.default_stringify(a),
+            self.default_stringify(b)
         ))
     }
 
@@ -982,7 +982,7 @@ impl Unifier {
         return Err(format!(
             "Cannot unify variable {} with {} due to incompatible value range",
             id,
-            self.internal_stringify(b)
+            self.default_stringify(b)
         ));
     }
 }
