@@ -9,8 +9,8 @@ use crate::{
     },
 };
 use indoc::indoc;
-use parking_lot::Mutex;
 use nac3parser::{ast::fold::Fold, parser::parse_program};
+use parking_lot::Mutex;
 use std::{collections::HashMap, sync::Arc};
 use test_case::test_case;
 
@@ -43,9 +43,6 @@ impl SymbolResolver for Resolver {
         str: StrRef,
     ) -> Option<Type> {
         let ret = self.0.id_to_type.lock().get(&str).cloned();
-        if ret.is_none() {
-            // println!("unknown here resolver {}", str);
-        }
         ret
     }
 
@@ -529,19 +526,9 @@ fn test_analyze(source: Vec<&str>, res: Vec<&str>) {
     } else {
         // skip 5 to skip primitives
         let mut res_vec: Vec<String> = Vec::new();
-        for (i, (def, _)) in
-            composer.definition_ast_list.iter().skip(composer.built_in_num).enumerate()
-        {
+        for (def, _) in composer.definition_ast_list.iter().skip(composer.built_in_num) {
             let def = &*def.read();
-            res_vec.push(format!(
-                "{}: {}\n",
-                i + composer.built_in_num,
-                def.to_string(
-                    composer.unifier.borrow_mut(),
-                    &mut |id| format!("class{}", id),
-                    &mut |id| format!("tvar{}", id)
-                )
-            ));
+            res_vec.push(format!("{}\n", def.to_string(composer.unifier.borrow_mut())));
         }
         insta::assert_debug_snapshot!(res_vec);
     }
@@ -688,9 +675,8 @@ fn test_inference(source: Vec<&str>, res: Vec<&str>) {
         &mut composer.unifier,
         print,
     );
-    let resolver = Arc::new(
-        Resolver(internal_resolver.clone())
-    ) as Arc<dyn SymbolResolver + Send + Sync>;
+    let resolver =
+        Arc::new(Resolver(internal_resolver.clone())) as Arc<dyn SymbolResolver + Send + Sync>;
 
     for s in source {
         let ast = parse_program(s).unwrap();

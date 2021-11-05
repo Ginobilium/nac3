@@ -4,11 +4,11 @@ expression: res_vec
 
 ---
 [
-    "14: Function {\nname: \"foo\",\nsig: \"fn[[a=list[class0], b=tuple[tvar3, class2]], class15[3->class19, 4->class3]]\",\nvar_id: [3]\n}\n",
-    "15: Class {\nname: \"A\",\ndef_id: DefinitionId(15),\nancestors: [CustomClassKind { id: DefinitionId(15), params: [TypeVarKind(UnificationKey(110)), TypeVarKind(UnificationKey(111))] }],\nfields: [(\"a\", \"tvar3\"), (\"b\", \"tvar4\")],\nmethods: [(\"__init__\", \"fn[[v=tvar4], class4]\", DefinitionId(16)), (\"fun\", \"fn[[a=tvar3], tvar4]\", DefinitionId(17))],\ntype_vars: [UnificationKey(110), UnificationKey(111)]\n}\n",
-    "16: Function {\nname: \"A.__init__\",\nsig: \"fn[[v=tvar4], class4]\",\nvar_id: [3, 4]\n}\n",
-    "17: Function {\nname: \"A.fun\",\nsig: \"fn[[a=tvar3], tvar4]\",\nvar_id: [3, 4]\n}\n",
-    "18: Function {\nname: \"gfun\",\nsig: \"fn[[a=class15[3->list[class2], 4->class0]], class4]\",\nvar_id: []\n}\n",
-    "19: Class {\nname: \"B\",\ndef_id: DefinitionId(19),\nancestors: [CustomClassKind { id: DefinitionId(19), params: [] }],\nfields: [],\nmethods: [(\"__init__\", \"fn[[], class4]\", DefinitionId(20))],\ntype_vars: []\n}\n",
-    "20: Function {\nname: \"B.__init__\",\nsig: \"fn[[], class4]\",\nvar_id: []\n}\n",
+    "Function {\nname: \"foo\",\nsig: \"fn[[a=list[int32], b=tuple[var3, float]], A[3->B, 4->bool]]\",\nvar_id: [3]\n}\n",
+    "Class {\nname: \"A\",\nancestors: [\"{class: A, params: [\\\"var3\\\", \\\"var4\\\"]}\"],\nfields: [\"a\", \"b\"],\nmethods: [(\"__init__\", \"fn[[v=var4], none]\"), (\"fun\", \"fn[[a=var3], var4]\")],\ntype_vars: [\"var3\", \"var4\"]\n}\n",
+    "Function {\nname: \"A.__init__\",\nsig: \"fn[[v=var4], none]\",\nvar_id: [3, 4]\n}\n",
+    "Function {\nname: \"A.fun\",\nsig: \"fn[[a=var3], var4]\",\nvar_id: [3, 4]\n}\n",
+    "Function {\nname: \"gfun\",\nsig: \"fn[[a=A[3->list[float], 4->int32]], none]\",\nvar_id: []\n}\n",
+    "Class {\nname: \"B\",\nancestors: [\"{class: B, params: []}\"],\nfields: [],\nmethods: [(\"__init__\", \"fn[[], none]\")],\ntype_vars: []\n}\n",
+    "Function {\nname: \"B.__init__\",\nsig: \"fn[[], none]\",\nvar_id: []\n}\n",
 ]

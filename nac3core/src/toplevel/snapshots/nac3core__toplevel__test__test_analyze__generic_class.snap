@@ -4,10 +4,10 @@ expression: res_vec
 
 ---
 [
-    "14: Class {\nname: \"Generic_A\",\ndef_id: DefinitionId(14),\nancestors: [CustomClassKind { id: DefinitionId(14), params: [TypeVarKind(UnificationKey(111))] }, CustomClassKind { id: DefinitionId(17), params: [] }],\nfields: [(\"aa\", \"class3\"), (\"a\", \"class1\")],\nmethods: [(\"__init__\", \"fn[[], class4]\", DefinitionId(15)), (\"foo\", \"fn[[b=tvar3], class4]\", DefinitionId(19)), (\"fun\", \"fn[[a=class0], tvar4]\", DefinitionId(16))],\ntype_vars: [UnificationKey(111)]\n}\n",
-    "15: Function {\nname: \"Generic_A.__init__\",\nsig: \"fn[[], class4]\",\nvar_id: [4]\n}\n",
-    "16: Function {\nname: \"Generic_A.fun\",\nsig: \"fn[[a=class0], tvar4]\",\nvar_id: [4]\n}\n",
-    "17: Class {\nname: \"B\",\ndef_id: DefinitionId(17),\nancestors: [CustomClassKind { id: DefinitionId(17), params: [] }],\nfields: [(\"aa\", \"class3\")],\nmethods: [(\"__init__\", \"fn[[], class4]\", DefinitionId(18)), (\"foo\", \"fn[[b=tvar3], class4]\", DefinitionId(19))],\ntype_vars: []\n}\n",
-    "18: Function {\nname: \"B.__init__\",\nsig: \"fn[[], class4]\",\nvar_id: []\n}\n",
-    "19: Function {\nname: \"B.foo\",\nsig: \"fn[[b=tvar3], class4]\",\nvar_id: [3]\n}\n",
+    "Class {\nname: \"Generic_A\",\nancestors: [\"{class: Generic_A, params: [\\\"var4\\\"]}\", \"{class: B, params: []}\"],\nfields: [\"aa\", \"a\"],\nmethods: [(\"__init__\", \"fn[[], none]\"), (\"foo\", \"fn[[b=var3], none]\"), (\"fun\", \"fn[[a=int32], var4]\")],\ntype_vars: [\"var4\"]\n}\n",
+    "Function {\nname: \"Generic_A.__init__\",\nsig: \"fn[[], none]\",\nvar_id: [4]\n}\n",
+    "Function {\nname: \"Generic_A.fun\",\nsig: \"fn[[a=int32], var4]\",\nvar_id: [4]\n}\n",
+    "Class {\nname: \"B\",\nancestors: [\"{class: B, params: []}\"],\nfields: [\"aa\"],\nmethods: [(\"__init__\", \"fn[[], none]\"), (\"foo\", \"fn[[b=var3], none]\")],\ntype_vars: []\n}\n",
+    "Function {\nname: \"B.__init__\",\nsig: \"fn[[], none]\",\nvar_id: []\n}\n",
+    "Function {\nname: \"B.foo\",\nsig: \"fn[[b=var3], none]\",\nvar_id: [3]\n}\n",
 ]
