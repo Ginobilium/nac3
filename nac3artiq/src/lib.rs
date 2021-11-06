@@ -9,7 +9,7 @@ use inkwell::{
     OptimizationLevel,
 };
 use pyo3::prelude::*;
-use pyo3::{exceptions, types::PyList};
+use pyo3::{exceptions, types::PyList, types::PyBytes};
 use nac3parser::{
     ast::{self, StrRef},
     parser::{self, parse_program},
@@ -495,11 +495,11 @@ impl Nac3 {
         method_name: &str,
         args: Vec<&PyAny>,
         py: Python,
-    ) -> PyResult<Vec<u8>> {
+    ) -> PyResult<PyObject> {
         let filename_path = self.working_directory.path().join("module.elf");
         let filename = filename_path.to_str().unwrap();
         self.compile_method_to_file(obj, method_name, args, filename, py)?;
-        Ok(fs::read(filename).unwrap())
+        Ok(PyBytes::new(py, &fs::read(filename).unwrap()).into())
     }
 }
 
