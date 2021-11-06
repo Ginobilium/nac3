@@ -17,7 +17,7 @@ pub fn make_config_comment(
                 location: com_loc,
                 error: LexicalErrorType::OtherError(
                     format!(
-                        "config comment at top must have the same indentation with what it applies(comment at {}, statement at {})",
+                        "config comment at top must have the same indentation with what it applies (comment at {}, statement at {})",
                         com_loc,
                         stmt_loc,
                     )
@@ -41,7 +41,7 @@ pub fn handle_small_stmt<U>(stmts: &mut [Stmt<U>], nac3com_above: Vec<(Ident, To
                 location: com_above_loc,
                 error: LexicalErrorType::OtherError(
                     format!(
-                        "config comment at top must have the same indentation with what it applies(comment at {}, statement at {})",
+                        "config comment at top must have the same indentation with what it applies (comment at {}, statement at {})",
                         com_above_loc,
                         stmts[0].location,
                     )
