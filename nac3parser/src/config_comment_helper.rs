@@ -11,13 +11,13 @@ pub fn make_config_comment(
     nac3com_above: Vec<(Ident, Tok)>,
     nac3com_end: Option<Ident>
 ) -> Result<Vec<Ident>, ParseError<Location, Tok, LexicalError>> {
-    if com_loc.column() != stmt_loc.column() {
+    if com_loc.column() != stmt_loc.column() && !nac3com_above.is_empty() {
         return Err(ParseError::User {
             error: LexicalError {
                 location: com_loc,
                 error: LexicalErrorType::OtherError(
                     format!(
-                        "config comment at top must have the same indentation with what it applies, comment at {}, statement at {}",
+                        "config comment at top must have the same indentation with what it applies(comment at {}, statement at {})",
                         com_loc,
                         stmt_loc,
                     )
@@ -35,13 +35,13 @@ pub fn make_config_comment(
 }
 
 pub fn handle_small_stmt<U>(stmts: &mut [Stmt<U>], nac3com_above: Vec<(Ident, Tok)>, nac3com_end: Option<Ident>, com_above_loc: Location) -> Result<(), ParseError<Location, Tok, LexicalError>> {
-    if com_above_loc.column() != stmts[0].location.column() {
+    if com_above_loc.column() != stmts[0].location.column() && !nac3com_above.is_empty() {
         return Err(ParseError::User {
             error: LexicalError {
                 location: com_above_loc,
                 error: LexicalErrorType::OtherError(
                     format!(
-                        "config comment at top must have the same indentation with what it applies, comment at {}, statement at {}",
+                        "config comment at top must have the same indentation with what it applies(comment at {}, statement at {})",
                         com_above_loc,
                         stmts[0].location,
                     )

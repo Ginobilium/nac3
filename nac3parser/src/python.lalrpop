@@ -508,7 +508,7 @@ WithItem: ast::Withitem = {
 };
 
 FuncDef: ast::Stmt = {
-    <decorator_list:Decorator*> <location:@L> <nac3com_above:(config_comment "\n")*> <stmt_loc:@L> <is_async:"async"?> "def" <name:Identifier> <args:Parameters> <r:("->" Test)?> ":" <nac3com_end:config_comment?> <body:Suite> =>? {
+    <location:@L> <nac3com_above:(config_comment "\n")*> <decorator_list:Decorator*> <stmt_loc:@L> <is_async:"async"?> "def" <name:Identifier> <args:Parameters> <r:("->" Test)?> ":" <nac3com_end:config_comment?> <body:Suite> =>? {
         let args = Box::new(args);
         let returns = r.map(|x| Box::new(x.1));
         let type_comment = None;
@@ -671,7 +671,7 @@ KwargParameter<ArgType>: Option<Box<ast::Arg>> = {
 };
 
 ClassDef: ast::Stmt = {
-    <decorator_list:Decorator*> <location:@L> <nac3com_above:(config_comment "\n")*> <stmt_loc:@L> "class" <name:Identifier> <a:("(" ArgumentList ")")?> ":" <nac3com_end:config_comment?> <body:Suite> =>? {
+    <location:@L> <nac3com_above:(config_comment "\n")*> <decorator_list:Decorator*> <stmt_loc:@L> "class" <name:Identifier> <a:("(" ArgumentList ")")?> ":" <nac3com_end:config_comment?> <body:Suite> =>? {
         let (bases, keywords) = match a {
             Some((_, arg, _)) => (arg.args, arg.keywords),
             None => (vec![], vec![]),
