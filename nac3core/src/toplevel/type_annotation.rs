@@ -6,26 +6,26 @@ use super::*;
 
 #[derive(Clone, Debug)]
 pub enum TypeAnnotation {
-    PrimitiveKind(Type),
+    Primitive(Type),
     // we use type vars kind at params to represent self type
-    CustomClassKind {
+    CustomClass {
         id: DefinitionId,
         // params can also be type var
         params: Vec<TypeAnnotation>,
     },
     // can only be CustomClassKind
-    VirtualKind(Box<TypeAnnotation>),
-    TypeVarKind(Type),
-    ListKind(Box<TypeAnnotation>),
-    TupleKind(Vec<TypeAnnotation>),
+    Virtual(Box<TypeAnnotation>),
+    TypeVar(Type),
+    List(Box<TypeAnnotation>),
+    Tuple(Vec<TypeAnnotation>),
 }
 
 impl TypeAnnotation {
     pub fn stringify(&self, unifier: &mut Unifier) -> String {
         use TypeAnnotation::*;
         match self {
-            PrimitiveKind(ty) | TypeVarKind(ty) => unifier.default_stringify(*ty),
-            CustomClassKind { id, params } => {
+            Primitive(ty) | TypeVar(ty) => unifier.default_stringify(*ty),
+            CustomClass { id, params } => {
                 let class_name = match unifier.top_level {
                     Some(ref top) => if let TopLevelDef::Class { name, .. } = &*top.definitions.read()[id.0].read() {
                         (*name).into()
@@ -36,8 +36,8 @@ impl TypeAnnotation {
                 };
                 format!("{{class: {}, params: {:?}}}", class_name, params.iter().map(|p| p.stringify(unifier)).collect_vec())
             }
-            VirtualKind(ty) | ListKind(ty) => ty.stringify(unifier),
-            TupleKind(types) => format!("({:?})", types.iter().map(|p| p.stringify(unifier)).collect_vec()),
+            Virtual(ty) | List(ty) => ty.stringify(unifier),
+            Tuple(types) => format!("({:?})", types.iter().map(|p| p.stringify(unifier)).collect_vec()),
         }
     }
 }
@@ -54,17 +54,17 @@ pub fn parse_ast_to_type_annotation_kinds<T>(
     match &expr.node {
         ast::ExprKind::Name { id, .. } => {
             if id == &"int32".into() {
-                Ok(TypeAnnotation::PrimitiveKind(primitives.int32))
+                Ok(TypeAnnotation::Primitive(primitives.int32))
             } else if id == &"int64".into() {
-                Ok(TypeAnnotation::PrimitiveKind(primitives.int64))
+                Ok(TypeAnnotation::Primitive(primitives.int64))
             } else if id == &"float".into() {
-                Ok(TypeAnnotation::PrimitiveKind(primitives.float))
+                Ok(TypeAnnotation::Primitive(primitives.float))
             } else if id == &"bool".into() {
-                Ok(TypeAnnotation::PrimitiveKind(primitives.bool))
+                Ok(TypeAnnotation::Primitive(primitives.bool))
             } else if id == &"None".into() {
-                Ok(TypeAnnotation::PrimitiveKind(primitives.none))
+                Ok(TypeAnnotation::Primitive(primitives.none))
             } else if id == &"str".into() {
-                Ok(TypeAnnotation::PrimitiveKind(primitives.str))
+                Ok(TypeAnnotation::Primitive(primitives.str))
             } else if let Some(obj_id) = resolver.get_identifier_def(*id) {
                 let type_vars = {
                     let def_read = top_level_defs[obj_id.0].try_read();
@@ -85,10 +85,10 @@ pub fn parse_ast_to_type_annotation_kinds<T>(
                         type_vars.len()
                     ));
                 }
-                Ok(TypeAnnotation::CustomClassKind { id: obj_id, params: vec![] })
+                Ok(TypeAnnotation::CustomClass { id: obj_id, params: vec![] })
             } else if let Some(ty) = resolver.get_symbol_type(unifier, top_level_defs, primitives, *id) {
                 if let TypeEnum::TVar { .. } = unifier.get_ty(ty).as_ref() {
-                    Ok(TypeAnnotation::TypeVarKind(ty))
+                    Ok(TypeAnnotation::TypeVar(ty))
                 } else {
                     Err("not a type variable identifier".into())
                 }
@@ -111,10 +111,10 @@ pub fn parse_ast_to_type_annotation_kinds<T>(
                 slice.as_ref(),
                 locked,
             )?;
-            if !matches!(def, TypeAnnotation::CustomClassKind { .. }) {
+            if !matches!(def, TypeAnnotation::CustomClass { .. }) {
                 unreachable!("must be concretized custom class kind in the virtual")
             }
-            Ok(TypeAnnotation::VirtualKind(def.into()))
+            Ok(TypeAnnotation::Virtual(def.into()))
         }
 
         // list
@@ -131,7 +131,7 @@ pub fn parse_ast_to_type_annotation_kinds<T>(
                 slice.as_ref(),
                 locked,
             )?;
-            Ok(TypeAnnotation::ListKind(def_ann.into()))
+            Ok(TypeAnnotation::List(def_ann.into()))
         }
 
         // tuple
@@ -154,7 +154,7 @@ pub fn parse_ast_to_type_annotation_kinds<T>(
                         )
                     })
                     .collect::<Result<Vec<_>, _>>()?;
-                Ok(TypeAnnotation::TupleKind(type_annotations))
+                Ok(TypeAnnotation::Tuple(type_annotations))
             } else {
                 Err("Expect multiple elements for tuple".into())
             }
@@ -227,7 +227,7 @@ pub fn parse_ast_to_type_annotation_kinds<T>(
                     }
                 };
 
-                Ok(TypeAnnotation::CustomClassKind { id: obj_id, params: param_type_infos })
+                Ok(TypeAnnotation::CustomClass { id: obj_id, params: param_type_infos })
             } else {
                 Err("unsupported expression type for class name".into())
             }
@@ -247,7 +247,7 @@ pub fn get_type_from_type_annotation_kinds(
     ann: &TypeAnnotation,
 ) -> Result<Type, String> {
     match ann {
-        TypeAnnotation::CustomClassKind { id: obj_id, params } => {
+        TypeAnnotation::CustomClass { id: obj_id, params } => {
             let def_read = top_level_defs[obj_id.0].read();
             let class_def: &TopLevelDef = def_read.deref();
             if let TopLevelDef::Class { fields, methods, type_vars, .. } = class_def {
@@ -326,8 +326,8 @@ pub fn get_type_from_type_annotation_kinds(
                 unreachable!("should be class def here")
             }
         }
-        TypeAnnotation::PrimitiveKind(ty) | TypeAnnotation::TypeVarKind(ty) => Ok(*ty),
-        TypeAnnotation::VirtualKind(ty) => {
+        TypeAnnotation::Primitive(ty) | TypeAnnotation::TypeVar(ty) => Ok(*ty),
+        TypeAnnotation::Virtual(ty) => {
             let ty = get_type_from_type_annotation_kinds(
                 top_level_defs,
                 unifier,
@@ -336,7 +336,7 @@ pub fn get_type_from_type_annotation_kinds(
             )?;
             Ok(unifier.add_ty(TypeEnum::TVirtual { ty }))
         }
-        TypeAnnotation::ListKind(ty) => {
+        TypeAnnotation::List(ty) => {
             let ty = get_type_from_type_annotation_kinds(
                 top_level_defs,
                 unifier,
@@ -345,7 +345,7 @@ pub fn get_type_from_type_annotation_kinds(
             )?;
             Ok(unifier.add_ty(TypeEnum::TList { ty }))
         }
-        TypeAnnotation::TupleKind(tys) => {
+        TypeAnnotation::Tuple(tys) => {
             let tys = tys
                 .iter()
                 .map(|x| {
@@ -376,9 +376,9 @@ pub fn get_type_from_type_annotation_kinds(
 /// create copies of `T` and `V`, we will find them out as occured type vars in the analyze_class()
 /// and unify them with the class generic `T`, `V`
 pub fn make_self_type_annotation(type_vars: &[Type], object_id: DefinitionId) -> TypeAnnotation {
-    TypeAnnotation::CustomClassKind {
+    TypeAnnotation::CustomClass {
         id: object_id,
-        params: type_vars.iter().map(|ty| TypeAnnotation::TypeVarKind(*ty)).collect_vec(),
+        params: type_vars.iter().map(|ty| TypeAnnotation::TypeVar(*ty)).collect_vec(),
     }
 }
 
@@ -388,24 +388,24 @@ pub fn make_self_type_annotation(type_vars: &[Type], object_id: DefinitionId) ->
 pub fn get_type_var_contained_in_type_annotation(ann: &TypeAnnotation) -> Vec<TypeAnnotation> {
     let mut result: Vec<TypeAnnotation> = Vec::new();
     match ann {
-        TypeAnnotation::TypeVarKind(..) => result.push(ann.clone()),
-        TypeAnnotation::VirtualKind(ann) => {
+        TypeAnnotation::TypeVar(..) => result.push(ann.clone()),
+        TypeAnnotation::Virtual(ann) => {
             result.extend(get_type_var_contained_in_type_annotation(ann.as_ref()))
         }
-        TypeAnnotation::CustomClassKind { params, .. } => {
+        TypeAnnotation::CustomClass { params, .. } => {
             for p in params {
                 result.extend(get_type_var_contained_in_type_annotation(p));
             }
         }
-        TypeAnnotation::ListKind(ann) => {
+        TypeAnnotation::List(ann) => {
             result.extend(get_type_var_contained_in_type_annotation(ann.as_ref()))
         }
-        TypeAnnotation::TupleKind(anns) => {
+        TypeAnnotation::Tuple(anns) => {
             for a in anns {
                 result.extend(get_type_var_contained_in_type_annotation(a));
             }
         }
-        TypeAnnotation::PrimitiveKind(..) => {}
+        TypeAnnotation::Primitive(..) => {}
     }
     result
 }
@@ -417,8 +417,8 @@ pub fn check_overload_type_annotation_compatible(
     unifier: &mut Unifier,
 ) -> bool {
     match (this, other) {
-        (TypeAnnotation::PrimitiveKind(a), TypeAnnotation::PrimitiveKind(b)) => a == b,
-        (TypeAnnotation::TypeVarKind(a), TypeAnnotation::TypeVarKind(b)) => {
+        (TypeAnnotation::Primitive(a), TypeAnnotation::Primitive(b)) => a == b,
+        (TypeAnnotation::TypeVar(a), TypeAnnotation::TypeVar(b)) => {
             let a = unifier.get_ty(*a);
             let a = a.deref();
             let b = unifier.get_ty(*b);
@@ -433,12 +433,12 @@ pub fn check_overload_type_annotation_compatible(
                 unreachable!("must be type var")
             }
         }
-        (TypeAnnotation::VirtualKind(a), TypeAnnotation::VirtualKind(b))
-        | (TypeAnnotation::ListKind(a), TypeAnnotation::ListKind(b)) => {
+        (TypeAnnotation::Virtual(a), TypeAnnotation::Virtual(b))
+        | (TypeAnnotation::List(a), TypeAnnotation::List(b)) => {
             check_overload_type_annotation_compatible(a.as_ref(), b.as_ref(), unifier)
         }
 
-        (TypeAnnotation::TupleKind(a), TypeAnnotation::TupleKind(b)) => {
+        (TypeAnnotation::Tuple(a), TypeAnnotation::Tuple(b)) => {
             a.len() == b.len() && {
                 a.iter()
                     .zip(b)
@@ -447,8 +447,8 @@ pub fn check_overload_type_annotation_compatible(
         }
 
         (
-            TypeAnnotation::CustomClassKind { id: a, params: a_p },
-            TypeAnnotation::CustomClassKind { id: b, params: b_p },
+            TypeAnnotation::CustomClass { id: a, params: a_p },
+            TypeAnnotation::CustomClass { id: b, params: b_p },
         ) => {
             a.0 == b.0 && {
                 a_p.len() == b_p.len() && {

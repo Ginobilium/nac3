@@ -46,7 +46,7 @@ impl From<&str> for StrRef {
         LOCAL_INTERNER.with(|local| {
             let mut local = local.borrow_mut();
             local.get(s).copied().unwrap_or_else(|| {
-                let r = get_str_ref(&mut get_str_ref_lock(), &s);
+                let r = get_str_ref(&mut get_str_ref_lock(), s);
                 local.insert(s.to_string(), r);
                 r
             })

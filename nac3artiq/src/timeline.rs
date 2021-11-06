@@ -18,12 +18,11 @@ impl TimeFns for NowPinningTimeFns {
             .unwrap_or_else(|| ctx.module.add_global(i64_type, None, "now"));
         let now_raw = ctx.builder.build_load(now.as_pointer_value(), "now");
         if let BasicValueEnum::IntValue(now_raw) = now_raw {
-            let i64_32 = i64_type.const_int(32, false).into();
+            let i64_32 = i64_type.const_int(32, false);
             let now_lo = ctx.builder.build_left_shift(now_raw, i64_32, "now_shl");
             let now_hi = ctx
                 .builder
-                .build_right_shift(now_raw, i64_32, false, "now_lshr")
-                .into();
+                .build_right_shift(now_raw, i64_32, false, "now_lshr");
             ctx.builder.build_or(now_lo, now_hi, "now_or").into()
         } else {
             unreachable!();
@@ -33,7 +32,7 @@ impl TimeFns for NowPinningTimeFns {
     fn emit_at_mu<'ctx, 'a>(&self, ctx: &mut CodeGenContext<'ctx, 'a>, t: BasicValueEnum<'ctx>) {
         let i32_type = ctx.ctx.i32_type();
         let i64_type = ctx.ctx.i64_type();
-        let i64_32 = i64_type.const_int(32, false).into();
+        let i64_32 = i64_type.const_int(32, false);
         if let BasicValueEnum::IntValue(time) = t {
             let time_hi = ctx.builder.build_int_truncate(
                 ctx.builder
@@ -55,7 +54,7 @@ impl TimeFns for NowPinningTimeFns {
                 let now_loptr = unsafe {
                     ctx.builder.build_gep(
                         now_hiptr,
-                        &[i32_type.const_int(1, false).into()],
+                        &[i32_type.const_int(1, false)],
                         "now_gep",
                     )
                 };
@@ -78,7 +77,7 @@ impl TimeFns for NowPinningTimeFns {
     fn emit_delay_mu<'ctx, 'a>(&self, ctx: &mut CodeGenContext<'ctx, 'a>, dt: BasicValueEnum<'ctx>) {
         let i32_type = ctx.ctx.i32_type();
         let i64_type = ctx.ctx.i64_type();
-        let i64_32 = i64_type.const_int(32, false).into();
+        let i64_32 = i64_type.const_int(32, false);
         let now = ctx
             .module
             .get_global("now")
@@ -90,8 +89,7 @@ impl TimeFns for NowPinningTimeFns {
             let now_lo = ctx.builder.build_left_shift(now_raw, i64_32, "now_shl");
             let now_hi = ctx
                 .builder
-                .build_right_shift(now_raw, i64_32, false, "now_lshr")
-                .into();
+                .build_right_shift(now_raw, i64_32, false, "now_lshr");
             let now_val = ctx.builder.build_or(now_lo, now_hi, "now_or");
             let time = ctx.builder.build_int_add(now_val, dt, "now_add");
             let time_hi = ctx.builder.build_int_truncate(
@@ -110,7 +108,7 @@ impl TimeFns for NowPinningTimeFns {
                 let now_loptr = unsafe {
                     ctx.builder.build_gep(
                         now_hiptr,
-                        &[i32_type.const_int(1, false).into()],
+                        &[i32_type.const_int(1, false)],
                         "now_gep",
                     )
                 };

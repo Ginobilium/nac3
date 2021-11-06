@@ -160,14 +160,14 @@ impl TopLevelComposer {
         let mut parent = Self::get_parent(child, temp_def_list);
         while let Some(p) = parent {
             parent = Self::get_parent(&p, temp_def_list);
-            let p_id = if let TypeAnnotation::CustomClassKind { id, .. } = &p {
+            let p_id = if let TypeAnnotation::CustomClass { id, .. } = &p {
                 *id
             } else {
                 unreachable!("must be class kind annotation")
             };
             // check cycle
             let no_cycle = result.iter().all(|x| {
-                if let TypeAnnotation::CustomClassKind { id, .. } = x {
+                if let TypeAnnotation::CustomClass { id, .. } = x {
                     id.0 != p_id.0
                 } else {
                     unreachable!("must be class kind annotation")
@@ -187,7 +187,7 @@ impl TopLevelComposer {
         child: &TypeAnnotation,
         temp_def_list: &[Arc<RwLock<TopLevelDef>>],
     ) -> Option<TypeAnnotation> {
-        let child_id = if let TypeAnnotation::CustomClassKind { id, .. } = child {
+        let child_id = if let TypeAnnotation::CustomClass { id, .. } = child {
             *id
         } else {
             unreachable!("should be class type annotation")

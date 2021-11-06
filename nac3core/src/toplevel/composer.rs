@@ -884,7 +884,7 @@ impl TopLevelComposer {
                     vec![(*class_def_id, class_type_vars.clone())].into_iter().collect(),
                 )?;
 
-                if let TypeAnnotation::CustomClassKind { .. } = &base_ty {
+                if let TypeAnnotation::CustomClass { .. } = &base_ty {
                     class_ancestors.push(base_ty);
                 } else {
                     return Err("class base declaration can only be custom class".into());
@@ -1096,7 +1096,7 @@ impl TopLevelComposer {
                                     get_type_var_contained_in_type_annotation(&type_annotation)
                                         .into_iter()
                                         .map(|x| -> Result<(u32, Type), String> {
-                                            if let TypeAnnotation::TypeVarKind(ty) = x {
+                                            if let TypeAnnotation::TypeVar(ty) = x {
                                                 Ok((Self::get_var_id(ty, unifier)?, ty))
                                             } else {
                                                 unreachable!("must be type var annotation kind")
@@ -1146,7 +1146,7 @@ impl TopLevelComposer {
                                 get_type_var_contained_in_type_annotation(&return_ty_annotation)
                                     .into_iter()
                                     .map(|x| -> Result<(u32, Type), String> {
-                                        if let TypeAnnotation::TypeVarKind(ty) = x {
+                                        if let TypeAnnotation::TypeVar(ty) = x {
                                             Ok((Self::get_var_id(ty, unifier)?, ty))
                                         } else {
                                             unreachable!("must be type var here")
@@ -1303,7 +1303,7 @@ impl TopLevelComposer {
                                     get_type_var_contained_in_type_annotation(&type_ann);
                                 // handle the class type var and the method type var
                                 for type_var_within in type_vars_within {
-                                    if let TypeAnnotation::TypeVarKind(ty) = type_var_within {
+                                    if let TypeAnnotation::TypeVar(ty) = type_var_within {
                                         let id = Self::get_var_id(ty, unifier)?;
                                         if let Some(prev_ty) = method_var_map.insert(id, ty) {
                                             // if already in the list, make sure they are the same?
@@ -1346,7 +1346,7 @@ impl TopLevelComposer {
                                 get_type_var_contained_in_type_annotation(&annotation);
                             // handle the class type var and the method type var
                             for type_var_within in type_vars_within {
-                                if let TypeAnnotation::TypeVarKind(ty) = type_var_within {
+                                if let TypeAnnotation::TypeVar(ty) = type_var_within {
                                     let id = Self::get_var_id(ty, unifier)?;
                                     if let Some(prev_ty) = method_var_map.insert(id, ty) {
                                         // if already in the list, make sure they are the same?
@@ -1365,7 +1365,7 @@ impl TopLevelComposer {
                             let dummy_return_type = unifier.get_fresh_var().0;
                             type_var_to_concrete_def.insert(
                                 dummy_return_type,
-                                TypeAnnotation::PrimitiveKind(primitives.none),
+                                TypeAnnotation::Primitive(primitives.none),
                             );
                             dummy_return_type
                         }
@@ -1423,7 +1423,7 @@ impl TopLevelComposer {
                                 get_type_var_contained_in_type_annotation(&annotation);
                             // handle the class type var and the method type var
                             for type_var_within in type_vars_within {
-                                if let TypeAnnotation::TypeVarKind(t) = type_var_within {
+                                if let TypeAnnotation::TypeVar(t) = type_var_within {
                                     if !class_type_vars_def.contains(&t) {
                                         return Err("class fields can only use type \
                                         vars declared as class generic type vars"
@@ -1481,7 +1481,7 @@ impl TopLevelComposer {
         // since when this function is called, the ancestors of the direct parent
         // are supposed to be already handled, so we only need to deal with the direct parent
         let base = class_ancestor_def.get(1).unwrap();
-        if let TypeAnnotation::CustomClassKind { id, params: _ } = base {
+        if let TypeAnnotation::CustomClass { id, params: _ } = base {
             let base = temp_def_list.get(id.0).unwrap();
             let base = base.read();
             if let TopLevelDef::Class { methods, fields, .. } = &*base {
