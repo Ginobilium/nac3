@@ -232,7 +232,7 @@ fn get_llvm_type<'ctx>(
                     let fields = fields.borrow();
                     let fields = fields_list
                         .iter()
-                        .map(|f| get_llvm_type(ctx, unifier, top_level, type_cache, fields[&f.0]))
+                        .map(|f| get_llvm_type(ctx, unifier, top_level, type_cache, fields[&f.0].0))
                         .collect_vec();
                     ctx.struct_type(&fields, false).ptr_type(AddressSpace::Generic).into()
                 } else {

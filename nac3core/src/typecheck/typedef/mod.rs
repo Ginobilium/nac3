@@ -49,7 +49,7 @@ pub struct FunSignature {
 pub enum TypeVarMeta {
     Generic,
     Sequence(RefCell<Mapping<i32>>),
-    Record(RefCell<Mapping<StrRef>>),
+    Record(RefCell<Mapping<StrRef, (Type, bool)>>),
 }
 
 #[derive(Clone)]
@@ -71,7 +71,7 @@ pub enum TypeEnum {
     },
     TObj {
         obj_id: DefinitionId,
-        fields: RefCell<Mapping<StrRef>>,
+        fields: RefCell<Mapping<StrRef, (Type, bool)>>,
         params: RefCell<VarMap>,
     },
     TVirtual {
@@ -155,7 +155,7 @@ impl Unifier {
         self.unification_table.new_key(Rc::new(a))
     }
 
-    pub fn add_record(&mut self, fields: Mapping<StrRef>) -> Type {
+    pub fn add_record(&mut self, fields: Mapping<StrRef, (Type, bool)>) -> Type {
         let id = self.var_id + 1;
         self.var_id += 1;
         self.add_ty(TypeEnum::TVar {
@@ -394,11 +394,12 @@ impl Unifier {
                     }
                     (Record(fields1), Record(fields2)) => {
                         let mut fields2 = fields2.borrow_mut();
-                        for (key, value) in fields1.borrow().iter() {
-                            if let Some(ty) = fields2.get(key) {
-                                self.unify_impl(*ty, *value, false)?;
+                        for (key, (ty, is_mutable)) in fields1.borrow().iter() {
+                            if let Some((ty2, is_mutable2)) = fields2.get_mut(key) {
+                                self.unify_impl(*ty2, *ty, false)?;
+                                *is_mutable2 |= *is_mutable;
                             } else {
-                                fields2.insert(*key, *value);
+                                fields2.insert(*key, (*ty, *is_mutable));
                             }
                         }
                     }
@@ -495,13 +496,19 @@ impl Unifier {
                 self.set_a_to_b(a, b);
             }
             (TVar { meta: Record(map), id, range, .. }, TObj { fields, .. }) => {
-                for (k, v) in map.borrow().iter() {
-                    let ty = fields
+                for (k, (ty, is_mutable)) in map.borrow().iter() {
+                    let (ty2, is_mutable2) = fields
                         .borrow()
                         .get(k)
                         .copied()
                         .ok_or_else(|| format!("No such attribute {}", k))?;
-                    self.unify_impl(ty, *v, false)?;
+                    // typevar represents the usage of the variable
+                    // it is OK to have immutable usage for mutable fields
+                    // but cannot have mutable usage for immutable fields
+                    if *is_mutable && !is_mutable2 {
+                        return Err(format!("Field {} should be immutable", k));
+                    }
+                    self.unify_impl(*ty, ty2, false)?;
                 }
                 let x = self.check_var_compatibility(*id, b, &range.borrow())?.unwrap_or(b);
                 self.unify_impl(x, b, false)?;
@@ -510,16 +517,19 @@ impl Unifier {
             (TVar { meta: Record(map), id, range, .. }, TVirtual { ty }) => {
                 let ty = self.get_ty(*ty);
                 if let TObj { fields, .. } = ty.as_ref() {
-                    for (k, v) in map.borrow().iter() {
-                        let ty = fields
+                    for (k, (ty, is_mutable)) in map.borrow().iter() {
+                        let (ty2, is_mutable2) = fields
                             .borrow()
                             .get(k)
                             .copied()
                             .ok_or_else(|| format!("No such attribute {}", k))?;
-                        if !matches!(self.get_ty(ty).as_ref(), TFunc { .. }) {
+                        if !matches!(self.get_ty(ty2).as_ref(), TFunc { .. }) {
                             return Err(format!("Cannot access field {} for virtual type", k));
                         }
-                        self.unify_impl(*v, ty, false)?;
+                        if *is_mutable && !is_mutable2 {
+                            return Err(format!("Field {} should be immutable", k));
+                        }
+                        self.unify_impl(*ty, ty2, false)?;
                     }
                 } else {
                     // require annotation...
@@ -643,7 +653,9 @@ impl Unifier {
                 let fields = fields
                     .borrow()
                     .iter()
-                    .map(|(k, v)| format!("{}={}", k, self.stringify(*v, obj_to_name, var_to_name)))
+                    .map(|(k, (v, _))| {
+                        format!("{}={}", k, self.stringify(*v, obj_to_name, var_to_name))
+                    })
                     .join(", ");
                 format!("record[{}]", fields)
             }
@@ -805,7 +817,7 @@ impl Unifier {
                     let params =
                         self.subst_map(&params, mapping, cache).unwrap_or_else(|| params.clone());
                     let fields = self
-                        .subst_map(&fields.borrow(), mapping, cache)
+                        .subst_map2(&fields.borrow(), mapping, cache)
                         .unwrap_or_else(|| fields.borrow().clone());
                     let new_ty = self.add_ty(TypeEnum::TObj {
                         obj_id,
@@ -868,6 +880,27 @@ impl Unifier {
                     map2 = Some(map.clone());
                 }
                 *map2.as_mut().unwrap().get_mut(k).unwrap() = v1;
+            }
+        }
+        map2
+    }
+
+    fn subst_map2<K>(
+        &mut self,
+        map: &Mapping<K, (Type, bool)>,
+        mapping: &VarMap,
+        cache: &mut HashMap<Type, Option<Type>>,
+    ) -> Option<Mapping<K, (Type, bool)>>
+    where
+        K: std::hash::Hash + std::cmp::Eq + std::clone::Clone,
+    {
+        let mut map2 = None;
+        for (k, (v, mutability)) in map.iter() {
+            if let Some(v1) = self.subst_impl(*v, mapping, cache) {
+                if map2.is_none() {
+                    map2 = Some(map.clone());
+                }
+                *map2.as_mut().unwrap().get_mut(k).unwrap() = (v1, *mutability);
             }
         }
         map2

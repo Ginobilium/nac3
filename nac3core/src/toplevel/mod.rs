@@ -85,7 +85,8 @@ pub enum TopLevelDef {
         /// type variables bounded to the class.
         type_vars: Vec<Type>,
         // class fields
-        fields: Vec<(StrRef, Type)>,
+        // name, type, is mutable
+        fields: Vec<(StrRef, Type, bool)>,
         // class methods, pointing to the corresponding function definition.
         methods: Vec<(StrRef, Type, DefinitionId)>,
         // ancestor classes, including itself.

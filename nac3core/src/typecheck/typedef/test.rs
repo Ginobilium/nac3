@@ -39,7 +39,7 @@ impl Unifier {
             (
                 TypeEnum::TVar { meta: Record(fields1), .. },
                 TypeEnum::TVar { meta: Record(fields2), .. },
-            ) => self.map_eq(&fields1.borrow(), &fields2.borrow()),
+            ) => self.map_eq2(&fields1.borrow(), &fields2.borrow()),
             (
                 TypeEnum::TObj { obj_id: id1, params: params1, .. },
                 TypeEnum::TObj { obj_id: id2, params: params2, .. },
@@ -58,6 +58,25 @@ impl Unifier {
         }
         for (k, v) in map1.iter() {
             if !map2.get(k).map(|v1| self.eq(*v, *v1)).unwrap_or(false) {
+                return false;
+            }
+        }
+        true
+    }
+
+    fn map_eq2<K>(
+        &mut self,
+        map1: &Mapping<K, (Type, bool)>,
+        map2: &Mapping<K, (Type, bool)>,
+    ) -> bool
+    where
+        K: std::hash::Hash + std::cmp::Eq + std::clone::Clone,
+    {
+        if map1.len() != map2.len() {
+            return false;
+        }
+        for (k, (ty1, m1)) in map1.iter() {
+            if !map2.get(k).map(|(ty2, m2)| m1 == m2 && self.eq(*ty1, *ty2)).unwrap_or(false) {
                 return false;
             }
         }
@@ -104,7 +123,11 @@ impl TestEnvironment {
             "Foo".into(),
             unifier.add_ty(TypeEnum::TObj {
                 obj_id: DefinitionId(3),
-                fields: [("a".into(), v0)].iter().cloned().collect::<HashMap<_, _>>().into(),
+                fields: [("a".into(), (v0, true))]
+                    .iter()
+                    .cloned()
+                    .collect::<HashMap<_, _>>()
+                    .into(),
                 params: [(id, v0)].iter().cloned().collect::<HashMap<_, _>>().into(),
             }),
         );
@@ -151,7 +174,7 @@ impl TestEnvironment {
                     let eq = s.find('=').unwrap();
                     let key = s[1..eq].into();
                     let result = self.internal_parse(&s[eq + 1..], mapping);
-                    fields.insert(key, result.0);
+                    fields.insert(key, (result.0, true));
                     s = result.1;
                 }
                 (self.unifier.add_record(fields), &s[1..])
@@ -326,7 +349,7 @@ fn test_recursive_subst() {
     let foo_ty = env.unifier.get_ty(foo_id);
     let mapping: HashMap<_, _>;
     if let TypeEnum::TObj { fields, params, .. } = &*foo_ty {
-        fields.borrow_mut().insert("rec".into(), foo_id);
+        fields.borrow_mut().insert("rec".into(), (foo_id, true));
         mapping = params.borrow().iter().map(|(id, _)| (*id, int)).collect();
     } else {
         unreachable!()
@@ -335,8 +358,8 @@ fn test_recursive_subst() {
     let instantiated_ty = env.unifier.get_ty(instantiated);
     if let TypeEnum::TObj { fields, .. } = &*instantiated_ty {
         let fields = fields.borrow();
-        assert!(env.unifier.unioned(*fields.get(&"a".into()).unwrap(), int));
-        assert!(env.unifier.unioned(*fields.get(&"rec".into()).unwrap(), instantiated));
+        assert!(env.unifier.unioned(fields.get(&"a".into()).unwrap().0, int));
+        assert!(env.unifier.unioned(fields.get(&"rec".into()).unwrap().0, instantiated));
     } else {
         unreachable!()
     }
@@ -351,7 +374,7 @@ fn test_virtual() {
     ));
     let bar = env.unifier.add_ty(TypeEnum::TObj {
         obj_id: DefinitionId(5),
-        fields: [("f".into(), fun), ("a".into(), int)]
+        fields: [("f".into(), (fun, false)), ("a".into(), (int, false))]
             .iter()
             .cloned()
             .collect::<HashMap<StrRef, _>>()
@@ -363,15 +386,15 @@ fn test_virtual() {
 
     let a = env.unifier.add_ty(TypeEnum::TVirtual { ty: bar });
     let b = env.unifier.add_ty(TypeEnum::TVirtual { ty: v0 });
-    let c = env.unifier.add_record([("f".into(), v1)].iter().cloned().collect());
+    let c = env.unifier.add_record([("f".into(), (v1, false))].iter().cloned().collect());
     env.unifier.unify(a, b).unwrap();
     env.unifier.unify(b, c).unwrap();
     assert!(env.unifier.eq(v1, fun));
 
-    let d = env.unifier.add_record([("a".into(), v1)].iter().cloned().collect());
+    let d = env.unifier.add_record([("a".into(), (v1, true))].iter().cloned().collect());
     assert_eq!(env.unifier.unify(b, d), Err("Cannot access field a for virtual type".to_string()));
 
-    let d = env.unifier.add_record([("b".into(), v1)].iter().cloned().collect());
+    let d = env.unifier.add_record([("b".into(), (v1, true))].iter().cloned().collect());
     assert_eq!(env.unifier.unify(b, d), Err("No such attribute b".to_string()));
 }
 

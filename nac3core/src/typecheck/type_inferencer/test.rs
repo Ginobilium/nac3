@@ -8,8 +8,8 @@ use crate::{
 use indoc::indoc;
 use inkwell::values::BasicValueEnum;
 use itertools::zip;
-use parking_lot::RwLock;
 use nac3parser::parser::parse_program;
+use parking_lot::RwLock;
 use test_case::test_case;
 
 struct Resolver {
@@ -75,7 +75,7 @@ impl TestEnvironment {
                 }
                 .into(),
             ));
-            fields.borrow_mut().insert("__add__".into(), add_ty);
+            fields.borrow_mut().insert("__add__".into(), (add_ty, false));
         }
         let int64 = unifier.add_ty(TypeEnum::TObj {
             obj_id: DefinitionId(1),
@@ -170,7 +170,7 @@ impl TestEnvironment {
                 }
                 .into(),
             ));
-            fields.borrow_mut().insert("__add__".into(), add_ty);
+            fields.borrow_mut().insert("__add__".into(), (add_ty, false));
         }
         let int64 = unifier.add_ty(TypeEnum::TObj {
             obj_id: DefinitionId(1),
@@ -203,7 +203,9 @@ impl TestEnvironment {
             params: HashMap::new().into(),
         });
         identifier_mapping.insert("None".into(), none);
-        for (i, name) in ["int32", "int64", "float", "bool", "none", "range", "str"].iter().enumerate() {
+        for (i, name) in
+            ["int32", "int64", "float", "bool", "none", "range", "str"].iter().enumerate()
+        {
             top_level_defs.push(
                 RwLock::new(TopLevelDef::Class {
                     name: (*name).into(),
@@ -225,7 +227,7 @@ impl TestEnvironment {
 
         let foo_ty = unifier.add_ty(TypeEnum::TObj {
             obj_id: DefinitionId(7),
-            fields: [("a".into(), v0)].iter().cloned().collect::<HashMap<_, _>>().into(),
+            fields: [("a".into(), (v0, true))].iter().cloned().collect::<HashMap<_, _>>().into(),
             params: [(id, v0)].iter().cloned().collect::<HashMap<_, _>>().into(),
         });
         top_level_defs.push(
@@ -233,7 +235,7 @@ impl TestEnvironment {
                 name: "Foo".into(),
                 object_id: DefinitionId(7),
                 type_vars: vec![v0],
-                fields: [("a".into(), v0)].into(),
+                fields: [("a".into(), v0, true)].into(),
                 methods: Default::default(),
                 ancestors: Default::default(),
                 resolver: None,
@@ -259,7 +261,7 @@ impl TestEnvironment {
         ));
         let bar = unifier.add_ty(TypeEnum::TObj {
             obj_id: DefinitionId(8),
-            fields: [("a".into(), int32), ("b".into(), fun)]
+            fields: [("a".into(), (int32, true)), ("b".into(), (fun, true))]
                 .iter()
                 .cloned()
                 .collect::<HashMap<_, _>>()
@@ -271,7 +273,7 @@ impl TestEnvironment {
                 name: "Bar".into(),
                 object_id: DefinitionId(8),
                 type_vars: Default::default(),
-                fields: [("a".into(), int32), ("b".into(), fun)].into(),
+                fields: [("a".into(), int32, true), ("b".into(), fun, true)].into(),
                 methods: Default::default(),
                 ancestors: Default::default(),
                 resolver: None,
@@ -288,7 +290,7 @@ impl TestEnvironment {
 
         let bar2 = unifier.add_ty(TypeEnum::TObj {
             obj_id: DefinitionId(9),
-            fields: [("a".into(), bool), ("b".into(), fun)]
+            fields: [("a".into(), (bool, true)), ("b".into(), (fun, false))]
                 .iter()
                 .cloned()
                 .collect::<HashMap<_, _>>()
@@ -300,7 +302,7 @@ impl TestEnvironment {
                 name: "Bar2".into(),
                 object_id: DefinitionId(9),
                 type_vars: Default::default(),
-                fields: [("a".into(), bool), ("b".into(), fun)].into(),
+                fields: [("a".into(), bool, true), ("b".into(), fun, false)].into(),
                 methods: Default::default(),
                 ancestors: Default::default(),
                 resolver: None,

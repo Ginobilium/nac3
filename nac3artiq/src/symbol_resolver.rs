@@ -135,7 +135,7 @@ impl Resolver {
                     .collect();
                 let mut fields_ty = HashMap::new();
                 for method in methods.iter() {
-                    fields_ty.insert(method.0, method.1);
+                    fields_ty.insert(method.0, (method.1, false));
                 }
                 for field in fields.iter() {
                     let name: String = field.0.into();
@@ -148,7 +148,7 @@ impl Resolver {
                         // field type mismatch
                         return Ok(None);
                     }
-                    fields_ty.insert(field.0, ty);
+                    fields_ty.insert(field.0, (ty, field.2));
                 }
                 for (_, ty) in var_map.iter() {
                     // must be concrete type
@@ -379,7 +379,7 @@ impl Resolver {
             if let TopLevelDef::Class { fields, .. } = &*definition {
                 let values: Result<Option<Vec<_>>, _> = fields
                     .iter()
-                    .map(|(name, _)| {
+                    .map(|(name, _, _)| {
                         self.get_obj_value(obj.getattr(&name.to_string())?, helper, ctx)
                     })
                     .collect();
@@ -413,7 +413,7 @@ impl SymbolResolver for Resolver {
         id_to_type.get(&str).cloned().or_else(|| {
             let py_id = self.name_to_pyid.get(&str);
             let result = py_id.and_then(|id| {
-                self.pyid_to_type.read().get(&id).copied().or_else(|| {
+                self.pyid_to_type.read().get(id).copied().or_else(|| {
                     Python::with_gil(|py| -> PyResult<Option<Type>> {
                         let obj: &PyAny = self.module.extract(py)?;
                         let members: &PyList = PyModule::import(py, "inspect")?
@@ -491,7 +491,7 @@ impl SymbolResolver for Resolver {
         let mut id_to_def = self.id_to_def.lock();
         id_to_def.get(&id).cloned().or_else(|| {
             let py_id = self.name_to_pyid.get(&id);
-            let result = py_id.and_then(|id| self.pyid_to_def.read().get(&id).copied());
+            let result = py_id.and_then(|id| self.pyid_to_def.read().get(id).copied());
             if let Some(result) = &result {
                 id_to_def.insert(id, *result);
             }

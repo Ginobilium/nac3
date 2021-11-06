@@ -461,7 +461,7 @@ impl TopLevelComposer {
             "str".into(),
             "self".into(),
             "Kernel".into(),
-            "KernelImmutable".into(),
+            "KernelInvariant".into(),
         ]);
         let defined_names: HashSet<String> = Default::default();
         let method_class: HashMap<DefinitionId, DefinitionId> = Default::default();
@@ -1391,22 +1391,24 @@ impl TopLevelComposer {
                     if let ast::ExprKind::Name { id: attr, .. } = &target.node {
                         if defined_fields.insert(attr.to_string()) {
                             let dummy_field_type = unifier.get_fresh_var().0;
-                            class_fields_def.push((*attr, dummy_field_type));
 
-                            // handle Kernel[T], KernelImmutable[T]
-                            let annotation = {
-                                match &annotation.as_ref().node {
-                                    ast::ExprKind::Subscript { value, slice, .. }
-                                        if {
-                                            matches!(&value.node, ast::ExprKind::Name { id, .. }
-                                                if id == &"Kernel".into() || id == &"KernelImmutable".into())
-                                        } =>
-                                    {
-                                        slice
+                            // handle Kernel[T], KernelInvariant[T]
+                            let (annotation, mutable) = {
+                                let mut result = None;
+                                if let ast::ExprKind::Subscript { value, slice, .. } = &annotation.as_ref().node {
+                                    if let ast::ExprKind::Name { id, .. } = &value.node {
+                                        result = if id == &"Kernel".into() {
+                                            Some((slice, true))
+                                        } else if id == &"KernelInvariant".into() {
+                                            Some((slice, false))
+                                        } else {
+                                            None
+                                        }
                                     }
-                                    _ => annotation,
                                 }
+                                result.unwrap_or((annotation, true))
                             };
+                            class_fields_def.push((*attr, dummy_field_type, mutable));
 
                             let annotation = parse_ast_to_type_annotation_kinds(
                                 class_resolver,
@@ -1532,26 +1534,13 @@ impl TopLevelComposer {
                 class_methods_def.extend(new_child_methods);
 
                 // handle class fields
-                let mut new_child_fields: Vec<(StrRef, Type)> = Vec::new();
+                let mut new_child_fields: Vec<(StrRef, Type, bool)> = Vec::new();
                 // let mut is_override: HashSet<_> = HashSet::new();
-                for (anc_field_name, anc_field_ty) in fields {
-                    let to_be_added = (*anc_field_name, *anc_field_ty);
+                for (anc_field_name, anc_field_ty, mutable) in fields {
+                    let to_be_added = (*anc_field_name, *anc_field_ty, *mutable);
                     // find if there is a fields with the same name in the child class
                     for (class_field_name, ..) in class_fields_def.iter() {
                         if class_field_name == anc_field_name {
-                            // let ok = Self::check_overload_field_type(
-                            //     *class_field_ty,
-                            //     *anc_field_ty,
-                            //     unifier,
-                            //     type_var_to_concrete_def,
-                            // );
-                            // if !ok {
-                            //     return Err("fields has same name as ancestors' field, but incompatible type".into());
-                            // }
-                            // // mark it as added
-                            // is_override.insert(class_field_name.to_string());
-                            // to_be_added = (class_field_name.to_string(), *class_field_ty);
-                            // break;
                             return Err(format!(
                                 "field `{}` has already declared in the ancestor classes",
                                 class_field_name
@@ -1560,9 +1549,9 @@ impl TopLevelComposer {
                     }
                     new_child_fields.push(to_be_added);
                 }
-                for (class_field_name, class_field_ty) in class_fields_def.iter() {
+                for (class_field_name, class_field_ty, mutable) in class_fields_def.iter() {
                     if !is_override.contains(class_field_name) {
-                        new_child_fields.push((*class_field_name, *class_field_ty));
+                        new_child_fields.push((*class_field_name, *class_field_ty, *mutable));
                     }
                 }
                 class_fields_def.drain(..);
@@ -1636,7 +1625,7 @@ impl TopLevelComposer {
                             unreachable!("must be init function here")
                         }
                         let all_inited = Self::get_all_assigned_field(body.as_slice())?;
-                        if fields.iter().any(|(x, _)| !all_inited.contains(x)) {
+                        if fields.iter().any(|x| !all_inited.contains(&x.0)) {
                             return Err(format!(
                                 "fields of class {} not fully initialized",
                                 class_name

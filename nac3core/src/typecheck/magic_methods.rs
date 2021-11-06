@@ -86,33 +86,39 @@ pub fn impl_binop(
         };
         for op in ops {
             fields.borrow_mut().insert(binop_name(op).into(), {
-                unifier.add_ty(TypeEnum::TFunc(
-                    FunSignature {
-                        ret: ret_ty,
-                        vars: function_vars.clone(),
-                        args: vec![FuncArg {
-                            ty: other_ty,
-                            default_value: None,
-                            name: "other".into(),
-                        }],
-                    }
-                    .into(),
-                ))
+                (
+                    unifier.add_ty(TypeEnum::TFunc(
+                        FunSignature {
+                            ret: ret_ty,
+                            vars: function_vars.clone(),
+                            args: vec![FuncArg {
+                                ty: other_ty,
+                                default_value: None,
+                                name: "other".into(),
+                            }],
+                        }
+                        .into(),
+                    )),
+                    false,
+                )
             });
 
             fields.borrow_mut().insert(binop_assign_name(op).into(), {
-                unifier.add_ty(TypeEnum::TFunc(
-                    FunSignature {
-                        ret: store.none,
-                        vars: function_vars.clone(),
-                        args: vec![FuncArg {
-                            ty: other_ty,
-                            default_value: None,
-                            name: "other".into(),
-                        }],
-                    }
-                    .into(),
-                ))
+                (
+                    unifier.add_ty(TypeEnum::TFunc(
+                        FunSignature {
+                            ret: store.none,
+                            vars: function_vars.clone(),
+                            args: vec![FuncArg {
+                                ty: other_ty,
+                                default_value: None,
+                                name: "other".into(),
+                            }],
+                        }
+                        .into(),
+                    )),
+                    false,
+                )
             });
         }
     } else {
@@ -131,9 +137,12 @@ pub fn impl_unaryop(
         for op in ops {
             fields.borrow_mut().insert(
                 unaryop_name(op).into(),
-                unifier.add_ty(TypeEnum::TFunc(
-                    FunSignature { ret: ret_ty, vars: HashMap::new(), args: vec![] }.into(),
-                )),
+                (
+                    unifier.add_ty(TypeEnum::TFunc(
+                        FunSignature { ret: ret_ty, vars: HashMap::new(), args: vec![] }.into(),
+                    )),
+                    false,
+                ),
             );
         }
     } else {
@@ -152,18 +161,21 @@ pub fn impl_cmpop(
         for op in ops {
             fields.borrow_mut().insert(
                 comparison_name(op).unwrap().into(),
-                unifier.add_ty(TypeEnum::TFunc(
-                    FunSignature {
-                        ret: store.bool,
-                        vars: HashMap::new(),
-                        args: vec![FuncArg {
-                            ty: other_ty,
-                            default_value: None,
-                            name: "other".into(),
-                        }],
-                    }
-                    .into(),
-                )),
+                (
+                    unifier.add_ty(TypeEnum::TFunc(
+                        FunSignature {
+                            ret: store.bool,
+                            vars: HashMap::new(),
+                            args: vec![FuncArg {
+                                ty: other_ty,
+                                default_value: None,
+                                name: "other".into(),
+                            }],
+                        }
+                        .into(),
+                    )),
+                    false,
+                ),
             );
         }
     } else {

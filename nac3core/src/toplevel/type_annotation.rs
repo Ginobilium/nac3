@@ -307,24 +307,14 @@ pub fn get_type_from_type_annotation_kinds(
                         .iter()
                         .map(|(name, ty, _)| {
                             let subst_ty = unifier.subst(*ty, &subst).unwrap_or(*ty);
-                            (*name, subst_ty)
+                            // methods are immutable
+                            (*name, (subst_ty, false))
                         })
-                        .collect::<HashMap<_, Type>>();
-                    tobj_fields.extend(fields.iter().map(|(name, ty)| {
+                        .collect::<HashMap<_, _>>();
+                    tobj_fields.extend(fields.iter().map(|(name, ty, mutability)| {
                         let subst_ty = unifier.subst(*ty, &subst).unwrap_or(*ty);
-                        (*name, subst_ty)
+                        (*name, (subst_ty, *mutability))
                     }));
-
-                    // println!("tobj_fields: {:?}", tobj_fields);
-                    // println!(
-                    //     "{:?}: {}\n",
-                    //     tobj_fields.get("__init__").unwrap(),
-                    //     unifier.stringify(
-                    //         *tobj_fields.get("__init__").unwrap(),
-                    //         &mut |id| format!("class{}", id),
-                    //         &mut |id| format!("tvar{}", id)
-                    //     )
-                    // );
 
                     Ok(unifier.add_ty(TypeEnum::TObj {
                         obj_id: *obj_id,

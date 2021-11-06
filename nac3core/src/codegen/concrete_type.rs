@@ -44,7 +44,7 @@ pub enum ConcreteTypeEnum {
     },
     TObj {
         obj_id: DefinitionId,
-        fields: HashMap<StrRef, ConcreteType>,
+        fields: HashMap<StrRef, (ConcreteType, bool)>,
         params: HashMap<u32, ConcreteType>,
     },
     TVirtual {
@@ -148,7 +148,7 @@ impl ConcreteTypeStore {
                         .borrow()
                         .iter()
                         .map(|(name, ty)| {
-                            (*name, self.from_unifier_type(unifier, primitives, *ty, cache))
+                            (*name, (self.from_unifier_type(unifier, primitives, ty.0, cache), ty.1))
                         })
                         .collect(),
                     params: params
@@ -225,7 +225,7 @@ impl ConcreteTypeStore {
                 fields: fields
                     .iter()
                     .map(|(name, cty)| {
-                        (*name, self.to_unifier_type(unifier, primitives, *cty, cache))
+                        (*name, (self.to_unifier_type(unifier, primitives, cty.0, cache), cty.1))
                     })
                     .collect::<HashMap<_, _>>()
                     .into(),

@@ -12,7 +12,7 @@ impl TopLevelDef {
             } => {
                 let fields_str = fields
                     .iter()
-                    .map(|(n, ty)| {
+                    .map(|(n, ty, _)| {
                         (n.to_string(), unifier.default_stringify(*ty))
                     })
                     .collect_vec();

@@ -2,16 +2,19 @@ use std::collections::HashMap;
 use std::fmt::Debug;
 use std::{cell::RefCell, sync::Arc};
 
-use crate::{codegen::CodeGenContext, toplevel::{DefinitionId, TopLevelDef}};
 use crate::typecheck::{
     type_inferencer::PrimitiveStore,
     typedef::{Type, Unifier},
 };
+use crate::{
+    codegen::CodeGenContext,
+    toplevel::{DefinitionId, TopLevelDef},
+};
 use crate::{location::Location, typecheck::typedef::TypeEnum};
-use itertools::{chain, izip};
-use parking_lot::RwLock;
-use nac3parser::ast::{Expr, StrRef};
 use inkwell::values::BasicValueEnum;
+use itertools::{chain, izip};
+use nac3parser::ast::{Expr, StrRef};
+use parking_lot::RwLock;
 
 #[derive(Clone, PartialEq, Debug)]
 pub enum SymbolValue {
@@ -35,7 +38,11 @@ pub trait SymbolResolver {
     ) -> Option<Type>;
     // get the top-level definition of identifiers
     fn get_identifier_def(&self, str: StrRef) -> Option<DefinitionId>;
-    fn get_symbol_value<'ctx, 'a>(&self, str: StrRef, ctx: &mut CodeGenContext<'ctx, 'a>) -> Option<BasicValueEnum<'ctx>>;
+    fn get_symbol_value<'ctx, 'a>(
+        &self,
+        str: StrRef,
+        ctx: &mut CodeGenContext<'ctx, 'a>,
+    ) -> Option<BasicValueEnum<'ctx>>;
     fn get_symbol_location(&self, str: StrRef) -> Option<Location>;
     // handle function call etc.
 }
@@ -62,9 +69,7 @@ pub fn parse_type_annotation<T>(
     expr: &Expr<T>,
 ) -> Result<Type, String> {
     use nac3parser::ast::ExprKind::*;
-    let ids = IDENTIFIER_ID.with(|ids| {
-        *ids
-    });
+    let ids = IDENTIFIER_ID.with(|ids| *ids);
     let int32_id = ids[0];
     let int64_id = ids[1];
     let float_id = ids[2];
@@ -99,8 +104,8 @@ pub fn parse_type_annotation<T>(
                         }
                         let fields = RefCell::new(
                             chain(
-                                fields.iter().map(|(k, v)| (*k, *v)),
-                                methods.iter().map(|(k, v, _)| (*k, *v)),
+                                fields.iter().map(|(k, v, m)| (*k, (*v, *m))),
+                                methods.iter().map(|(k, v, _)| (*k, (*v, false))),
                             )
                             .collect(),
                         );
@@ -124,7 +129,7 @@ pub fn parse_type_annotation<T>(
                     }
                 }
             }
-        },
+        }
         Subscript { value, slice, .. } => {
             if let Name { id, .. } = &value.node {
                 if *id == virtual_id {
@@ -209,14 +214,14 @@ pub fn parse_type_annotation<T>(
                         }
                         let mut fields = fields
                             .iter()
-                            .map(|(attr, ty)| {
+                            .map(|(attr, ty, is_mutable)| {
                                 let ty = unifier.subst(*ty, &subst).unwrap_or(*ty);
-                                (*attr, ty)
+                                (*attr, (ty, *is_mutable))
                             })
                             .collect::<HashMap<_, _>>();
                         fields.extend(methods.iter().map(|(attr, ty, _)| {
                             let ty = unifier.subst(*ty, &subst).unwrap_or(*ty);
-                            (*attr, ty)
+                            (*attr, (ty, false))
                         }));
                         Ok(unifier.add_ty(TypeEnum::TObj {
                             obj_id,

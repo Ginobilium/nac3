@@ -10,7 +10,7 @@ use itertools::izip;
 use nac3parser::ast::{
     self,
     fold::{self, Fold},
-    Arguments, Comprehension, ExprKind, Located, Location, StrRef,
+    Arguments, Comprehension, ExprContext, ExprKind, Located, Location, StrRef,
 };
 
 #[cfg(test)]
@@ -77,11 +77,19 @@ impl<'a> fold::Fold<()> for Inferencer<'a> {
         Ok(None)
     }
 
-    fn fold_stmt(&mut self, node: ast::Stmt<()>) -> Result<ast::Stmt<Self::TargetU>, Self::Error> {
+    fn fold_stmt(
+        &mut self,
+        mut node: ast::Stmt<()>,
+    ) -> Result<ast::Stmt<Self::TargetU>, Self::Error> {
         let stmt = match node.node {
             // we don't want fold over type annotation
-            ast::StmtKind::AnnAssign { target, annotation, value, simple, config_comment } => {
+            ast::StmtKind::AnnAssign { mut target, annotation, value, simple, config_comment } => {
                 self.infer_pattern(&target)?;
+                // fix parser problem...
+                if let ExprKind::Attribute { ctx, .. } = &mut target.node {
+                    *ctx = ExprContext::Store;
+                }
+
                 let target = Box::new(self.fold_expr(*target)?);
                 let value = if let Some(v) = value {
                     let ty = Box::new(self.fold_expr(*v)?);
@@ -105,14 +113,25 @@ impl<'a> fold::Fold<()> for Inferencer<'a> {
                 Located {
                     location: node.location,
                     custom: None,
-                    node: ast::StmtKind::AnnAssign { target, annotation, value, simple, config_comment },
+                    node: ast::StmtKind::AnnAssign {
+                        target,
+                        annotation,
+                        value,
+                        simple,
+                        config_comment,
+                    },
                 }
             }
             ast::StmtKind::For { ref target, .. } => {
                 self.infer_pattern(target)?;
                 fold::fold_stmt(self, node)?
             }
-            ast::StmtKind::Assign { ref targets, ref config_comment, .. } => {
+            ast::StmtKind::Assign { ref mut targets, ref config_comment, .. } => {
+                for target in targets.iter_mut() {
+                    if let ExprKind::Attribute { ctx, .. } = &mut target.node {
+                        *ctx = ExprContext::Store;
+                    }
+                }
                 if targets.iter().all(|t| matches!(t.node, ast::ExprKind::Name { .. })) {
                     if let ast::StmtKind::Assign { targets, value, .. } = node.node {
                         let value = self.fold_expr(*value)?;
@@ -158,7 +177,7 @@ impl<'a> fold::Fold<()> for Inferencer<'a> {
                                 targets,
                                 value: Box::new(value),
                                 type_comment: None,
-                                config_comment: config_comment.clone()
+                                config_comment: config_comment.clone(),
                             },
                             custom: None,
                         });
@@ -199,7 +218,9 @@ impl<'a> fold::Fold<()> for Inferencer<'a> {
                 }
             }
             ast::StmtKind::AnnAssign { .. } | ast::StmtKind::Expr { .. } => {}
-            ast::StmtKind::Break { .. } | ast::StmtKind::Continue { .. } | ast::StmtKind::Pass { .. } => {}
+            ast::StmtKind::Break { .. }
+            | ast::StmtKind::Continue { .. }
+            | ast::StmtKind::Pass { .. } => {}
             ast::StmtKind::With { items, .. } => {
                 for item in items.iter() {
                     let ty = item.context_expr.custom.unwrap();
@@ -209,17 +230,21 @@ impl<'a> fold::Fold<()> for Inferencer<'a> {
                         let fields = fields.borrow();
                         fast_path = true;
                         if let Some(enter) = fields.get(&"__enter__".into()).cloned() {
-                            if let TypeEnum::TFunc(signature) = &*self.unifier.get_ty(enter) {
+                            if let TypeEnum::TFunc(signature) = &*self.unifier.get_ty(enter.0) {
                                 let signature = signature.borrow();
                                 if !signature.args.is_empty() {
                                     return report_error(
                                         "__enter__ method should take no argument other than self",
-                                        stmt.location
-                                    )
+                                        stmt.location,
+                                    );
                                 }
                                 if let Some(var) = &item.optional_vars {
                                     if signature.vars.is_empty() {
-                                        self.unify(signature.ret, var.custom.unwrap(), &stmt.location)?;
+                                        self.unify(
+                                            signature.ret,
+                                            var.custom.unwrap(),
+                                            &stmt.location,
+                                        )?;
                                     } else {
                                         fast_path = false;
                                     }
@@ -230,17 +255,17 @@ impl<'a> fold::Fold<()> for Inferencer<'a> {
                         } else {
                             return report_error(
                                 "__enter__ method is required for context manager",
-                                stmt.location
+                                stmt.location,
                             );
                         }
                         if let Some(exit) = fields.get(&"__exit__".into()).cloned() {
-                            if let TypeEnum::TFunc(signature) = &*self.unifier.get_ty(exit) {
+                            if let TypeEnum::TFunc(signature) = &*self.unifier.get_ty(exit.0) {
                                 let signature = signature.borrow();
                                 if !signature.args.is_empty() {
                                     return report_error(
                                         "__exit__ method should take no argument other than self",
-                                        stmt.location
-                                    )
+                                        stmt.location,
+                                    );
                                 }
                             } else {
                                 fast_path = false;
@@ -248,26 +273,29 @@ impl<'a> fold::Fold<()> for Inferencer<'a> {
                         } else {
                             return report_error(
                                 "__exit__ method is required for context manager",
-                                stmt.location
+                                stmt.location,
                             );
                         }
                     }
                     if !fast_path {
                         let enter = TypeEnum::TFunc(RefCell::new(FunSignature {
                             args: vec![],
-                            ret: item.optional_vars.as_ref().map_or_else(|| self.unifier.get_fresh_var().0, |var| var.custom.unwrap()),
-                            vars: Default::default()
+                            ret: item.optional_vars.as_ref().map_or_else(
+                                || self.unifier.get_fresh_var().0,
+                                |var| var.custom.unwrap(),
+                            ),
+                            vars: Default::default(),
                         }));
                         let enter = self.unifier.add_ty(enter);
                         let exit = TypeEnum::TFunc(RefCell::new(FunSignature {
                             args: vec![],
                             ret: self.unifier.get_fresh_var().0,
-                            vars: Default::default()
+                            vars: Default::default(),
                         }));
                         let exit = self.unifier.add_ty(exit);
                         let mut fields = HashMap::new();
-                        fields.insert("__enter__".into(), enter);
-                        fields.insert("__exit__".into(), exit);
+                        fields.insert("__enter__".into(), (enter, false));
+                        fields.insert("__exit__".into(), (exit, false));
                         let record = self.unifier.add_record(fields);
                         self.unify(ty, record, &stmt.location)?;
                     }
@@ -330,8 +358,8 @@ impl<'a> fold::Fold<()> for Inferencer<'a> {
             }
             ast::ExprKind::List { elts, .. } => Some(self.infer_list(elts)?),
             ast::ExprKind::Tuple { elts, .. } => Some(self.infer_tuple(elts)?),
-            ast::ExprKind::Attribute { value, attr, ctx: _ } => {
-                Some(self.infer_attribute(value, *attr)?)
+            ast::ExprKind::Attribute { value, attr, ctx } => {
+                Some(self.infer_attribute(value, *attr, ctx)?)
             }
             ast::ExprKind::BoolOp { values, .. } => Some(self.infer_bool_ops(values)?),
             ast::ExprKind::BinOp { left, op, right } => {
@@ -399,7 +427,8 @@ impl<'a> Inferencer<'a> {
         if let TypeEnum::TObj { params: class_params, fields, .. } = &*self.unifier.get_ty(obj) {
             if class_params.borrow().is_empty() {
                 if let Some(ty) = fields.borrow().get(&method) {
-                    if let TypeEnum::TFunc(sign) = &*self.unifier.get_ty(*ty) {
+                    let ty = ty.0;
+                    if let TypeEnum::TFunc(sign) = &*self.unifier.get_ty(ty) {
                         let sign = sign.borrow();
                         if sign.vars.is_empty() {
                             let call = Call {
@@ -419,7 +448,7 @@ impl<'a> Inferencer<'a> {
                                 .rev()
                                 .collect();
                             self.unifier
-                                .unify_call(&call, *ty, &sign, &required)
+                                .unify_call(&call, ty, &sign, &required)
                                 .map_err(|old| format!("{} at {}", old, location))?;
                             return Ok(sign.ret);
                         }
@@ -437,7 +466,7 @@ impl<'a> Inferencer<'a> {
         });
         self.calls.insert(location.into(), call);
         let call = self.unifier.add_ty(TypeEnum::TCall(vec![call].into()));
-        let fields = once((method, call)).collect();
+        let fields = once((method, (call, false))).collect();
         let record = self.unifier.add_record(fields);
         self.constrain(obj, record, &location)?;
         Ok(ret)
@@ -538,7 +567,11 @@ impl<'a> Inferencer<'a> {
         let target = new_context.fold_expr(*generator.target)?;
         let iter = new_context.fold_expr(*generator.iter)?;
         if new_context.unifier.unioned(iter.custom.unwrap(), new_context.primitives.range) {
-            new_context.unify(target.custom.unwrap(), new_context.primitives.int32, &target.location)?;
+            new_context.unify(
+                target.custom.unwrap(),
+                new_context.primitives.int32,
+                &target.location,
+            )?;
         } else {
             let list = new_context.unifier.add_ty(TypeEnum::TList { ty: target.custom.unwrap() });
             new_context.unify(iter.custom.unwrap(), list, &iter.location)?;
@@ -755,12 +788,27 @@ impl<'a> Inferencer<'a> {
         &mut self,
         value: &ast::Expr<Option<Type>>,
         attr: StrRef,
+        ctx: &ExprContext,
     ) -> InferenceResult {
-        let (attr_ty, _) = self.unifier.get_fresh_var();
-        let fields = once((attr, attr_ty)).collect();
-        let record = self.unifier.add_record(fields);
-        self.constrain(value.custom.unwrap(), record, &value.location)?;
-        Ok(attr_ty)
+        let ty = value.custom.unwrap();
+        if let TypeEnum::TObj { fields, .. } = &*self.unifier.get_ty(ty) {
+            // just a fast path
+            let fields = fields.borrow();
+            match (fields.get(&attr), ctx == &ExprContext::Store) {
+                (Some((ty, true)), _) => Ok(*ty),
+                (Some((ty, false)), false) => Ok(*ty),
+                (Some((_, false)), true) => {
+                    report_error(&format!("Field {} should be immutable", attr), value.location)
+                }
+                (None, _) => report_error(&format!("No such field {}", attr), value.location),
+            }
+        } else {
+            let (attr_ty, _) = self.unifier.get_fresh_var();
+            let fields = once((attr, (attr_ty, ctx == &ExprContext::Store))).collect();
+            let record = self.unifier.add_record(fields);
+            self.constrain(value.custom.unwrap(), record, &value.location)?;
+            Ok(attr_ty)
+        }
     }
 
     fn infer_bool_ops(&mut self, values: &[ast::Expr<Option<Type>>]) -> InferenceResult {
