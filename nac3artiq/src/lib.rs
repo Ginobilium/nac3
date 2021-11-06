@@ -470,7 +470,10 @@ impl Nac3 {
         if isa != Isa::Host {
             linker_args.push("-T".to_string() + self.working_directory.path().join("kernel.ld").to_str().unwrap());
         }
-        linker_args.extend(thread_names.iter().map(|name| name.to_owned() + ".o"));
+        linker_args.extend(thread_names.iter().map(|name| {
+            let name_o = name.to_owned() + ".o";
+            self.working_directory.path().join(name_o.as_str()).to_str().unwrap().to_string()
+        }));
         if let Ok(linker_status) = Command::new("ld.lld").args(linker_args).status() {
             if !linker_status.success() {
                 return Err(exceptions::PyRuntimeError::new_err(
