@@ -110,7 +110,7 @@ class Core:
             obj = method
             name = ""
 
-        compiler.compile_method(obj, name, args)
+        compiler.compile_method_to_file(obj, name, args, "module.elf")
 
     @kernel
     def reset(self):

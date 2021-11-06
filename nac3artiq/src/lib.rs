@@ -317,11 +317,12 @@ impl Nac3 {
         Ok(())
     }
 
-    fn compile_method(
+    fn compile_method_to_file(
         &mut self,
         obj: &PyAny,
-        method_name: String,
+        method_name: &str,
         args: Vec<&PyAny>,
+        filename: &str,
         py: Python,
     ) -> PyResult<()> {
         let id_fun = PyModule::import(py, "builtins")?.getattr("id")?;
@@ -464,7 +465,7 @@ impl Nac3 {
             "--eh-frame-hdr".to_string(),
             "-x".to_string(),
             "-o".to_string(),
-            "module.elf".to_string(),
+            filename.to_string(),
         ];
         if isa != Isa::Host {
             linker_args.push("-T".to_string() + self.working_directory.path().join("kernel.ld").to_str().unwrap());
@@ -483,6 +484,19 @@ impl Nac3 {
         }
 
         Ok(())
+    }
+
+    fn compile_method_to_mem(
+        &mut self,
+        obj: &PyAny,
+        method_name: &str,
+        args: Vec<&PyAny>,
+        py: Python,
+    ) -> PyResult<Vec<u8>> {
+        let filename_path = self.working_directory.path().join("module.elf");
+        let filename = filename_path.to_str().unwrap();
+        self.compile_method_to_file(obj, method_name, args, filename, py)?;
+        Ok(fs::read(filename).unwrap())
     }
 }
 
