@@ -12,5 +12,6 @@ crate-type = ["cdylib"]
 pyo3 = { version = "0.14", features = ["extension-module"] }
 inkwell = { git = "https://github.com/TheDan64/inkwell", branch = "master", features = ["llvm12-0"] }
 parking_lot = "0.11"
+tempfile = "3"
 nac3parser = { path = "../nac3parser" }
 nac3core = { path = "../nac3core" }

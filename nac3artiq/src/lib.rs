@@ -1,6 +1,5 @@
 use std::collections::{HashMap, HashSet};
 use std::fs;
-use std::path::Path;
 use std::process::Command;
 use std::sync::Arc;
 
@@ -25,6 +24,8 @@ use nac3core::{
     typecheck::typedef::{FunSignature, FuncArg},
     typecheck::{type_inferencer::PrimitiveStore, typedef::Type},
 };
+
+use tempfile::{self, TempDir};
 
 use crate::{codegen::ArtiqCodeGenerator, symbol_resolver::Resolver};
 
@@ -68,6 +69,7 @@ struct Nac3 {
     to_be_registered: Vec<PyObject>,
     primitive_ids: PrimitivePythonId,
     global_value_ids: Arc<Mutex<HashSet<u64>>>,
+    working_directory: TempDir,
 }
 
 impl Nac3 {
@@ -283,6 +285,9 @@ impl Nac3 {
                 .unwrap(),
         };
 
+        let working_directory = tempfile::Builder::new().prefix("nac3-").tempdir().unwrap();
+        fs::write(working_directory.path().join("kernel.ld"), include_bytes!("kernel.ld")).unwrap();
+
         Ok(Nac3 {
             isa,
             time_fns,
@@ -296,6 +301,7 @@ impl Nac3 {
             pyid_to_type: Default::default(),
             to_be_registered: Default::default(),
             global_value_ids: Default::default(),
+            working_directory
         })
     }
 
@@ -405,6 +411,7 @@ impl Nac3 {
             calls: instance.calls,
         };
         let isa = self.isa;
+        let working_directory = self.working_directory.path().to_owned();
         let f = Arc::new(WithCall::new(Box::new(move |module| {
             let builder = PassManagerBuilder::create();
             builder.set_optimization_level(OptimizationLevel::Default);
@@ -436,7 +443,7 @@ impl Nac3 {
                 .write_to_file(
                     module,
                     FileType::Object,
-                    Path::new(&format!("{}.o", module.get_name().to_str().unwrap())),
+                    &working_directory.join(&format!("{}.o", module.get_name().to_str().unwrap())),
                 )
                 .expect("couldn't write module to file");
         })));
@@ -460,7 +467,7 @@ impl Nac3 {
             "module.elf".to_string(),
         ];
         if isa != Isa::Host {
-            linker_args.push("-Tkernel.ld".to_string());
+            linker_args.push("-T".to_string() + self.working_directory.path().join("kernel.ld").to_str().unwrap());
         }
         linker_args.extend(thread_names.iter().map(|name| name.to_owned() + ".o"));
         if let Ok(linker_status) = Command::new("ld.lld").args(linker_args).status() {
