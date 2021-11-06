@@ -2,9 +2,9 @@ from min_artiq import *
 
 @nac3
 class Demo:
-    core: Core
-    led0: TTLOut
-    led1: TTLOut
+    core: KernelInvariant[Core]
+    led0: KernelInvariant[TTLOut]
+    led1: KernelInvariant[TTLOut]
 
     def __init__(self):
         self.core = Core()

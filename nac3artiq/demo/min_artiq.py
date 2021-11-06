@@ -3,6 +3,7 @@ from functools import wraps
 import sys
 from types import SimpleNamespace
 from numpy import int32, int64
+from typing import Generic, TypeVar
 
 import nac3artiq
 
@@ -18,8 +19,10 @@ compiler = nac3artiq.NAC3(core_arguments["target"])
 allow_module_registration = True
 registered_ids = set()
 
-def KernelInvariant(t):
-    return t
+
+T = TypeVar('T')
+class KernelInvariant(Generic[T]):
+    pass
 
 
 def register_module_of(obj):
@@ -100,7 +103,7 @@ def rtio_input_data(channel: int32) -> int32:
 
 @nac3
 class Core:
-    ref_period: float
+    ref_period: KernelInvariant[float]
 
     def __init__(self):
         self.ref_period = core_arguments["ref_period"]
@@ -146,11 +149,10 @@ class Core:
 
 @nac3
 class TTLOut:
-    core: Core
-    channel: int32
-    target_o: int32
+    core: KernelInvariant[Core]
+    channel: KernelInvariant[int32]
+    target_o: KernelInvariant[int32]
 
-    @portable
     def __init__(self, core: Core, channel: int32):
         self.core = core
         self.channel = channel
