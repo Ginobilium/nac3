@@ -12,16 +12,13 @@ class Demo:
         self.led1 = TTLOut(self.core, 19)
 
     @kernel
-    def run_k(self):
+    def run(self):
         self.core.reset()
         while True:
             with parallel:
                 self.led0.pulse(100.*ms)
                 self.led1.pulse(100.*ms)
             self.core.delay(100.*ms)
-
-    def run(self):
-        self.core.run(self.run_k)
 
 
 if __name__ == "__main__":

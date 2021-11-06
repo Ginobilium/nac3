@@ -1,6 +1,7 @@
-from inspect import isclass, getmodule
+from inspect import isclass, getfullargspec, getmodule
 from functools import wraps
 import sys
+from types import SimpleNamespace
 from numpy import int32, int64
 
 import nac3artiq
@@ -37,13 +38,20 @@ def extern(function):
     return function
 
 
-def kernel(class_or_function):
+def kernel(function_or_method):
     """Decorates a function or method to be executed on the core device."""
-    register_module_of(class_or_function)
-    @wraps(class_or_function)
-    def device_only(*args, **kwargs):
-        raise RuntimeError("Kernels must not be called directly, use core.run(kernel_function) instead")
-    return device_only
+    register_module_of(function_or_method)
+    argspec = getfullargspec(function_or_method)
+    if argspec.args and argspec.args[0] == "self":
+        @wraps(function_or_method)
+        def run_on_core(self, *args, **kwargs):
+            fake_method = SimpleNamespace(__self__=self, __name__=function_or_method.__name__)
+            self.core.run(fake_method, *args, **kwargs)
+    else:
+        @wraps(function_or_method)
+        def run_on_core(*args, **kwargs):
+            raise RuntimeError("Kernel functions need explicit core.run()")
+    return run_on_core
 
 
 def portable(function):
