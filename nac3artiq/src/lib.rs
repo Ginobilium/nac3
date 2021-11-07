@@ -9,7 +9,7 @@ use inkwell::{
     OptimizationLevel,
 };
 use pyo3::prelude::*;
-use pyo3::{exceptions, types::PyList, types::PyBytes};
+use pyo3::{exceptions, types::PyList, types::PySet, types::PyBytes};
 use nac3parser::{
     ast::{self, StrRef},
     parser::{self, parse_program},
@@ -66,7 +66,6 @@ struct Nac3 {
     pyid_to_type: Arc<RwLock<HashMap<u64, Type>>>,
     composer: TopLevelComposer,
     top_level: Option<Arc<TopLevelContext>>,
-    to_be_registered: Vec<PyObject>,
     primitive_ids: PrimitivePythonId,
     global_value_ids: Arc<Mutex<HashSet<u64>>>,
     working_directory: TempDir,
@@ -299,20 +298,14 @@ impl Nac3 {
             top_level: None,
             pyid_to_def: Default::default(),
             pyid_to_type: Default::default(),
-            to_be_registered: Default::default(),
             global_value_ids: Default::default(),
             working_directory
         })
     }
 
-    fn register_module(&mut self, obj: PyObject) {
-        // Delay registration until all referenced variables are supposed to exist on the CPython side
-        self.to_be_registered.push(obj);
-    }
-
-    fn analyze(&mut self) -> PyResult<()> {
-        for obj in std::mem::take(&mut self.to_be_registered).into_iter() {
-            self.register_module_impl(obj)?;
+    fn analyze_modules(&mut self, modules: &PySet) -> PyResult<()> {
+        for obj in modules.iter() {
+            self.register_module_impl(obj.into())?;
         }
         Ok(())
     }

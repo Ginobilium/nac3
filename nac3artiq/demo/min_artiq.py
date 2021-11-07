@@ -17,7 +17,7 @@ core_arguments = device_db.device_db["core"]["arguments"]
 
 compiler = nac3artiq.NAC3(core_arguments["target"])
 allow_module_registration = True
-registered_ids = set()
+registered_modules = set()
 
 
 T = TypeVar('T')
@@ -26,13 +26,9 @@ class KernelInvariant(Generic[T]):
 
 
 def register_module_of(obj):
-    global registered_ids
     assert allow_module_registration
-    module = getmodule(obj)
-    module_id = id(module)
-    if module_id not in registered_ids:
-        compiler.register_module(module)
-        registered_ids.add(module_id)
+    # Delay NAC3 analysis until all referenced variables are supposed to exist on the CPython side.
+    registered_modules.add(getmodule(obj))
 
 
 def extern(function):
@@ -111,7 +107,7 @@ class Core:
     def run(self, method, *args, **kwargs):
         global allow_module_registration
         if allow_module_registration:
-            compiler.analyze()
+            compiler.analyze_modules(registered_modules)
             allow_module_registration = False
 
         if hasattr(method, "__self__"):
