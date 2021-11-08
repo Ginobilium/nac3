@@ -1654,7 +1654,7 @@ impl TopLevelComposer {
                 if let TypeEnum::TFunc(func_sig) = self.unifier.get_ty(*signature).as_ref() {
                     let FunSignature { args, ret, vars } = &*func_sig.borrow();
                     // None if is not class method
-                    let self_type = {
+                    let uninst_self_type = {
                         if let Some(class_id) = self.method_class.get(&DefinitionId(id)) {
                             let class_def = self.definition_ast_list.get(class_id.0).unwrap();
                             let class_def = class_def.0.read();
@@ -1666,7 +1666,7 @@ impl TopLevelComposer {
                                     &self.primitives_ty,
                                     &ty_ann,
                                 )?;
-                                Some(self_ty)
+                                Some((self_ty, type_vars.clone()))
                             } else {
                                 unreachable!("must be class def")
                             }
@@ -1717,9 +1717,34 @@ impl TopLevelComposer {
                         };
                         let self_type = {
                             let unifier = &mut self.unifier;
-                            self_type.map(|x| unifier.subst(x, &subst).unwrap_or(x))
+                            uninst_self_type
+                                .clone()
+                                .map(|(self_type, type_vars)| {
+                                    let subst_for_self = {
+                                        let class_ty_var_ids = type_vars
+                                            .iter()
+                                            .map(|x| {
+                                                if let TypeEnum::TVar { id, .. } = &*unifier.get_ty(*x) {
+                                                    *id
+                                                } else {
+                                                    unreachable!("must be type var here");
+                                                }
+                                            })
+                                            .collect::<HashSet<_>>();
+                                        subst
+                                            .iter()
+                                            .filter_map(|(ty_var_id, ty_var_target)| {
+                                                if class_ty_var_ids.contains(ty_var_id) {
+                                                    Some((*ty_var_id, *ty_var_target))
+                                                } else {
+                                                    None
+                                                }
+                                            })
+                                            .collect::<HashMap<_, _>>()
+                                    };
+                                    unifier.subst(self_type, &subst_for_self).unwrap_or(self_type)
+                                })
                         };
-
                         let mut identifiers = {
                             // NOTE: none and function args?
                             let mut result: HashSet<_> = HashSet::new();

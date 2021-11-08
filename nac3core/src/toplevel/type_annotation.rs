@@ -280,9 +280,11 @@ pub fn get_type_from_type_annotation_kinds(
                             {
                                 let ok: bool = {
                                     // create a temp type var and unify to check compatibility
-                                    let temp =
-                                        unifier.get_fresh_var_with_range(range.borrow().as_slice());
-                                    unifier.unify(temp.0, p).is_ok()
+                                    p == *tvar || {
+                                        let temp =
+                                            unifier.get_fresh_var_with_range(range.borrow().as_slice());
+                                        unifier.unify(temp.0, p).is_ok()
+                                    }
                                 };
                                 if ok {
                                     result.insert(*id, p);

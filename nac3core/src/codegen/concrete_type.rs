@@ -147,8 +147,14 @@ impl ConcreteTypeStore {
                     fields: fields
                         .borrow()
                         .iter()
-                        .map(|(name, ty)| {
-                            (*name, (self.from_unifier_type(unifier, primitives, ty.0, cache), ty.1))
+                        .filter_map(|(name, ty)| {
+                            // filter out functions as they can have type vars and
+                            // will not affect codegen
+                            if let TypeEnum::TFunc( .. ) = &*unifier.get_ty(ty.0) {
+                                None
+                            } else {
+                                Some((*name, (self.from_unifier_type(unifier, primitives, ty.0, cache), ty.1)))
+                            }
                         })
                         .collect(),
                     params: params
