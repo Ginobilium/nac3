@@ -6,6 +6,7 @@ use inkwell::FloatPredicate;
 use crate::{
     symbol_resolver::SymbolValue,
     typecheck::type_inferencer::{FunctionData, Inferencer},
+    codegen::expr::get_subst_key,
 };
 
 use super::*;
@@ -1835,21 +1836,13 @@ impl TopLevelComposer {
 
                         instance_to_stmt.insert(
                             // NOTE: refer to codegen/expr/get_subst_key function
-                            {
-                                let unifier = &mut self.unifier;
-                                subst
-                                    .keys()
-                                    .sorted()
-                                    .map(|id| {
-                                        let ty = subst.get(id).unwrap();
-                                        unifier.stringify(
-                                            *ty,
-                                            &mut |id| id.to_string(),
-                                            &mut |id| id.to_string(),
-                                        )
-                                    })
-                                    .join(", ")
-                            },
+                            
+                            get_subst_key(
+                                &mut self.unifier,
+                                self_type,
+                                &subst,
+                                None
+                            ),
                             FunInstance {
                                 body: Arc::new(fun_body),
                                 unifier_id: 0,
