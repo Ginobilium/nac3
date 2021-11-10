@@ -1,6 +1,5 @@
-from inspect import isclass, getfullargspec, getmodule
+from inspect import getfullargspec, getmodule
 from functools import wraps
-import sys
 from types import SimpleNamespace
 from numpy import int32, int64
 from typing import Generic, TypeVar
