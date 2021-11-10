@@ -33,6 +33,12 @@ pub extern "C" fn rtio_output(target: i32, data: i32) {
     println!("rtio_output @{} target={:04x} data={}", unsafe { NOW }, target, data);
 }
 
+#[no_mangle]
+pub extern "C" fn print_int(x: i32) {
+    println!("print_int: {}", x);
+}
+
+
 fn main() {
     let filename = env::args().nth(1).unwrap();
     unsafe {
