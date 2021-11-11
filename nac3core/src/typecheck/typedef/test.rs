@@ -149,7 +149,7 @@ impl TestEnvironment {
         // for testing only, so we can just panic when the input is malformed
         let end = typ.find(|c| ['[', ',', ']', '='].contains(&c)).unwrap_or_else(|| typ.len());
         match &typ[..end] {
-            "Tuple" => {
+            "tuple" => {
                 let mut s = &typ[end..];
                 assert!(&s[0..1] == "[");
                 let mut ty = Vec::new();
@@ -160,7 +160,7 @@ impl TestEnvironment {
                 }
                 (self.unifier.add_ty(TypeEnum::TTuple { ty }), &s[1..])
             }
-            "List" => {
+            "list" => {
                 assert!(&typ[end..end + 1] == "[");
                 let (ty, s) = self.internal_parse(&typ[end + 1..], mapping);
                 assert!(&s[0..1] == "]");
@@ -217,8 +217,8 @@ impl TestEnvironment {
     ; "simple variable"
 )]
 #[test_case(2,
-    &[("v1", "List[v2]"), ("v1", "List[float]")],
-    &[("v1", "List[float]"), ("v2", "float")]
+    &[("v1", "list[v2]"), ("v1", "list[float]")],
+    &[("v1", "list[float]"), ("v2", "float")]
     ; "list element"
 )]
 #[test_case(3,
@@ -283,24 +283,24 @@ fn test_unify(
 
 #[test_case(2,
     &[
-        ("v1", "Tuple[int]"),
-        ("v2", "List[int]"),
+        ("v1", "tuple[int]"),
+        ("v2", "list[int]"),
     ],
     (("v1", "v2"), "Cannot unify list[0] with tuple[0]")
     ; "type mismatch"
 )]
 #[test_case(2,
     &[
-        ("v1", "Tuple[int]"),
-        ("v2", "Tuple[float]"),
+        ("v1", "tuple[int]"),
+        ("v2", "tuple[float]"),
     ],
     (("v1", "v2"), "Cannot unify 0 with 1")
     ; "tuple parameter mismatch"
 )]
 #[test_case(2,
     &[
-        ("v1", "Tuple[int,int]"),
-        ("v2", "Tuple[int]"),
+        ("v1", "tuple[int,int]"),
+        ("v2", "tuple[int]"),
     ],
     (("v1", "v2"), "Cannot unify tuples with length 2 and 1")
     ; "tuple length mismatch"
@@ -404,15 +404,15 @@ fn test_typevar_range() {
     let int = env.parse("int", &HashMap::new());
     let boolean = env.parse("bool", &HashMap::new());
     let float = env.parse("float", &HashMap::new());
-    let int_list = env.parse("List[int]", &HashMap::new());
-    let float_list = env.parse("List[float]", &HashMap::new());
+    let int_list = env.parse("list[int]", &HashMap::new());
+    let float_list = env.parse("list[float]", &HashMap::new());
 
     // unification between v and int
     // where v in (int, bool)
     let v = env.unifier.get_fresh_var_with_range(&[int, boolean]).0;
     env.unifier.unify(int, v).unwrap();
 
-    // unification between v and List[int]
+    // unification between v and list[int]
     // where v in (int, bool)
     let v = env.unifier.get_fresh_var_with_range(&[int, boolean]).0;
     assert_eq!(
@@ -432,17 +432,17 @@ fn test_typevar_range() {
     let v1_list = env.unifier.add_ty(TypeEnum::TList { ty: v1 });
     let v = env.unifier.get_fresh_var_with_range(&[int, v1_list]).0;
     // unification between v and int
-    // where v in (int, List[v1]), v1 in (int, bool)
+    // where v in (int, list[v1]), v1 in (int, bool)
     env.unifier.unify(int, v).unwrap();
 
     let v = env.unifier.get_fresh_var_with_range(&[int, v1_list]).0;
-    // unification between v and List[int]
-    // where v in (int, List[v1]), v1 in (int, bool)
+    // unification between v and list[int]
+    // where v in (int, list[v1]), v1 in (int, bool)
     env.unifier.unify(int_list, v).unwrap();
 
     let v = env.unifier.get_fresh_var_with_range(&[int, v1_list]).0;
-    // unification between v and List[float]
-    // where v in (int, List[v1]), v1 in (int, bool)
+    // unification between v and list[float]
+    // where v in (int, list[v1]), v1 in (int, bool)
     assert_eq!(
         env.unifier.unify(float_list, v),
         Err("Cannot unify variable 8 with list[1] due to incompatible value range".to_string())
@@ -505,7 +505,7 @@ fn test_rigid_var() {
     let list_a = env.unifier.add_ty(TypeEnum::TList { ty: a });
     let list_x = env.unifier.add_ty(TypeEnum::TList { ty: x });
     let int = env.parse("int", &HashMap::new());
-    let list_int = env.parse("List[int]", &HashMap::new());
+    let list_int = env.parse("list[int]", &HashMap::new());
 
     assert_eq!(env.unifier.unify(a, b), Err("Cannot unify var3 with var2".to_string()));
     env.unifier.unify(list_a, list_x).unwrap();
@@ -521,7 +521,7 @@ fn test_instantiation() {
     let int = env.parse("int", &HashMap::new());
     let boolean = env.parse("bool", &HashMap::new());
     let float = env.parse("float", &HashMap::new());
-    let list_int = env.parse("List[int]", &HashMap::new());
+    let list_int = env.parse("list[int]", &HashMap::new());
 
     let obj_map: HashMap<_, _> =
         [(0usize, "int"), (1, "float"), (2, "bool")].iter().cloned().collect();
