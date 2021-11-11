@@ -5,7 +5,14 @@
 
   outputs = { self, nixpkgs }:
     let
-      pkgs = import nixpkgs { system = "x86_64-linux"; };
+      # We can't use overlays because llvm dependencies are handled internally in llvmPackages_xx
+      pkgs-orig = import nixpkgs { system = "x86_64-linux"; };
+      nixpkgs-patched = pkgs-orig.applyPatches {
+        name = "nixpkgs";
+        src = nixpkgs;
+        patches = [ ./llvm-future-riscv-abi.diff ./llvm-restrict-targets.diff ];
+      };
+      pkgs = import nixpkgs-patched { system = "x86_64-linux"; };
     in rec {
       packages.x86_64-linux = {
         nac3artiq = pkgs.python3Packages.toPythonModule (
@@ -46,5 +53,10 @@
       hydraJobs = {
         inherit (packages.x86_64-linux) nac3artiq;
       };
+  };
+
+  nixConfig = {
+    binaryCachePublicKeys = ["nixbld.m-labs.hk-1:5aSRVA5b320xbNvu30tqxVPXpld73bhtOeH6uAjRyHc="];
+    binaryCaches = ["https://nixbld.m-labs.hk" "https://cache.nixos.org"];
   };
 }

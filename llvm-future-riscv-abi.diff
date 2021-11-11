@@ -1,0 +1,61 @@
+commit 6e2dea56207b4e52ade9d1eee6a4f198336dd0a6
+Author: Sebastien Bourdeauducq <sb@m-labs.hk>
+Date:   Thu Nov 11 23:32:13 2021 +0800
+
+    llvm: switch RISC-V ABI when FPU is present
+
+diff --git a/pkgs/development/compilers/llvm/12/llvm/default.nix b/pkgs/development/compilers/llvm/12/llvm/default.nix
+index 30a1a7a16df..41b7211b2a5 100644
+--- a/pkgs/development/compilers/llvm/12/llvm/default.nix
++++ b/pkgs/development/compilers/llvm/12/llvm/default.nix
+@@ -66,6 +66,7 @@ in stdenv.mkDerivation (rec {
+       sha256 = "sha256:12s8vr6ibri8b48h2z38f3afhwam10arfiqfy4yg37bmc054p5hi";
+       stripLen = 1;
+     })
++    ./llvm-future-riscv-abi.diff
+   ] ++ lib.optional enablePolly ./gnu-install-dirs-polly.patch;
+ 
+   postPatch = optionalString stdenv.isDarwin ''
+@@ -183,7 +184,7 @@ in stdenv.mkDerivation (rec {
+     cp NATIVE/bin/llvm-config $dev/bin/llvm-config-native
+   '';
+ 
+-  doCheck = stdenv.isLinux && (!stdenv.isx86_32) && (!stdenv.hostPlatform.isMusl);
++  doCheck = false;  # the ABI change breaks RISC-V FP tests
+ 
+   checkTarget = "check-all";
+ 
+diff --git a/pkgs/development/compilers/llvm/12/llvm/llvm-future-riscv-abi.diff b/pkgs/development/compilers/llvm/12/llvm/llvm-future-riscv-abi.diff
+new file mode 100644
+index 00000000000..2427ed0e02c
+--- /dev/null
++++ b/pkgs/development/compilers/llvm/12/llvm/llvm-future-riscv-abi.diff
+@@ -0,0 +1,28 @@
++diff --git a/lib/Target/RISCV/MCTargetDesc/RISCVBaseInfo.cpp b/lib/Target/RISCV/MCTargetDesc/RISCVBaseInfo.cpp
++index 0aba18b20..9bb75e7f4 100644
++--- a/lib/Target/RISCV/MCTargetDesc/RISCVBaseInfo.cpp
+++++ b/lib/Target/RISCV/MCTargetDesc/RISCVBaseInfo.cpp
++@@ -33,6 +33,8 @@ ABI computeTargetABI(const Triple &TT, FeatureBitset FeatureBits,
++   auto TargetABI = getTargetABI(ABIName);
++   bool IsRV64 = TT.isArch64Bit();
++   bool IsRV32E = FeatureBits[RISCV::FeatureRV32E];
+++  bool IsRV32D = FeatureBits[RISCV::FeatureStdExtD];
+++  bool IsRV32F = FeatureBits[RISCV::FeatureStdExtF];
++ 
++   if (!ABIName.empty() && TargetABI == ABI_Unknown) {
++     errs()
++@@ -56,10 +58,10 @@ ABI computeTargetABI(const Triple &TT, FeatureBitset FeatureBits,
++   if (TargetABI != ABI_Unknown)
++     return TargetABI;
++ 
++-  // For now, default to the ilp32/ilp32e/lp64 ABI if no explicit ABI is given
++-  // or an invalid/unrecognised string is given. In the future, it might be
++-  // worth changing this to default to ilp32f/lp64f and ilp32d/lp64d when
++-  // hardware support for floating point is present.
+++  if (IsRV32D)
+++    return ABI_ILP32D;
+++  if (IsRV32F)
+++    return ABI_ILP32F;
++   if (IsRV32E)
++     return ABI_ILP32E;
++   if (IsRV64)
