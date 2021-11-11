@@ -143,7 +143,7 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
         }
     }
 
-    fn gen_int_ops(
+    pub fn gen_int_ops(
         &mut self,
         op: &Operator,
         lhs: BasicValueEnum<'ctx>,
@@ -178,7 +178,7 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
         }
     }
 
-    fn gen_float_ops(
+    pub fn gen_float_ops(
         &mut self,
         op: &Operator,
         lhs: BasicValueEnum<'ctx>,

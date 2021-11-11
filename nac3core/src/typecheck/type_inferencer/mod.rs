@@ -313,6 +313,10 @@ impl<'a> fold::Fold<()> for Inferencer<'a> {
                 }
                 (None, None) => {}
             },
+            ast::StmtKind::AugAssign { target, op, value, .. } => {
+                let res_ty = self.infer_bin_ops(stmt.location, target, op, value)?;
+                self.unify(res_ty, target.custom.unwrap(), &stmt.location)?;
+            }
             _ => return report_error("Unsupported statement type", stmt.location),
         };
         Ok(stmt)

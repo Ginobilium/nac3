@@ -340,6 +340,26 @@ pub fn gen_stmt<'ctx, 'a, G: CodeGenerator + ?Sized>(
         StmtKind::While { .. } => return generator.gen_while(ctx, stmt),
         StmtKind::For { .. } => return generator.gen_for(ctx, stmt),
         StmtKind::With { .. } => return generator.gen_with(ctx, stmt),
+        StmtKind::AugAssign { target, op, value, .. } => {
+            let value = {
+                let ty1 = ctx.unifier.get_representative(target.custom.unwrap());
+                let ty2 = ctx.unifier.get_representative(value.custom.unwrap());
+                let left = generator.gen_expr(ctx, target).unwrap();
+                let right = generator.gen_expr(ctx, value).unwrap();
+
+                // we can directly compare the types, because we've got their representatives
+                // which would be unchanged until further unification, which we would never do
+                // when doing code generation for function instances
+                if ty1 == ty2 && [ctx.primitives.int32, ctx.primitives.int64].contains(&ty1) {
+                    ctx.gen_int_ops(op, left, right)
+                } else if ty1 == ty2 && ctx.primitives.float == ty1 {
+                    ctx.gen_float_ops(op, left, right)
+                } else {
+                    unimplemented!()
+                }
+            };
+            generator.gen_assign(ctx, target, value);
+        }
         _ => unimplemented!(),
     };
     false
