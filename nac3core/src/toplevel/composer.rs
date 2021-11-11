@@ -1646,11 +1646,14 @@ impl TopLevelComposer {
                             unreachable!("must be init function here")
                         }
                         let all_inited = Self::get_all_assigned_field(body.as_slice())?;
-                        if fields.iter().any(|x| !all_inited.contains(&x.0)) {
-                            return Err(format!(
-                                "fields of class {} not fully initialized",
-                                class_name
-                            ));
+                        for (f, _, _) in fields {
+                            if !all_inited.contains(f) {
+                                return Err(format!(
+                                    "fields `{}` of class `{}` not fully initialized",
+                                    f,
+                                    class_name
+                                ));
+                            }
                         }
                     }
                 }
