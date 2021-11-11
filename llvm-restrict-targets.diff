@@ -6,7 +6,7 @@ index 41b7211b2a5..dfc707f034d 100644
      "-DLLVM_HOST_TRIPLE=${stdenv.hostPlatform.config}"
      "-DLLVM_DEFAULT_TARGET_TRIPLE=${stdenv.hostPlatform.config}"
      "-DLLVM_ENABLE_DUMP=ON"
-+    "-DLLVM_TARGETS_TO_BUILD=X86:ARM;RISCV"
++    "-DLLVM_TARGETS_TO_BUILD=X86;ARM;RISCV"
    ] ++ optionals enableSharedLibraries [
      "-DLLVM_LINK_LLVM_DYLIB=ON"
    ] ++ optionals enableManpages [
