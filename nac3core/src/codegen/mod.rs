@@ -280,7 +280,13 @@ pub fn gen_func<'ctx, G: CodeGenerator + ?Sized>(
         // this should be unification between variables and concrete types
         // and should not cause any problem...
         let b = task.store.to_unifier_type(&mut unifier, &primitives, *b, &mut cache);
-        unifier.unify(*a, b).unwrap();
+        unifier.unify(*a, b).or_else(|err| {
+            if matches!(&*unifier.get_ty(*a), TypeEnum::TRigidVar { .. }) {
+                Ok(unifier.replace_rigid_var(*a, b))
+            } else {
+                Err(err)
+            }
+        }).unwrap()
     }
 
     // rebuild primitive store with unique representatives

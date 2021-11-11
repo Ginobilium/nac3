@@ -1171,8 +1171,17 @@ impl TopLevelComposer {
                             primitives_store.none
                         }
                     };
-                    var_id.extend_from_slice(
-                        function_var_map.keys().into_iter().copied().collect_vec().as_slice(),
+                    var_id.extend_from_slice(function_var_map
+                        .iter()
+                        .filter_map(|(id, ty)| {
+                            if matches!(&*unifier.get_ty(*ty), TypeEnum::TVar { range, .. } if range.borrow().is_empty()) {
+                                None
+                            } else {
+                                Some(*id)
+                            }
+                        })
+                        .collect_vec()
+                        .as_slice()
                     );
                     let function_ty = unifier.add_ty(TypeEnum::TFunc(
                         FunSignature { args: arg_types, ret: return_ty, vars: function_var_map }
@@ -1375,9 +1384,20 @@ impl TopLevelComposer {
                     if let TopLevelDef::Function { var_id, .. } =
                         temp_def_list.get(method_id.0).unwrap().write().deref_mut()
                     {
-                        var_id.extend_from_slice(
-                            method_var_map.keys().into_iter().copied().collect_vec().as_slice(),
+                        var_id.extend_from_slice(method_var_map
+                            .iter()
+                            .filter_map(|(id, ty)| {
+                                if matches!(&*unifier.get_ty(*ty), TypeEnum::TVar { range, .. } if range.borrow().is_empty()) {
+                                    None
+                                } else {
+                                    Some(*id)
+                                }
+                            })
+                            .collect_vec()
+                            .as_slice()
                         );
+                    } else {
+                        unreachable!()
                     }
                     let method_type = unifier.add_ty(TypeEnum::TFunc(
                         FunSignature { args: arg_types, ret: ret_type, vars: method_var_map }
@@ -1649,6 +1669,7 @@ impl TopLevelComposer {
                 simple_name,
                 signature,
                 resolver,
+                var_id: insted_vars,
                 ..
             } = &mut *function_def
             {
@@ -1675,20 +1696,20 @@ impl TopLevelComposer {
                             None
                         }
                     };
+                    // carefully handle those with bounds, without bounds and no typevars
+                    // if class methods, `vars` also contains all class typevars here
                     let (type_var_subst_comb, no_range_vars) = {
                         let unifier = &mut self.unifier;
                         let mut no_ranges: Vec<Type> = Vec::new();
-                        let var_ids = vars.iter().map(|(id, ty)| {
-                            if matches!(unifier.get_ty(*ty).as_ref(), TypeEnum::TVar { range, .. } if range.borrow().is_empty()) {
-                                no_ranges.push(*ty);
-                            }
-                            *id
-                        })
-                        .collect_vec();
+                        let var_ids = vars.keys().copied().collect_vec();
                         let var_combs = vars
                             .iter()
                             .map(|(_, ty)| {
-                                unifier.get_instantiations(*ty).unwrap_or_else(|| vec![*ty])
+                                unifier.get_instantiations(*ty).unwrap_or_else(|| {
+                                    let rigid = unifier.get_fresh_rigid_var().0;
+                                    no_ranges.push(rigid);
+                                    vec![rigid]
+                                })
                             })
                             .multi_cartesian_product()
                             .collect_vec();
@@ -1835,13 +1856,11 @@ impl TopLevelComposer {
                         }
 
                         instance_to_stmt.insert(
-                            // NOTE: refer to codegen/expr/get_subst_key function
-                            
                             get_subst_key(
                                 &mut self.unifier,
                                 self_type,
                                 &subst,
-                                None
+                                Some(insted_vars),
                             ),
                             FunInstance {
                                 body: Arc::new(fun_body),
