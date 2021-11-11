@@ -1,4 +1,4 @@
-from inspect import getfullargspec, getmodule
+from inspect import getfullargspec
 from functools import wraps
 from types import SimpleNamespace
 from numpy import int32, int64
@@ -11,34 +11,38 @@ __all__ = ["KernelInvariant", "extern", "kernel", "portable", "nac3",
            "Core", "TTLOut", "parallel", "sequential"]
 
 
-import device_db
-core_arguments = device_db.device_db["core"]["arguments"]
-
-compiler = nac3artiq.NAC3(core_arguments["target"])
-allow_module_registration = True
-registered_modules = set()
-
-
 T = TypeVar('T')
 class KernelInvariant(Generic[T]):
     pass
 
 
-def register_module_of(obj):
-    assert allow_module_registration
-    # Delay NAC3 analysis until all referenced variables are supposed to exist on the CPython side.
-    registered_modules.add(getmodule(obj))
+import device_db
+core_arguments = device_db.device_db["core"]["arguments"]
+
+compiler = nac3artiq.NAC3(core_arguments["target"])
+allow_registration = True
+# Delay NAC3 analysis until all referenced variables are supposed to exist on the CPython side.
+registered_functions = set()
+registered_classes = set()
+
+def register_function(fun):
+    assert allow_registration
+    registered_functions.add(fun)
+
+def register_class(cls):
+    assert allow_registration
+    registered_classes.add(cls)
 
 
 def extern(function):
     """Decorates a function declaration defined by the core device runtime."""
-    register_module_of(function)
+    register_function(function)
     return function
 
 
 def kernel(function_or_method):
     """Decorates a function or method to be executed on the core device."""
-    register_module_of(function_or_method)
+    register_function(function_or_method)
     argspec = getfullargspec(function_or_method)
     if argspec.args and argspec.args[0] == "self":
         @wraps(function_or_method)
@@ -54,7 +58,7 @@ def kernel(function_or_method):
 
 def portable(function):
     """Decorates a function or method to be executed on the same device (host/core device) as the caller."""
-    register_module_of(function)
+    register_function(function)
     return function
 
 
@@ -63,7 +67,7 @@ def nac3(cls):
     Decorates a class to be analyzed by NAC3.
     All classes containing kernels or portable methods must use this decorator.
     """
-    register_module_of(cls)
+    register_class(cls)
     return cls
 
 
@@ -104,10 +108,10 @@ class Core:
         self.ref_period = core_arguments["ref_period"]
 
     def run(self, method, *args, **kwargs):
-        global allow_module_registration
-        if allow_module_registration:
-            compiler.analyze_modules(registered_modules)
-            allow_module_registration = False
+        global allow_registration
+        if allow_registration:
+            compiler.analyze(registered_functions, registered_classes)
+            allow_registration = False
 
         if hasattr(method, "__self__"):
             obj = method.__self__

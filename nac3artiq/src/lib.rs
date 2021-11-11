@@ -72,15 +72,15 @@ struct Nac3 {
 }
 
 impl Nac3 {
-    fn register_module_impl(&mut self, obj: PyObject) -> PyResult<()> {
+    fn register_module(&mut self, module: PyObject, registered_class_ids: &HashSet<u64>) -> PyResult<()> {
         let mut name_to_pyid: HashMap<StrRef, u64> = HashMap::new();
         let (module_name, source_file) = Python::with_gil(|py| -> PyResult<(String, String)> {
-            let obj: &PyAny = obj.extract(py)?;
+            let module: &PyAny = module.extract(py)?;
             let builtins = PyModule::import(py, "builtins")?;
             let id_fn = builtins.getattr("id")?;
             let members: &PyList = PyModule::import(py, "inspect")?
                 .getattr("getmembers")?
-                .call1((obj,))?
+                .call1((module,))?
                 .cast_as()?;
             for member in members.iter() {
                 let key: &str = member.get_item(0)?.extract()?;
@@ -88,8 +88,8 @@ impl Nac3 {
                 name_to_pyid.insert(key.into(), val);
             }
             Ok((
-                obj.getattr("__name__")?.extract()?,
-                obj.getattr("__file__")?.extract()?,
+                module.getattr("__name__")?.extract()?,
+                module.getattr("__file__")?.extract()?,
             ))
         })?;
 
@@ -107,7 +107,7 @@ impl Nac3 {
             global_value_ids: self.global_value_ids.clone(),
             class_names: Default::default(),
             name_to_pyid: name_to_pyid.clone(),
-            module: obj,
+            module: module.clone(),
         }) as Arc<dyn SymbolResolver + Send + Sync>;
         let mut name_to_def = HashMap::new();
         let mut name_to_type = HashMap::new();
@@ -117,6 +117,7 @@ impl Nac3 {
                 ast::StmtKind::ClassDef {
                     ref decorator_list,
                     ref mut body,
+                    ref mut bases,
                     ..
                 } => {
                     let kernels = decorator_list.iter().any(|decorator| {
@@ -125,6 +126,20 @@ impl Nac3 {
                         } else {
                             false
                         }
+                    });
+                    // Drop unregistered (i.e. host-only) base classes.
+                    bases.retain(|base| {
+                        Python::with_gil(|py| -> PyResult<bool> {
+                            let id_fn = PyModule::import(py, "builtins")?.getattr("id")?;
+                            match &base.node {
+                                ast::ExprKind::Name { id, .. } => {
+                                    let base_obj = module.getattr(py, id.to_string())?;
+                                    let base_id = id_fn.call1((base_obj,))?.extract()?;
+                                    Ok(registered_class_ids.contains(&base_id))
+                                },
+                                _ => Ok(true)
+                            }
+                        }).unwrap()
                     });
                     body.retain(|stmt| {
                         if let ast::StmtKind::FunctionDef {
@@ -303,9 +318,28 @@ impl Nac3 {
         })
     }
 
-    fn analyze_modules(&mut self, modules: &PySet) -> PyResult<()> {
-        for obj in modules.iter() {
-            self.register_module_impl(obj.into())?;
+    fn analyze(&mut self, functions: &PySet, classes: &PySet) -> PyResult<()> {
+        let (modules, class_ids) = Python::with_gil(|py| -> PyResult<(HashMap<u64, PyObject>, HashSet<u64>)> {
+            let mut modules: HashMap<u64, PyObject> = HashMap::new();
+            let mut class_ids: HashSet<u64> = HashSet::new();
+
+            let id_fn = PyModule::import(py, "builtins")?.getattr("id")?;
+            let getmodule_fn = PyModule::import(py, "inspect")?.getattr("getmodule")?;
+
+            for function in functions.iter() {
+                let module = getmodule_fn.call1((function,))?.extract()?;
+                modules.insert(id_fn.call1((&module,))?.extract()?, module);
+            }
+            for class in classes.iter() {
+                let module = getmodule_fn.call1((class,))?.extract()?;
+                modules.insert(id_fn.call1((&module,))?.extract()?, module);
+                class_ids.insert(id_fn.call1((class,))?.extract()?);
+            }
+            Ok((modules, class_ids))
+        })?;
+
+        for module in modules.into_values() {
+            self.register_module(module, &class_ids)?;
         }
         Ok(())
     }
