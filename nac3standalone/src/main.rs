@@ -100,7 +100,11 @@ fn main() {
 
     let instance = {
         let defs = top_level.definitions.read();
-        let mut instance = defs[resolver.get_identifier_def("run".into()).unwrap().0].write();
+        let mut instance =
+            defs[resolver
+                .get_identifier_def("run".into())
+                .unwrap_or_else(|| panic!("cannot find `run() -> int32 entry point`")).0
+            ].write();
         if let TopLevelDef::Function {
             instance_to_stmt,
             instance_to_symbol,
