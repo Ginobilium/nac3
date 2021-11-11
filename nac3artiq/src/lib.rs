@@ -120,13 +120,16 @@ impl Nac3 {
                     ref mut bases,
                     ..
                 } => {
-                    let kernels = decorator_list.iter().any(|decorator| {
+                    let nac3_class = decorator_list.iter().any(|decorator| {
                         if let ast::ExprKind::Name { id, .. } = decorator.node {
                             id.to_string() == "nac3"
                         } else {
                             false
                         }
                     });
+                    if !nac3_class {
+                        continue;
+                    }
                     // Drop unregistered (i.e. host-only) base classes.
                     bases.retain(|base| {
                         Python::with_gil(|py| -> PyResult<bool> {
@@ -157,7 +160,7 @@ impl Nac3 {
                             true
                         }
                     });
-                    kernels
+                    true
                 }
                 ast::StmtKind::FunctionDef {
                     ref decorator_list, ..
