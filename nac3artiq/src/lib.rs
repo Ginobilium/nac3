@@ -38,7 +38,8 @@ use timeline::TimeFns;
 #[derive(PartialEq, Clone, Copy)]
 enum Isa {
     Host,
-    RiscV,
+    RiscV32G,
+    RiscV32IMA,
     CortexA9,
 }
 
@@ -204,13 +205,15 @@ impl Nac3 {
     fn new(isa: &str, py: Python) -> PyResult<Self> {
         let isa = match isa {
             "host" => Isa::Host,
-            "riscv" => Isa::RiscV,
+            "rv32g" => Isa::RiscV32G,
+            "rv32ima" => Isa::RiscV32IMA,
             "cortexa9" => Isa::CortexA9,
             _ => return Err(exceptions::PyValueError::new_err("invalid ISA")),
         };
         let time_fns: &(dyn TimeFns + Sync) = match isa {
             Isa::Host => &timeline::EXTERN_TIME_FNS,
-            Isa::RiscV => &timeline::NOW_PINNING_TIME_FNS,
+            Isa::RiscV32G => &timeline::NOW_PINNING_TIME_FNS,
+            Isa::RiscV32IMA => &timeline::NOW_PINNING_TIME_FNS,
             Isa::CortexA9 => &timeline::EXTERN_TIME_FNS,
         };
         let primitive: PrimitiveStore = TopLevelComposer::make_primitives().0;
@@ -452,7 +455,8 @@ impl Nac3 {
 
             let (triple, features) = match isa {
                 Isa::Host => (TargetMachine::get_default_triple(), TargetMachine::get_host_cpu_features().to_string()),
-                Isa::RiscV => (TargetTriple::create("riscv32-unknown-linux"), "+a,+m".to_string()),
+                Isa::RiscV32G => (TargetTriple::create("riscv32-unknown-linux"), "+a,+m,+f,+d".to_string()),
+                Isa::RiscV32IMA => (TargetTriple::create("riscv32-unknown-linux"), "+a,+m".to_string()),
                 Isa::CortexA9 => (
                     TargetTriple::create("armv7-unknown-linux-gnueabihf"),
                     "+dsp,+fp16,+neon,+vfp3".to_string(),

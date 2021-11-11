@@ -10,7 +10,7 @@ device_db = {
             "host": "kc705",
             "ref_period": 1e-9,
             "ref_multiplier": 8,
-            "target": "riscv"
+            "target": "rv32g"
         }
     },
 }
