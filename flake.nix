@@ -54,7 +54,7 @@
 
       hydraJobs = {
         inherit (packages.x86_64-linux) nac3artiq;
-      } // (pkgs.lib.foldr (a: b: {"${a.name}" = a;} // b) {} devShell.x86_64-linux.buildInputs);
+      } // (pkgs.lib.foldr (a: b: {"${pkgs.lib.strings.getName a}" = a;} // b) {} devShell.x86_64-linux.buildInputs);
   };
 
   nixConfig = {
