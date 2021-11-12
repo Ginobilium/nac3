@@ -14,6 +14,8 @@
       };
       pkgs = import nixpkgs-patched { system = "x86_64-linux"; };
     in rec {
+      inherit nixpkgs-patched;
+
       packages.x86_64-linux = {
         nac3artiq = pkgs.python3Packages.toPythonModule (
           pkgs.rustPlatform.buildRustPackage {
