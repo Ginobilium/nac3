@@ -54,6 +54,7 @@
 
       hydraJobs = {
         inherit (packages.x86_64-linux) nac3artiq;
+        devShell = devShell.x86_64-linux;
       };
   };
 
