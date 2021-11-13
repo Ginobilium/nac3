@@ -7,6 +7,26 @@ pub trait TimeFns {
     fn emit_delay_mu<'ctx, 'a>(&self, ctx: &mut CodeGenContext<'ctx, 'a>, dt: BasicValueEnum<'ctx>);
 }
 
+pub struct NowPinningTimeFns64 {}
+
+// For FPGA design reasons, on VexRiscv with 64-bit data bus, the "now" CSR is split into two 32-bit
+// values that are each padded to 64-bits.
+impl TimeFns for NowPinningTimeFns64 {
+    fn emit_now_mu<'ctx, 'a>(&self, ctx: &mut CodeGenContext<'ctx, 'a>) -> BasicValueEnum<'ctx> {
+        unimplemented!();
+    }
+
+    fn emit_at_mu<'ctx, 'a>(&self, ctx: &mut CodeGenContext<'ctx, 'a>, t: BasicValueEnum<'ctx>) {
+        unimplemented!();
+    }
+
+    fn emit_delay_mu<'ctx, 'a>(&self, ctx: &mut CodeGenContext<'ctx, 'a>, dt: BasicValueEnum<'ctx>) {
+        unimplemented!();
+    }
+}
+
+pub static NOW_PINNING_TIME_FNS_64: NowPinningTimeFns64 = NowPinningTimeFns64 {};
+
 pub struct NowPinningTimeFns {}
 
 impl TimeFns for NowPinningTimeFns {

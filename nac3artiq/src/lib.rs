@@ -212,7 +212,7 @@ impl Nac3 {
         };
         let time_fns: &(dyn TimeFns + Sync) = match isa {
             Isa::Host => &timeline::EXTERN_TIME_FNS,
-            Isa::RiscV32G => &timeline::NOW_PINNING_TIME_FNS,
+            Isa::RiscV32G => &timeline::NOW_PINNING_TIME_FNS_64,
             Isa::RiscV32IMA => &timeline::NOW_PINNING_TIME_FNS,
             Isa::CortexA9 => &timeline::EXTERN_TIME_FNS,
         };
