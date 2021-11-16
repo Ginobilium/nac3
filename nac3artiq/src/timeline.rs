@@ -13,15 +13,175 @@ pub struct NowPinningTimeFns64 {}
 // values that are each padded to 64-bits.
 impl TimeFns for NowPinningTimeFns64 {
     fn emit_now_mu<'ctx, 'a>(&self, ctx: &mut CodeGenContext<'ctx, 'a>) -> BasicValueEnum<'ctx> {
-        unimplemented!();
+        let i64_type = ctx.ctx.i64_type();
+        let i32_type = ctx.ctx.i32_type();
+        let now = ctx
+            .module
+            .get_global("now")
+            .unwrap_or_else(|| ctx.module.add_global(i64_type, None, "now"));
+        let now_hiptr = ctx.builder.build_bitcast(
+            now,
+            i32_type.ptr_type(AddressSpace::Generic),
+            "now_hiptr"
+        );
+        if let BasicValueEnum::PointerValue(now_hiptr) = now_hiptr {
+            let now_loptr = unsafe {
+                ctx.builder.build_gep(
+                    now_hiptr,
+                    &[i32_type.const_int(2, false)],
+                    "now_gep",
+                )
+            };
+            if let (
+                BasicValueEnum::IntValue(now_hi),
+                BasicValueEnum::IntValue(now_lo)
+            ) = (
+                ctx.builder.build_load(now_hiptr, "now_hi"),
+                ctx.builder.build_load(now_loptr, "now_lo")
+            ) {
+                let zext_hi = ctx.builder.build_int_z_extend(
+                    now_hi,
+                    i64_type,
+                    "now_zext_hi"
+                );
+                let shifted_hi = ctx.builder.build_left_shift(
+                    zext_hi,
+                    i64_type.const_int(32, false),
+                    "now_shifted_zext_hi"
+                );
+                let zext_lo = ctx.builder.build_int_z_extend(
+                    now_lo,
+                    i64_type,
+                    "now_zext_lo"
+                );
+                ctx.builder.build_or(shifted_hi, zext_lo, "now_or").into()
+            } else {
+                unreachable!();
+            }
+        } else {
+            unreachable!();
+        }
     }
 
     fn emit_at_mu<'ctx, 'a>(&self, ctx: &mut CodeGenContext<'ctx, 'a>, t: BasicValueEnum<'ctx>) {
-        unimplemented!();
+        let i32_type = ctx.ctx.i32_type();
+        let i64_type = ctx.ctx.i64_type();
+        let i64_32 = i64_type.const_int(32, false);
+        if let BasicValueEnum::IntValue(time) = t {
+            let time_hi = ctx.builder.build_int_truncate(
+                ctx.builder
+                    .build_right_shift(time, i64_32, false, "now_lshr"),
+                i32_type,
+                "now_trunc",
+            );
+            let time_lo = ctx.builder.build_int_truncate(time, i32_type, "now_trunc");
+            let now = ctx
+                .module
+                .get_global("now")
+                .unwrap_or_else(|| ctx.module.add_global(i64_type, None, "now"));
+            let now_hiptr = ctx.builder.build_bitcast(
+                now,
+                i32_type.ptr_type(AddressSpace::Generic),
+                "now_bitcast",
+            );
+            if let BasicValueEnum::PointerValue(now_hiptr) = now_hiptr {
+                let now_loptr = unsafe {
+                    ctx.builder.build_gep(
+                        now_hiptr,
+                        &[i32_type.const_int(2, false)],
+                        "now_gep",
+                    )
+                };
+                ctx.builder
+                    .build_store(now_hiptr, time_hi)
+                    .set_atomic_ordering(AtomicOrdering::SequentiallyConsistent)
+                    .unwrap();
+                ctx.builder
+                    .build_store(now_loptr, time_lo)
+                    .set_atomic_ordering(AtomicOrdering::SequentiallyConsistent)
+                    .unwrap();
+            } else {
+                unreachable!();
+            }
+        } else {
+            unreachable!();
+        }
     }
 
     fn emit_delay_mu<'ctx, 'a>(&self, ctx: &mut CodeGenContext<'ctx, 'a>, dt: BasicValueEnum<'ctx>) {
-        unimplemented!();
+        let i64_type = ctx.ctx.i64_type();
+        let i32_type = ctx.ctx.i32_type();
+        let now = ctx
+            .module
+            .get_global("now")
+            .unwrap_or_else(|| ctx.module.add_global(i64_type, None, "now"));
+        let now_hiptr = ctx.builder.build_bitcast(
+            now,
+            i32_type.ptr_type(AddressSpace::Generic),
+            "now_hiptr"
+        );
+        if let BasicValueEnum::PointerValue(now_hiptr) = now_hiptr {
+            let now_loptr = unsafe {
+                ctx.builder.build_gep(
+                    now_hiptr,
+                    &[i32_type.const_int(2, false)],
+                    "now_loptr",
+                )
+            };
+            if let (
+                BasicValueEnum::IntValue(now_hi),
+                BasicValueEnum::IntValue(now_lo),
+                BasicValueEnum::IntValue(dt)
+            ) = (
+                ctx.builder.build_load(now_hiptr, "now_hi"),
+                ctx.builder.build_load(now_loptr, "now_lo"),
+                dt
+            ) {
+                let zext_hi = ctx.builder.build_int_z_extend(
+                    now_hi,
+                    i64_type,
+                    "now_zext_hi"
+                );
+                let shifted_hi = ctx.builder.build_left_shift(
+                    zext_hi,
+                    i64_type.const_int(32, false),
+                    "now_shifted_zext_hi"
+                );
+                let zext_lo = ctx.builder.build_int_z_extend(
+                    now_lo,
+                    i64_type,
+                    "now_zext_lo"
+                );
+                let now_val = ctx.builder.build_or(shifted_hi, zext_lo, "now_or");
+                
+                let time = ctx.builder.build_int_add(now_val, dt, "now_add");
+                let time_hi = ctx.builder.build_int_truncate(
+                    ctx.builder
+                        .build_right_shift(
+                            time,
+                            i64_type.const_int(32, false),
+                            false,
+                            "now_lshr"
+                        ),
+                    i32_type,
+                    "now_trunc",
+                );
+                let time_lo = ctx.builder.build_int_truncate(time, i32_type, "now_trunc");
+                
+                ctx.builder
+                    .build_store(now_hiptr, time_hi)
+                    .set_atomic_ordering(AtomicOrdering::SequentiallyConsistent)
+                    .unwrap();
+                ctx.builder
+                    .build_store(now_loptr, time_lo)
+                    .set_atomic_ordering(AtomicOrdering::SequentiallyConsistent)
+                    .unwrap();
+            } else {
+                unreachable!();
+            }
+        } else {
+            unreachable!();
+        };
     }
 }
 
