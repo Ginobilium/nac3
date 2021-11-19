@@ -34,8 +34,13 @@ pub extern "C" fn rtio_output(target: i32, data: i32) {
 }
 
 #[no_mangle]
-pub extern "C" fn print_int(x: i32) {
-    println!("print_int: {}", x);
+pub extern "C" fn print_int32(x: i32) {
+    println!("print_int32: {}", x);
+}
+
+#[no_mangle]
+pub extern "C" fn print_int64(x: i64) {
+    println!("print_int64: {}", x);
 }
 
 

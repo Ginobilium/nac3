@@ -8,6 +8,7 @@ import nac3artiq
 
 __all__ = ["KernelInvariant", "extern", "kernel", "portable", "nac3",
            "ms", "us", "ns",
+           "print_int32", "print_int64",
            "Core", "TTLOut", "parallel", "sequential"]
 
 
@@ -97,6 +98,17 @@ def rtio_input_timestamp(timeout_mu: int64, channel: int32) -> int64:
 
 @extern
 def rtio_input_data(channel: int32) -> int32:
+    raise NotImplementedError("syscall not simulated")
+
+
+# These is not part of ARTIQ and only available in runkernel. Defined here for convenience.
+@extern
+def print_int32(x: int32):
+    raise NotImplementedError("syscall not simulated")
+
+
+@extern
+def print_int64(x: int64):
     raise NotImplementedError("syscall not simulated")
 
 
