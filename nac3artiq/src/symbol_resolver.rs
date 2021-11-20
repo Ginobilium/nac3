@@ -2,7 +2,7 @@ use inkwell::{types::BasicType, values::BasicValueEnum, AddressSpace};
 use nac3core::{
     codegen::CodeGenContext,
     location::Location,
-    symbol_resolver::SymbolResolver,
+    symbol_resolver::{SymbolResolver, ValueEnum},
     toplevel::{DefinitionId, TopLevelDef},
     typecheck::{
         type_inferencer::PrimitiveStore,
@@ -456,8 +456,8 @@ impl SymbolResolver for Resolver {
         &self,
         id: StrRef,
         ctx: &mut CodeGenContext<'ctx, 'a>,
-    ) -> Option<BasicValueEnum<'ctx>> {
-        Python::with_gil(|py| -> PyResult<Option<BasicValueEnum<'ctx>>> {
+    ) -> Option<ValueEnum<'ctx>> {
+        Python::with_gil(|py| -> PyResult<Option<ValueEnum<'ctx>>> {
             let obj: &PyAny = self.module.extract(py)?;
             let members: &PyList = PyModule::import(py, "inspect")?
                 .getattr("getmembers")?
@@ -478,7 +478,7 @@ impl SymbolResolver for Resolver {
                     break;
                 }
             }
-            Ok(sym_value)
+            Ok(sym_value.map(|v| v.into()))
         })
         .unwrap()
     }

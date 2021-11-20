@@ -443,6 +443,7 @@ impl Nac3 {
             store,
             unifier_index: instance.unifier_id,
             calls: instance.calls,
+            id: 0,
         };
         let isa = self.isa;
         let working_directory = self.working_directory.path().to_owned();

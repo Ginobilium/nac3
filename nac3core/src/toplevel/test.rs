@@ -1,7 +1,7 @@
 use crate::{
     codegen::CodeGenContext,
     location::Location,
-    symbol_resolver::SymbolResolver,
+    symbol_resolver::{SymbolResolver, ValueEnum},
     toplevel::DefinitionId,
     typecheck::{
         type_inferencer::PrimitiveStore,
@@ -50,7 +50,7 @@ impl SymbolResolver for Resolver {
         &self,
         _: StrRef,
         _: &mut CodeGenContext<'ctx, 'a>,
-    ) -> Option<BasicValueEnum<'ctx>> {
+    ) -> Option<ValueEnum<'ctx>> {
         unimplemented!()
     }
 

@@ -1,5 +1,6 @@
 use crate::{
     codegen::{expr::*, stmt::*, CodeGenContext},
+    symbol_resolver::ValueEnum,
     toplevel::{DefinitionId, TopLevelDef},
     typecheck::typedef::{FunSignature, Type},
 };
@@ -18,9 +19,9 @@ pub trait CodeGenerator {
     fn gen_call<'ctx, 'a>(
         &mut self,
         ctx: &mut CodeGenContext<'ctx, 'a>,
-        obj: Option<(Type, BasicValueEnum<'ctx>)>,
+        obj: Option<(Type, ValueEnum<'ctx>)>,
         fun: (&FunSignature, DefinitionId),
-        params: Vec<(Option<StrRef>, BasicValueEnum<'ctx>)>,
+        params: Vec<(Option<StrRef>, ValueEnum<'ctx>)>,
     ) -> Option<BasicValueEnum<'ctx>> {
         gen_call(self, ctx, obj, fun, params)
     }
@@ -34,7 +35,7 @@ pub trait CodeGenerator {
         ctx: &mut CodeGenContext<'ctx, 'a>,
         signature: &FunSignature,
         def: &TopLevelDef,
-        params: Vec<(Option<StrRef>, BasicValueEnum<'ctx>)>,
+        params: Vec<(Option<StrRef>, ValueEnum<'ctx>)>,
     ) -> BasicValueEnum<'ctx> {
         gen_constructor(self, ctx, signature, def, params)
     }
@@ -49,10 +50,11 @@ pub trait CodeGenerator {
     fn gen_func_instance<'ctx, 'a>(
         &mut self,
         ctx: &mut CodeGenContext<'ctx, 'a>,
-        obj: Option<(Type, BasicValueEnum<'ctx>)>,
+        obj: Option<(Type, ValueEnum<'ctx>)>,
         fun: (&FunSignature, &mut TopLevelDef, String),
+        id: usize,
     ) -> String {
-        gen_func_instance(ctx, obj, fun)
+        gen_func_instance(ctx, obj, fun, id)
     }
 
     /// Generate the code for an expression.
@@ -60,7 +62,7 @@ pub trait CodeGenerator {
         &mut self,
         ctx: &mut CodeGenContext<'ctx, 'a>,
         expr: &Expr<Option<Type>>,
-    ) -> Option<BasicValueEnum<'ctx>> {
+    ) -> Option<ValueEnum<'ctx>> {
         gen_expr(self, ctx, expr)
     }
 
@@ -88,7 +90,7 @@ pub trait CodeGenerator {
         &mut self,
         ctx: &mut CodeGenContext<'ctx, 'a>,
         target: &Expr<Option<Type>>,
-        value: BasicValueEnum<'ctx>,
+        value: ValueEnum<'ctx>,
     ) {
         gen_assign(self, ctx, target, value)
     }

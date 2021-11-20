@@ -11,7 +11,7 @@ use crate::{
     toplevel::{DefinitionId, TopLevelDef},
 };
 use crate::{location::Location, typecheck::typedef::TypeEnum};
-use inkwell::values::BasicValueEnum;
+use inkwell::values::{BasicValueEnum, FloatValue, IntValue, PointerValue};
 use itertools::{chain, izip};
 use nac3parser::ast::{Expr, StrRef};
 use parking_lot::RwLock;
@@ -23,8 +23,63 @@ pub enum SymbolValue {
     Double(f64),
     Bool(bool),
     Tuple(Vec<SymbolValue>),
-    // we should think about how to implement bytes later...
-    // Bytes(&'a [u8]),
+}
+
+pub trait StaticValue {
+    fn get_unique_identifier(&self) -> u64;
+
+    fn to_basic_value_enum<'ctx, 'a>(
+        &self,
+        ctx: &mut CodeGenContext<'ctx, 'a>,
+    ) -> BasicValueEnum<'ctx>;
+
+    fn get_field<'ctx, 'a>(
+        &self,
+        name: StrRef,
+        ctx: &mut CodeGenContext<'ctx, 'a>,
+    ) -> Option<ValueEnum<'ctx>>;
+}
+
+#[derive(Clone)]
+pub enum ValueEnum<'ctx> {
+    Static(Arc<dyn StaticValue + Send + Sync>),
+    Dynamic(BasicValueEnum<'ctx>),
+}
+
+impl<'ctx> From<BasicValueEnum<'ctx>> for ValueEnum<'ctx> {
+    fn from(v: BasicValueEnum<'ctx>) -> Self {
+        ValueEnum::Dynamic(v)
+    }
+}
+
+impl<'ctx> From<PointerValue<'ctx>> for ValueEnum<'ctx> {
+    fn from(v: PointerValue<'ctx>) -> Self {
+        ValueEnum::Dynamic(v.into())
+    }
+}
+
+impl<'ctx> From<IntValue<'ctx>> for ValueEnum<'ctx> {
+    fn from(v: IntValue<'ctx>) -> Self {
+        ValueEnum::Dynamic(v.into())
+    }
+}
+
+impl<'ctx> From<FloatValue<'ctx>> for ValueEnum<'ctx> {
+    fn from(v: FloatValue<'ctx>) -> Self {
+        ValueEnum::Dynamic(v.into())
+    }
+}
+
+impl<'ctx> ValueEnum<'ctx> {
+    pub fn to_basic_value_enum<'a>(
+        self,
+        ctx: &mut CodeGenContext<'ctx, 'a>,
+    ) -> BasicValueEnum<'ctx> {
+        match self {
+            ValueEnum::Static(v) => v.to_basic_value_enum(ctx),
+            ValueEnum::Dynamic(v) => v,
+        }
+    }
 }
 
 pub trait SymbolResolver {
@@ -36,13 +91,16 @@ pub trait SymbolResolver {
         primitives: &PrimitiveStore,
         str: StrRef,
     ) -> Option<Type>;
+
     // get the top-level definition of identifiers
     fn get_identifier_def(&self, str: StrRef) -> Option<DefinitionId>;
+
     fn get_symbol_value<'ctx, 'a>(
         &self,
         str: StrRef,
         ctx: &mut CodeGenContext<'ctx, 'a>,
-    ) -> Option<BasicValueEnum<'ctx>>;
+    ) -> Option<ValueEnum<'ctx>>;
+
     fn get_symbol_location(&self, str: StrRef) -> Option<Location>;
     // handle function call etc.
 }

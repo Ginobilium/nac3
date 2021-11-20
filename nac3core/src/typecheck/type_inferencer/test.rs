@@ -3,10 +3,10 @@ use super::*;
 use crate::{
     codegen::CodeGenContext,
     location::Location,
+    symbol_resolver::ValueEnum,
     toplevel::{DefinitionId, TopLevelDef},
 };
 use indoc::indoc;
-use inkwell::values::BasicValueEnum;
 use itertools::zip;
 use nac3parser::parser::parse_program;
 use parking_lot::RwLock;
@@ -33,7 +33,7 @@ impl SymbolResolver for Resolver {
         &self,
         _: StrRef,
         _: &mut CodeGenContext<'ctx, 'a>,
-    ) -> Option<BasicValueEnum<'ctx>> {
+    ) -> Option<ValueEnum<'ctx>> {
         unimplemented!()
     }
 
