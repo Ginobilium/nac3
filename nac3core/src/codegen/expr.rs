@@ -676,7 +676,14 @@ pub fn gen_expr<'ctx, 'a, G: CodeGenerator + ?Sized>(
         ExprKind::Attribute { value, attr, .. } => {
             // note that we would handle class methods directly in calls
             match generator.gen_expr(ctx, value).unwrap() {
-                ValueEnum::Static(v) => v.get_field(*attr, ctx).unwrap(),
+                ValueEnum::Static(v) => v.get_field(*attr, ctx).unwrap_or_else(|| {
+                    let v = v.to_basic_value_enum(ctx);
+                    let index = ctx.get_attr_index(value.custom.unwrap(), *attr);
+                    ValueEnum::Dynamic(ctx.build_gep_and_load(
+                        v.into_pointer_value(),
+                        &[zero, int32.const_int(index as u64, false)],
+                    ))
+                }),
                 ValueEnum::Dynamic(v) => {
                     let index = ctx.get_attr_index(value.custom.unwrap(), *attr);
                     ValueEnum::Dynamic(ctx.build_gep_and_load(

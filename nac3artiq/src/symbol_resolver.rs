@@ -2,19 +2,19 @@ use inkwell::{types::BasicType, values::BasicValueEnum, AddressSpace};
 use nac3core::{
     codegen::CodeGenContext,
     location::Location,
-    symbol_resolver::{SymbolResolver, ValueEnum},
+    symbol_resolver::{StaticValue, SymbolResolver, ValueEnum},
     toplevel::{DefinitionId, TopLevelDef},
     typecheck::{
         type_inferencer::PrimitiveStore,
         typedef::{Type, TypeEnum, Unifier},
     },
 };
+use nac3parser::ast::StrRef;
 use parking_lot::{Mutex, RwLock};
 use pyo3::{
     types::{PyList, PyModule, PyTuple},
     PyAny, PyObject, PyResult, Python,
 };
-use nac3parser::ast::StrRef;
 use std::{
     cell::RefCell,
     collections::{HashMap, HashSet},
@@ -23,7 +23,7 @@ use std::{
 
 use crate::PrimitivePythonId;
 
-pub struct Resolver {
+pub struct InnerResolver {
     pub id_to_type: Mutex<HashMap<StrRef, Type>>,
     pub id_to_def: Mutex<HashMap<StrRef, DefinitionId>>,
     pub global_value_ids: Arc<Mutex<HashSet<u64>>>,
@@ -31,32 +31,95 @@ pub struct Resolver {
     pub pyid_to_def: Arc<RwLock<HashMap<u64, DefinitionId>>>,
     pub pyid_to_type: Arc<RwLock<HashMap<u64, Type>>>,
     pub primitive_ids: PrimitivePythonId,
+    pub helper: PythonHelper,
     // module specific
     pub name_to_pyid: HashMap<StrRef, u64>,
     pub module: PyObject,
 }
 
-struct PythonHelper<'a> {
-    type_fn: &'a PyAny,
-    len_fn: &'a PyAny,
-    id_fn: &'a PyAny,
+pub struct Resolver(pub Arc<InnerResolver>);
+
+pub struct PythonHelper {
+    pub type_fn: PyObject,
+    pub len_fn: PyObject,
+    pub id_fn: PyObject,
 }
 
-impl Resolver {
+struct PythonValue {
+    id: u64,
+    value: PyObject,
+    resolver: Arc<InnerResolver>,
+}
+
+impl StaticValue for PythonValue {
+    fn get_unique_identifier(&self) -> u64 {
+        self.id
+    }
+
+    fn to_basic_value_enum<'ctx, 'a>(
+        &self,
+        ctx: &mut CodeGenContext<'ctx, 'a>,
+    ) -> BasicValueEnum<'ctx> {
+        Python::with_gil(|py| -> PyResult<BasicValueEnum<'ctx>> {
+            self.resolver
+                .get_obj_value(py, self.value.as_ref(py), ctx)
+                .map(Option::unwrap)
+        })
+        .unwrap()
+    }
+
+    fn get_field<'ctx, 'a>(
+        &self,
+        name: StrRef,
+        ctx: &mut CodeGenContext<'ctx, 'a>,
+    ) -> Option<ValueEnum<'ctx>> {
+        Python::with_gil(|py| -> PyResult<Option<ValueEnum<'ctx>>> {
+            let helper = &self.resolver.helper;
+            let ty = helper.type_fn.call1(py, (&self.value,))?;
+            let ty_id: u64 = helper.id_fn.call1(py, (ty,))?.extract(py)?;
+            let def_id = { *self.resolver.pyid_to_def.read().get(&ty_id).unwrap() };
+            let mut mutable = true;
+            let defs = ctx.top_level.definitions.read();
+            if let TopLevelDef::Class { fields, .. } = &*defs[def_id.0].read() {
+                for (field_name, _, is_mutable) in fields.iter() {
+                    if field_name == &name {
+                        mutable = *is_mutable;
+                        break;
+                    }
+                }
+            }
+            Ok(if mutable {
+                None
+            } else {
+                println!("getting attribute {}", name);
+                let obj = self.value.getattr(py, &name.to_string())?;
+                let id = self.resolver.helper.id_fn.call1(py, (&obj,))?.extract(py)?;
+                Some(ValueEnum::Static(Arc::new(PythonValue {
+                    id,
+                    value: obj,
+                    resolver: self.resolver.clone(),
+                })))
+            })
+        })
+        .unwrap()
+    }
+}
+
+impl InnerResolver {
     fn get_list_elem_type(
         &self,
+        py: Python,
         list: &PyAny,
         len: usize,
-        helper: &PythonHelper,
         unifier: &mut Unifier,
         defs: &[Arc<RwLock<TopLevelDef>>],
         primitives: &PrimitiveStore,
     ) -> PyResult<Option<Type>> {
-        let first = self.get_obj_type(list.get_item(0)?, helper, unifier, defs, primitives)?;
+        let first = self.get_obj_type(py, list.get_item(0)?, unifier, defs, primitives)?;
         Ok((1..len).fold(first, |a, i| {
             let b = list
                 .get_item(i)
-                .map(|elem| self.get_obj_type(elem, helper, unifier, defs, primitives));
+                .map(|elem| self.get_obj_type(py, elem, unifier, defs, primitives));
             a.and_then(|a| {
                 if let Ok(Ok(Some(ty))) = b {
                     if unifier.unify(a, ty).is_ok() {
@@ -73,16 +136,17 @@ impl Resolver {
 
     fn get_obj_type(
         &self,
+        py: Python,
         obj: &PyAny,
-        helper: &PythonHelper,
         unifier: &mut Unifier,
         defs: &[Arc<RwLock<TopLevelDef>>],
         primitives: &PrimitiveStore,
     ) -> PyResult<Option<Type>> {
-        let ty_id: u64 = helper
+        let ty_id: u64 = self
+            .helper
             .id_fn
-            .call1((helper.type_fn.call1((obj,))?,))?
-            .extract()?;
+            .call1(py, (self.helper.type_fn.call1(py, (obj,))?,))?
+            .extract(py)?;
 
         if ty_id == self.primitive_ids.int || ty_id == self.primitive_ids.int32 {
             Ok(Some(primitives.int32))
@@ -93,20 +157,20 @@ impl Resolver {
         } else if ty_id == self.primitive_ids.float {
             Ok(Some(primitives.float))
         } else if ty_id == self.primitive_ids.list {
-            let len: usize = helper.len_fn.call1((obj,))?.extract()?;
+            let len: usize = self.helper.len_fn.call1(py, (obj,))?.extract(py)?;
             if len == 0 {
                 let var = unifier.get_fresh_var().0;
                 let list = unifier.add_ty(TypeEnum::TList { ty: var });
                 Ok(Some(list))
             } else {
-                let ty = self.get_list_elem_type(obj, len, helper, unifier, defs, primitives)?;
+                let ty = self.get_list_elem_type(py, obj, len, unifier, defs, primitives)?;
                 Ok(ty.map(|ty| unifier.add_ty(TypeEnum::TList { ty })))
             }
         } else if ty_id == self.primitive_ids.tuple {
             let elements: &PyTuple = obj.cast_as()?;
             let types: Result<Option<Vec<_>>, _> = elements
                 .iter()
-                .map(|elem| self.get_obj_type(elem, helper, unifier, defs, primitives))
+                .map(|elem| self.get_obj_type(py, elem, unifier, defs, primitives))
                 .collect();
             let types = types?;
             Ok(types.map(|types| unifier.add_ty(TypeEnum::TTuple { ty: types })))
@@ -141,7 +205,7 @@ impl Resolver {
                     let name: String = field.0.into();
                     let field_data = obj.getattr(&name)?;
                     let ty = self
-                        .get_obj_type(field_data, helper, unifier, defs, primitives)?
+                        .get_obj_type(py, field_data, unifier, defs, primitives)?
                         .unwrap_or(primitives.none);
                     let field_ty = unifier.subst(field.1, &var_map).unwrap_or(field.1);
                     if unifier.unify(ty, field_ty).is_err() {
@@ -153,7 +217,7 @@ impl Resolver {
                 for (_, ty) in var_map.iter() {
                     // must be concrete type
                     if !unifier.is_concrete(*ty, &[]) {
-                        return Ok(None)
+                        return Ok(None);
                     }
                 }
                 Ok(Some(unifier.add_ty(TypeEnum::TObj {
@@ -172,14 +236,15 @@ impl Resolver {
 
     fn get_obj_value<'ctx, 'a>(
         &self,
+        py: Python,
         obj: &PyAny,
-        helper: &PythonHelper,
         ctx: &mut CodeGenContext<'ctx, 'a>,
     ) -> PyResult<Option<BasicValueEnum<'ctx>>> {
-        let ty_id: u64 = helper
+        let ty_id: u64 = self
+            .helper
             .id_fn
-            .call1((helper.type_fn.call1((obj,))?,))?
-            .extract()?;
+            .call1(py, (self.helper.type_fn.call1(py, (obj,))?,))?
+            .extract(py)?;
         if ty_id == self.primitive_ids.int || ty_id == self.primitive_ids.int32 {
             let val: i32 = obj.extract()?;
             Ok(Some(ctx.ctx.i32_type().const_int(val as u64, false).into()))
@@ -195,16 +260,16 @@ impl Resolver {
             let val: f64 = obj.extract()?;
             Ok(Some(ctx.ctx.f64_type().const_float(val).into()))
         } else if ty_id == self.primitive_ids.list {
-            let id: u64 = helper.id_fn.call1((obj,))?.extract()?;
+            let id: u64 = self.helper.id_fn.call1(py, (obj,))?.extract(py)?;
             let id_str = id.to_string();
-            let len: usize = helper.len_fn.call1((obj,))?.extract()?;
+            let len: usize = self.helper.len_fn.call1(py, (obj,))?.extract(py)?;
             let ty = if len == 0 {
                 ctx.primitives.int32
             } else {
                 self.get_list_elem_type(
+                    py,
                     obj,
                     len,
-                    helper,
                     &mut ctx.unifier,
                     &ctx.top_level.definitions.read(),
                     &ctx.primitives,
@@ -236,7 +301,7 @@ impl Resolver {
             let arr: Result<Option<Vec<_>>, _> = (0..len)
                 .map(|i| {
                     obj.get_item(i)
-                        .and_then(|elem| self.get_obj_value(elem, helper, ctx))
+                        .and_then(|elem| self.get_obj_value(py, elem, ctx))
                 })
                 .collect();
             let arr = arr?.unwrap();
@@ -297,15 +362,15 @@ impl Resolver {
 
             Ok(Some(global.as_pointer_value().into()))
         } else if ty_id == self.primitive_ids.tuple {
-            let id: u64 = helper.id_fn.call1((obj,))?.extract()?;
+            let id: u64 = self.helper.id_fn.call1(py, (obj,))?.extract(py)?;
             let id_str = id.to_string();
             let elements: &PyTuple = obj.cast_as()?;
             let types: Result<Option<Vec<_>>, _> = elements
                 .iter()
                 .map(|elem| {
                     self.get_obj_type(
+                        py,
                         elem,
-                        helper,
                         &mut ctx.unifier,
                         &ctx.top_level.definitions.read(),
                         &ctx.primitives,
@@ -331,7 +396,7 @@ impl Resolver {
 
             let val: Result<Option<Vec<_>>, _> = elements
                 .iter()
-                .map(|elem| self.get_obj_value(elem, helper, ctx))
+                .map(|elem| self.get_obj_value(py, elem, ctx))
                 .collect();
             let val = val?.unwrap();
             let val = ctx.ctx.const_struct(&val, false);
@@ -341,17 +406,11 @@ impl Resolver {
             global.set_initializer(&val);
             Ok(Some(global.as_pointer_value().into()))
         } else {
-            let id: u64 = helper.id_fn.call1((obj,))?.extract()?;
+            let id: u64 = self.helper.id_fn.call1(py, (obj,))?.extract(py)?;
             let id_str = id.to_string();
             let top_level_defs = ctx.top_level.definitions.read();
             let ty = self
-                .get_obj_type(
-                    obj,
-                    helper,
-                    &mut ctx.unifier,
-                    &top_level_defs,
-                    &ctx.primitives,
-                )?
+                .get_obj_type(py, obj, &mut ctx.unifier, &top_level_defs, &ctx.primitives)?
                 .unwrap();
             let ty = ctx
                 .get_llvm_type(ty)
@@ -380,7 +439,7 @@ impl Resolver {
                 let values: Result<Option<Vec<_>>, _> = fields
                     .iter()
                     .map(|(name, _, _)| {
-                        self.get_obj_value(obj.getattr(&name.to_string())?, helper, ctx)
+                        self.get_obj_value(py, obj.getattr(&name.to_string())?, ctx)
                     })
                     .collect();
                 let values = values?;
@@ -409,13 +468,13 @@ impl SymbolResolver for Resolver {
         primitives: &PrimitiveStore,
         str: StrRef,
     ) -> Option<Type> {
-        let mut id_to_type = self.id_to_type.lock();
+        let mut id_to_type = self.0.id_to_type.lock();
         id_to_type.get(&str).cloned().or_else(|| {
-            let py_id = self.name_to_pyid.get(&str);
+            let py_id = self.0.name_to_pyid.get(&str);
             let result = py_id.and_then(|id| {
-                self.pyid_to_type.read().get(id).copied().or_else(|| {
+                self.0.pyid_to_type.read().get(id).copied().or_else(|| {
                     Python::with_gil(|py| -> PyResult<Option<Type>> {
-                        let obj: &PyAny = self.module.extract(py)?;
+                        let obj: &PyAny = self.0.module.extract(py)?;
                         let members: &PyList = PyModule::import(py, "inspect")?
                             .getattr("getmembers")?
                             .call1((obj,))?
@@ -424,15 +483,9 @@ impl SymbolResolver for Resolver {
                         for member in members.iter() {
                             let key: &str = member.get_item(0)?.extract()?;
                             if key == str.to_string() {
-                                let builtins = PyModule::import(py, "builtins")?;
-                                let helper = PythonHelper {
-                                    id_fn: builtins.getattr("id").unwrap(),
-                                    len_fn: builtins.getattr("len").unwrap(),
-                                    type_fn: builtins.getattr("type").unwrap(),
-                                };
-                                sym_ty = self.get_obj_type(
+                                sym_ty = self.0.get_obj_type(
+                                    py,
                                     member.get_item(1)?,
-                                    &helper,
                                     unifier,
                                     defs,
                                     primitives,
@@ -455,10 +508,10 @@ impl SymbolResolver for Resolver {
     fn get_symbol_value<'ctx, 'a>(
         &self,
         id: StrRef,
-        ctx: &mut CodeGenContext<'ctx, 'a>,
+        _: &mut CodeGenContext<'ctx, 'a>,
     ) -> Option<ValueEnum<'ctx>> {
         Python::with_gil(|py| -> PyResult<Option<ValueEnum<'ctx>>> {
-            let obj: &PyAny = self.module.extract(py)?;
+            let obj: &PyAny = self.0.module.extract(py)?;
             let members: &PyList = PyModule::import(py, "inspect")?
                 .getattr("getmembers")?
                 .call1((obj,))?
@@ -468,17 +521,16 @@ impl SymbolResolver for Resolver {
                 let key: &str = member.get_item(0)?.extract()?;
                 let val = member.get_item(1)?;
                 if key == id.to_string() {
-                    let builtins = PyModule::import(py, "builtins")?;
-                    let helper = PythonHelper {
-                        id_fn: builtins.getattr("id").unwrap(),
-                        len_fn: builtins.getattr("len").unwrap(),
-                        type_fn: builtins.getattr("type").unwrap(),
-                    };
-                    sym_value = self.get_obj_value(val, &helper, ctx)?;
+                    let id = self.0.helper.id_fn.call1(py, (val,))?.extract(py)?;
+                    sym_value = Some(PythonValue {
+                        id,
+                        value: val.extract()?,
+                        resolver: self.0.clone(),
+                    });
                     break;
                 }
             }
-            Ok(sym_value.map(|v| v.into()))
+            Ok(sym_value.map(|v| ValueEnum::Static(Arc::new(v))))
         })
         .unwrap()
     }
@@ -488,10 +540,10 @@ impl SymbolResolver for Resolver {
     }
 
     fn get_identifier_def(&self, id: StrRef) -> Option<DefinitionId> {
-        let mut id_to_def = self.id_to_def.lock();
+        let mut id_to_def = self.0.id_to_def.lock();
         id_to_def.get(&id).cloned().or_else(|| {
-            let py_id = self.name_to_pyid.get(&id);
-            let result = py_id.and_then(|id| self.pyid_to_def.read().get(id).copied());
+            let py_id = self.0.name_to_pyid.get(&id);
+            let result = py_id.and_then(|id| self.0.pyid_to_def.read().get(id).copied());
             if let Some(result) = &result {
                 id_to_def.insert(id, *result);
             }

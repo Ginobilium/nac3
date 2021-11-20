@@ -8,12 +8,12 @@ use inkwell::{
     targets::*,
     OptimizationLevel,
 };
-use pyo3::prelude::*;
-use pyo3::{exceptions, types::PyList, types::PySet, types::PyBytes};
 use nac3parser::{
     ast::{self, StrRef},
     parser::{self, parse_program},
 };
+use pyo3::prelude::*;
+use pyo3::{exceptions, types::PyBytes, types::PyList, types::PySet};
 
 use parking_lot::{Mutex, RwLock};
 
@@ -27,7 +27,10 @@ use nac3core::{
 
 use tempfile::{self, TempDir};
 
-use crate::{codegen::ArtiqCodeGenerator, symbol_resolver::Resolver};
+use crate::{
+    codegen::ArtiqCodeGenerator,
+    symbol_resolver::{InnerResolver, PythonHelper, Resolver},
+};
 
 mod codegen;
 mod symbol_resolver;
@@ -73,33 +76,45 @@ struct Nac3 {
 }
 
 impl Nac3 {
-    fn register_module(&mut self, module: PyObject, registered_class_ids: &HashSet<u64>) -> PyResult<()> {
+    fn register_module(
+        &mut self,
+        module: PyObject,
+        registered_class_ids: &HashSet<u64>,
+    ) -> PyResult<()> {
         let mut name_to_pyid: HashMap<StrRef, u64> = HashMap::new();
-        let (module_name, source_file) = Python::with_gil(|py| -> PyResult<(String, String)> {
-            let module: &PyAny = module.extract(py)?;
-            let builtins = PyModule::import(py, "builtins")?;
-            let id_fn = builtins.getattr("id")?;
-            let members: &PyList = PyModule::import(py, "inspect")?
-                .getattr("getmembers")?
-                .call1((module,))?
-                .cast_as()?;
-            for member in members.iter() {
-                let key: &str = member.get_item(0)?.extract()?;
-                let val = id_fn.call1((member.get_item(1)?,))?.extract()?;
-                name_to_pyid.insert(key.into(), val);
-            }
-            Ok((
-                module.getattr("__name__")?.extract()?,
-                module.getattr("__file__")?.extract()?,
-            ))
-        })?;
+        let (module_name, source_file, helper) =
+            Python::with_gil(|py| -> PyResult<(String, String, PythonHelper)> {
+                let module: &PyAny = module.extract(py)?;
+                let builtins = PyModule::import(py, "builtins")?;
+                let id_fn = builtins.getattr("id")?;
+                let members: &PyList = PyModule::import(py, "inspect")?
+                    .getattr("getmembers")?
+                    .call1((module,))?
+                    .cast_as()?;
+                for member in members.iter() {
+                    let key: &str = member.get_item(0)?.extract()?;
+                    let val = id_fn.call1((member.get_item(1)?,))?.extract()?;
+                    name_to_pyid.insert(key.into(), val);
+                }
+                let helper = PythonHelper {
+                    id_fn: builtins.getattr("id").unwrap().to_object(py),
+                    len_fn: builtins.getattr("len").unwrap().to_object(py),
+                    type_fn: builtins.getattr("type").unwrap().to_object(py),
+                };
+                Ok((
+                    module.getattr("__name__")?.extract()?,
+                    module.getattr("__file__")?.extract()?,
+                    helper,
+                ))
+            })?;
 
         let source = fs::read_to_string(source_file).map_err(|e| {
             exceptions::PyIOError::new_err(format!("failed to read input file: {}", e))
         })?;
         let parser_result = parser::parse_program(&source)
             .map_err(|e| exceptions::PySyntaxError::new_err(format!("parse error: {}", e)))?;
-        let resolver = Arc::new(Resolver {
+
+        let resolver = Arc::new(Resolver(Arc::new(InnerResolver {
             id_to_type: self.builtins_ty.clone().into(),
             id_to_def: self.builtins_def.clone().into(),
             pyid_to_def: self.pyid_to_def.clone(),
@@ -109,7 +124,8 @@ impl Nac3 {
             class_names: Default::default(),
             name_to_pyid: name_to_pyid.clone(),
             module: module.clone(),
-        }) as Arc<dyn SymbolResolver + Send + Sync>;
+            helper,
+        }))) as Arc<dyn SymbolResolver + Send + Sync>;
         let mut name_to_def = HashMap::new();
         let mut name_to_type = HashMap::new();
 
@@ -140,10 +156,11 @@ impl Nac3 {
                                     let base_obj = module.getattr(py, id.to_string())?;
                                     let base_id = id_fn.call1((base_obj,))?.extract()?;
                                     Ok(registered_class_ids.contains(&base_id))
-                                },
-                                _ => Ok(true)
+                                }
+                                _ => Ok(true),
                             }
-                        }).unwrap()
+                        })
+                        .unwrap()
                     });
                     body.retain(|stmt| {
                         if let ast::StmtKind::FunctionDef {
@@ -306,7 +323,11 @@ impl Nac3 {
         };
 
         let working_directory = tempfile::Builder::new().prefix("nac3-").tempdir().unwrap();
-        fs::write(working_directory.path().join("kernel.ld"), include_bytes!("kernel.ld")).unwrap();
+        fs::write(
+            working_directory.path().join("kernel.ld"),
+            include_bytes!("kernel.ld"),
+        )
+        .unwrap();
 
         Ok(Nac3 {
             isa,
@@ -320,29 +341,30 @@ impl Nac3 {
             pyid_to_def: Default::default(),
             pyid_to_type: Default::default(),
             global_value_ids: Default::default(),
-            working_directory
+            working_directory,
         })
     }
 
     fn analyze(&mut self, functions: &PySet, classes: &PySet) -> PyResult<()> {
-        let (modules, class_ids) = Python::with_gil(|py| -> PyResult<(HashMap<u64, PyObject>, HashSet<u64>)> {
-            let mut modules: HashMap<u64, PyObject> = HashMap::new();
-            let mut class_ids: HashSet<u64> = HashSet::new();
+        let (modules, class_ids) =
+            Python::with_gil(|py| -> PyResult<(HashMap<u64, PyObject>, HashSet<u64>)> {
+                let mut modules: HashMap<u64, PyObject> = HashMap::new();
+                let mut class_ids: HashSet<u64> = HashSet::new();
 
-            let id_fn = PyModule::import(py, "builtins")?.getattr("id")?;
-            let getmodule_fn = PyModule::import(py, "inspect")?.getattr("getmodule")?;
+                let id_fn = PyModule::import(py, "builtins")?.getattr("id")?;
+                let getmodule_fn = PyModule::import(py, "inspect")?.getattr("getmodule")?;
 
-            for function in functions.iter() {
-                let module = getmodule_fn.call1((function,))?.extract()?;
-                modules.insert(id_fn.call1((&module,))?.extract()?, module);
-            }
-            for class in classes.iter() {
-                let module = getmodule_fn.call1((class,))?.extract()?;
-                modules.insert(id_fn.call1((&module,))?.extract()?, module);
-                class_ids.insert(id_fn.call1((class,))?.extract()?);
-            }
-            Ok((modules, class_ids))
-        })?;
+                for function in functions.iter() {
+                    let module = getmodule_fn.call1((function,))?.extract()?;
+                    modules.insert(id_fn.call1((&module,))?.extract()?, module);
+                }
+                for class in classes.iter() {
+                    let module = getmodule_fn.call1((class,))?.extract()?;
+                    modules.insert(id_fn.call1((&module,))?.extract()?, module);
+                    class_ids.insert(id_fn.call1((class,))?.extract()?);
+                }
+                Ok((modules, class_ids))
+            })?;
 
         for module in modules.into_values() {
             self.register_module(module, &class_ids)?;
@@ -380,7 +402,13 @@ impl Nac3 {
             )
         };
         let mut synthesized = parse_program(&synthesized).unwrap();
-        let resolver = Arc::new(Resolver {
+        let builtins = PyModule::import(py, "builtins")?;
+        let helper = PythonHelper {
+            id_fn: builtins.getattr("id").unwrap().to_object(py),
+            len_fn: builtins.getattr("len").unwrap().to_object(py),
+            type_fn: builtins.getattr("type").unwrap().to_object(py),
+        };
+        let resolver = Arc::new(Resolver(Arc::new(InnerResolver {
             id_to_type: self.builtins_ty.clone().into(),
             id_to_def: self.builtins_def.clone().into(),
             pyid_to_def: self.pyid_to_def.clone(),
@@ -390,7 +418,8 @@ impl Nac3 {
             class_names: Default::default(),
             name_to_pyid,
             module: module.to_object(py),
-        }) as Arc<dyn SymbolResolver + Send + Sync>;
+            helper,
+        }))) as Arc<dyn SymbolResolver + Send + Sync>;
         let (_, def_id, _) = self
             .composer
             .register_top_level(
@@ -455,9 +484,18 @@ impl Nac3 {
             passes.run_on(module);
 
             let (triple, features) = match isa {
-                Isa::Host => (TargetMachine::get_default_triple(), TargetMachine::get_host_cpu_features().to_string()),
-                Isa::RiscV32G => (TargetTriple::create("riscv32-unknown-linux"), "+a,+m,+f,+d".to_string()),
-                Isa::RiscV32IMA => (TargetTriple::create("riscv32-unknown-linux"), "+a,+m".to_string()),
+                Isa::Host => (
+                    TargetMachine::get_default_triple(),
+                    TargetMachine::get_host_cpu_features().to_string(),
+                ),
+                Isa::RiscV32G => (
+                    TargetTriple::create("riscv32-unknown-linux"),
+                    "+a,+m,+f,+d".to_string(),
+                ),
+                Isa::RiscV32IMA => (
+                    TargetTriple::create("riscv32-unknown-linux"),
+                    "+a,+m".to_string(),
+                ),
                 Isa::CortexA9 => (
                     TargetTriple::create("armv7-unknown-linux-gnueabihf"),
                     "+dsp,+fp16,+neon,+vfp3".to_string(),
@@ -482,6 +520,7 @@ impl Nac3 {
                     &working_directory.join(&format!("{}.o", module.get_name().to_str().unwrap())),
                 )
                 .expect("couldn't write module to file");
+            println!("{}", module.print_to_string().to_str().unwrap());
         })));
         let thread_names: Vec<String> = (0..4).map(|i| format!("module{}", i)).collect();
         let threads: Vec<_> = thread_names
@@ -503,11 +542,24 @@ impl Nac3 {
             filename.to_string(),
         ];
         if isa != Isa::Host {
-            linker_args.push("-T".to_string() + self.working_directory.path().join("kernel.ld").to_str().unwrap());
+            linker_args.push(
+                "-T".to_string()
+                    + self
+                        .working_directory
+                        .path()
+                        .join("kernel.ld")
+                        .to_str()
+                        .unwrap(),
+            );
         }
         linker_args.extend(thread_names.iter().map(|name| {
             let name_o = name.to_owned() + ".o";
-            self.working_directory.path().join(name_o.as_str()).to_str().unwrap().to_string()
+            self.working_directory
+                .path()
+                .join(name_o.as_str())
+                .to_str()
+                .unwrap()
+                .to_string()
         }));
         if let Ok(linker_status) = Command::new("ld.lld").args(linker_args).status() {
             if !linker_status.success() {
