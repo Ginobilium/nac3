@@ -44,6 +44,7 @@ pub trait SymbolResolver {
         ctx: &mut CodeGenContext<'ctx, 'a>,
     ) -> Option<BasicValueEnum<'ctx>>;
     fn get_symbol_location(&self, str: StrRef) -> Option<Location>;
+    fn get_default_param_value(&self, expr: &nac3parser::ast::Expr) -> Option<SymbolValue>;
     // handle function call etc.
 }
 

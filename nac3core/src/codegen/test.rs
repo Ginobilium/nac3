@@ -37,6 +37,10 @@ impl Resolver {
 }
 
 impl SymbolResolver for Resolver {
+    fn get_default_param_value(&self, _: &nac3parser::ast::Expr) -> Option<crate::symbol_resolver::SymbolValue> {
+        unimplemented!()
+    }
+    
     fn get_symbol_type(
         &self,
         _: &mut Unifier,

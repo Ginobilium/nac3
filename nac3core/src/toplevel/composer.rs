@@ -1066,10 +1066,23 @@ impl TopLevelComposer {
                             and names thould not be the same as the keywords"
                                 .into());
                         }
-
-                        args.args
+                        
+                        let arg_with_default: Vec<(&ast::Located<ast::ArgData<()>>, Option<&ast::Expr>)> = args
+                            .args
                             .iter()
-                            .map(|x| -> Result<FuncArg, String> {
+                            .rev()
+                            .zip(args
+                                .defaults
+                                .iter()
+                                .rev()
+                                .map(|x| -> Option<&ast::Expr> { Some(x) })
+                                .chain(std::iter::repeat(None))
+                            ).collect_vec();
+
+                        arg_with_default
+                            .iter()
+                            .rev()
+                            .map(|(x, default)| -> Result<FuncArg, String> {
                                 let annotation = x
                                     .node
                                     .annotation
@@ -1121,7 +1134,19 @@ impl TopLevelComposer {
                                 Ok(FuncArg {
                                     name: x.node.arg,
                                     ty,
-                                    default_value: Default::default(),
+                                    default_value: match default {
+                                        None => None,
+                                        Some(default) => Some({
+                                            let v = Self::parse_parameter_default_value(default, resolver)?;
+                                            Self::check_default_param_type(
+                                                &v,
+                                                &type_annotation,
+                                                primitives_store,
+                                                unifier
+                                            ).map_err(|err| format!("{} at {}", err, x.location))?;
+                                            v
+                                        })
+                                    }
                                 })
                             })
                             .collect::<Result<Vec<_>, _>>()?
@@ -1282,7 +1307,20 @@ impl TopLevelComposer {
                         }
 
                         let mut result = Vec::new();
-                        for x in &args.args {
+                        
+                        let arg_with_default: Vec<(&ast::Located<ast::ArgData<()>>, Option<&ast::Expr>)> = args
+                            .args
+                            .iter()
+                            .rev()
+                            .zip(args
+                                .defaults
+                                .iter()
+                                .rev()
+                                .map(|x| -> Option<&ast::Expr> { Some(x) })
+                                .chain(std::iter::repeat(None))
+                            ).collect_vec();
+                        
+                        for (x, default) in arg_with_default.into_iter().rev() {
                             let name = x.node.arg;
                             if name != zelf {
                                 let type_ann = {
@@ -1327,8 +1365,20 @@ impl TopLevelComposer {
                                 let dummy_func_arg = FuncArg {
                                     name,
                                     ty: unifier.get_fresh_var().0,
-                                    // TODO: default value?
-                                    default_value: None,
+                                    default_value: match default {
+                                        None => None,
+                                        Some(default) => {
+                                            if name == "self".into() {
+                                                return Err(format!("`self` parameter cannot take default value at {}", x.location));
+                                            }
+                                            Some({
+                                                let v = Self::parse_parameter_default_value(default, class_resolver)?;
+                                                Self::check_default_param_type(&v, &type_ann, primitives, unifier)
+                                                    .map_err(|err| format!("{} at {}", err, x.location))?;
+                                                v
+                                            })
+                                        }
+                                    }
                                 };
                                 // push the dummy type and the type annotation
                                 // into the list for later unification
