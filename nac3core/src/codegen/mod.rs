@@ -282,7 +282,8 @@ pub fn gen_func<'ctx, G: CodeGenerator + ?Sized>(
         let b = task.store.to_unifier_type(&mut unifier, &primitives, *b, &mut cache);
         unifier.unify(*a, b).or_else(|err| {
             if matches!(&*unifier.get_ty(*a), TypeEnum::TRigidVar { .. }) {
-                Ok(unifier.replace_rigid_var(*a, b))
+                unifier.replace_rigid_var(*a, b);
+                Ok(())
             } else {
                 Err(err)
             }
