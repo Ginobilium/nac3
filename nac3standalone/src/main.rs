@@ -103,7 +103,7 @@ fn main() {
         let mut instance =
             defs[resolver
                 .get_identifier_def("run".into())
-                .unwrap_or_else(|| panic!("cannot find `run() -> int32 entry point`")).0
+                .unwrap_or_else(|| panic!("cannot find run() entry point")).0
             ].write();
         if let TopLevelDef::Function {
             instance_to_stmt,
