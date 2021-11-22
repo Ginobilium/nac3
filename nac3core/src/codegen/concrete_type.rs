@@ -148,8 +148,9 @@ impl ConcreteTypeStore {
                         .borrow()
                         .iter()
                         .filter_map(|(name, ty)| {
-                            // filter out functions as they can have type vars and
-                            // will not affect codegen
+                            // here we should not have type vars, but some partial instantiated
+                            // class methods can still have uninstantiated type vars, so
+                            // filter out all the methods, as this will not affect codegen
                             if let TypeEnum::TFunc( .. ) = &*unifier.get_ty(ty.0) {
                                 None
                             } else {

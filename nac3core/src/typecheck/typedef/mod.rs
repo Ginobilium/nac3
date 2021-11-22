@@ -725,8 +725,9 @@ impl Unifier {
             if let TypeEnum::TVar { id, range, .. } =
                 self.unification_table.probe_value(*v).as_ref()
             {
-                // need to do this for partial instantiated function
-                // (in class methods that contains type vars not in class)
+                // for class methods that contain type vars not in class declaration,
+                // as long as there exits one uninstantiated type var, the function is not instantiated,
+                // and need to do substitution on those type vars
                 if k == id {
                     instantiated = false;
                     vars.push((*k, range.clone()));
