@@ -1,7 +1,7 @@
 {
   description = "The third-generation ARTIQ compiler";
 
-  inputs.nixpkgs.url = github:NixOS/nixpkgs/master;
+  inputs.nixpkgs.url = github:NixOS/nixpkgs/release-21.11;
 
   outputs = { self, nixpkgs }:
     let
