@@ -461,6 +461,6 @@ pub fn parse_parameter_default_value(default: &ast::Expr, resolver: &(dyn Symbol
                 )
             )
         }
-        _ => unimplemented!("only constant default is supported now at {}", default.location),
+        _ => Err(format!("unsupported default parameter at {}", default.location))
     }
 }
