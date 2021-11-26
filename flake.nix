@@ -10,7 +10,7 @@
       nixpkgs-patched = pkgs-orig.applyPatches {
         name = "nixpkgs";
         src = nixpkgs;
-        patches = [ ./llvm-future-riscv-abi.diff ./llvm-restrict-targets.diff ];
+        patches = [ ./llvm-future-riscv-abi.diff ./llvm-restrict-targets.diff ./llvm-mingw-crosscompile.diff ];
       };
       pkgs = import nixpkgs-patched { system = "x86_64-linux"; };
     in rec {
