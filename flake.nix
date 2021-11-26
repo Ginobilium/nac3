@@ -13,6 +13,17 @@
         patches = [ ./llvm-future-riscv-abi.diff ./llvm-restrict-targets.diff ./llvm-mingw-crosscompile.diff ];
       };
       pkgs = import nixpkgs-patched { system = "x86_64-linux"; };
+      pkgs-mingw = import nixpkgs-patched { system = "x86_64-linux"; crossSystem = { config = "x86_64-w64-mingw32"; libc = "msvcrt"; }; };
+      cargoSha256 = "sha256-otKLhr58HYMjVXAof6AdObNpggPnvK6qOl7I+4LWIP8=";
+      msys2-python-tar = pkgs.fetchurl {
+        url = "https://mirror.msys2.org/mingw/mingw64/mingw-w64-x86_64-python-3.9.7-4-any.pkg.tar.zst";
+        sha256 = "0iwlgbk4b457yn9djwqswid55xhyyi35qymz1lfh42xwdpxdm47c";
+      };
+      msys2-python = pkgs.runCommand "msys2-python" { buildInputs = [ pkgs.gnutar pkgs.zstd ]; }
+        ''
+        mkdir $out
+        tar xvf ${msys2-python-tar} -C $out
+        '';
     in rec {
       inherit nixpkgs-patched;
 
@@ -21,7 +32,7 @@
           pkgs.rustPlatform.buildRustPackage {
             name = "nac3artiq";
             src = self;
-            cargoSha256 = "sha256-otKLhr58HYMjVXAof6AdObNpggPnvK6qOl7I+4LWIP8=";
+            inherit cargoSha256;
             nativeBuildInputs = [ pkgs.python3 pkgs.llvm_12 ];
             buildInputs = [ pkgs.python3 pkgs.libffi pkgs.libxml2 pkgs.llvm_12 ];
             cargoBuildFlags = [ "--package" "nac3artiq" ];
@@ -32,6 +43,34 @@
               mkdir -p $TARGET_DIR
               cp target/x86_64-unknown-linux-gnu/release/libnac3artiq.so $TARGET_DIR/nac3artiq.so
               '';
+          }
+        );
+      };
+
+      packages.x86_64-w64-mingw32 = {
+        nac3artiq = pkgs-mingw.python3Packages.toPythonModule (
+          pkgs-mingw.rustPlatform.buildRustPackage {
+            name = "nac3artiq";
+            src = self;
+            inherit cargoSha256;
+            nativeBuildInputs = [ pkgs-mingw.llvm_12 ];
+            buildInputs = [ pkgs-mingw.libffi pkgs-mingw.libxml2 pkgs-mingw.llvm_12 ];
+            configurePhase =
+              ''
+              export PYO3_CROSS_PYTHON_VERSION=3.9
+              export PYO3_CROSS_LIB_DIR=${msys2-python}/mingw64/lib
+              echo Using Python $PYO3_CROSS_PYTHON_VERSION in $PYO3_CROSS_LIB_DIR
+              '';
+            cargoBuildFlags = [ "--package" "nac3artiq" ];
+            doCheck = false;
+            installPhase =
+              ''
+              TARGET_DIR=$out/${pkgs.python3Packages.python.sitePackages}
+              mkdir -p $TARGET_DIR
+              #cp target/x86_64-unknown-linux-gnu/release/libnac3artiq.so $TARGET_DIR/nac3artiq.so
+              ls target
+              '';
+            meta.platforms = ["x86_64-windows"];
           }
         );
       };
