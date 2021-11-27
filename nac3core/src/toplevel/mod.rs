@@ -23,7 +23,7 @@ use inkwell::values::BasicValueEnum;
 pub struct DefinitionId(pub usize);
 
 pub mod composer;
-mod helper;
+pub mod helper;
 mod type_annotation;
 use composer::*;
 use type_annotation::*;

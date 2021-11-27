@@ -1,3 +1,8 @@
+use std::convert::TryInto;
+
+use nac3parser::ast::{Constant, Location};
+use crate::symbol_resolver::SymbolValue;
+
 use super::*;
 
 impl TopLevelDef {
@@ -340,5 +345,122 @@ impl TopLevelComposer {
             }
         }
         Ok(result)
+    }
+
+    pub fn parse_parameter_default_value(default: &ast::Expr, resolver: &(dyn SymbolResolver + Send + Sync)) -> Result<SymbolValue, String> {
+        parse_parameter_default_value(default, resolver)
+    }
+
+    pub fn check_default_param_type(val: &SymbolValue, ty: &TypeAnnotation, primitive: &PrimitiveStore, unifier: &mut Unifier) -> Result<(), String> {
+        let res = match val {
+            SymbolValue::Bool(..) => {
+                if matches!(ty, TypeAnnotation::Primitive(t) if *t == primitive.bool) {
+                    None
+                } else {
+                    Some("bool".to_string())
+                }
+            }
+            SymbolValue::Double(..) => {
+                if matches!(ty, TypeAnnotation::Primitive(t) if *t == primitive.float) {
+                    None
+                } else {
+                    Some("float".to_string())
+                }
+            }
+            SymbolValue::I32(..) => {
+                if matches!(ty, TypeAnnotation::Primitive(t) if *t == primitive.int32) {
+                    None
+                } else {
+                    Some("int32".to_string())
+                }
+            }
+            SymbolValue::I64(..) => {
+                if matches!(ty, TypeAnnotation::Primitive(t) if *t == primitive.int64) {
+                    None
+                } else {
+                    Some("int64".to_string())
+                }
+            }
+            SymbolValue::Tuple(elts) => {
+                if let TypeAnnotation::Tuple(elts_ty) = ty {
+                    for (e, t) in elts.iter().zip(elts_ty.iter()) {
+                        Self::check_default_param_type(e, t, primitive, unifier)?
+                    }
+                    if elts.len() != elts_ty.len() {
+                        Some(format!("tuple of length {}", elts.len()))
+                    } else {
+                        None
+                    }
+                } else {
+                    Some("tuple".to_string())
+                }
+            }
+        };
+        if let Some(found) = res {
+            Err(format!(
+                "incompatible default parameter type, expect {}, found {}",
+                ty.stringify(unifier),
+                found
+            ))
+        } else {
+            Ok(())
+        }
+    }
+}
+
+pub fn parse_parameter_default_value(default: &ast::Expr, resolver: &(dyn SymbolResolver + Send + Sync)) -> Result<SymbolValue, String> {
+    fn handle_constant(val: &Constant, loc: &Location) -> Result<SymbolValue, String> {
+        match val {
+            Constant::Int(v) => {
+                if let Ok(v) = v.try_into() {
+                    Ok(SymbolValue::I32(v))
+                } else {
+                    Err(format!(
+                        "integer value out of range at {}",
+                        loc
+                    ))
+                }
+            }
+            Constant::Float(v) => Ok(SymbolValue::Double(*v)),
+            Constant::Bool(v) => Ok(SymbolValue::Bool(*v)),
+            Constant::Tuple(tuple) => Ok(SymbolValue::Tuple(
+                tuple.iter().map(|x| handle_constant(x, loc)).collect::<Result<Vec<_>, _>>()?
+            )),
+            _ => unimplemented!("this constant is not supported at {}", loc),
+        }
+    }
+    match &default.node {
+        ast::ExprKind::Constant { value, .. } => handle_constant(value, &default.location),
+        ast::ExprKind::Call { func, args, .. } if {
+            match &func.node {
+                ast::ExprKind::Name { id, .. } => *id == "int64".into(),
+                _ => false,
+            }
+        } => {
+            if args.len() == 1 {
+                match &args[0].node {
+                    ast::ExprKind::Constant { value: Constant::Int(v), .. } =>
+                        Ok(SymbolValue::I64(v.try_into().unwrap())),
+                    _ => Err(format!("only allow constant integer here at {}", default.location))
+                }
+            } else {
+                Err(format!("only allow constant integer here at {}", default.location))
+            }
+        }
+        ast::ExprKind::Tuple { elts, .. } => Ok(SymbolValue::Tuple(elts
+            .iter()
+            .map(|x| parse_parameter_default_value(x, resolver))
+            .collect::<Result<Vec<_>, _>>()?
+        )),
+        ast::ExprKind::Name { id, .. } => {
+            resolver.get_default_param_value(default).ok_or_else(
+                || format!(
+                    "`{}` cannot be used as a default parameter at {} (not primitive type or tuple / not defined?)",
+                    id,
+                    default.location
+                )
+            )
+        }
+        _ => Err(format!("unsupported default parameter at {}", default.location))
     }
 }

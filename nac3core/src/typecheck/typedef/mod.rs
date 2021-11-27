@@ -719,22 +719,19 @@ impl Unifier {
     /// Returns Some(T) where T is the instantiated type.
     /// Returns None if the function is already instantiated.
     fn instantiate_fun(&mut self, ty: Type, fun: &FunSignature) -> Type {
-        let mut instantiated = false;
+        let mut instantiated = true;
         let mut vars = Vec::new();
         for (k, v) in fun.vars.iter() {
             if let TypeEnum::TVar { id, range, .. } =
                 self.unification_table.probe_value(*v).as_ref()
             {
-                if k != id {
-                    instantiated = true;
-                    break;
+                // for class methods that contain type vars not in class declaration,
+                // as long as there exits one uninstantiated type var, the function is not instantiated,
+                // and need to do substitution on those type vars
+                if k == id {
+                    instantiated = false;
+                    vars.push((*k, range.clone()));
                 }
-                // actually, if the first check succeeded, the function should be uninstatiated.
-                // The cloned values must be used and would not be wasted.
-                vars.push((*k, range.clone()));
-            } else {
-                instantiated = true;
-                break;
             }
         }
         if instantiated {

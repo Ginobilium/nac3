@@ -2,14 +2,14 @@ use inkwell::{types::BasicType, values::BasicValueEnum, AddressSpace};
 use nac3core::{
     codegen::CodeGenContext,
     location::Location,
-    symbol_resolver::{StaticValue, SymbolResolver, ValueEnum},
+    symbol_resolver::{StaticValue, SymbolResolver, SymbolValue, ValueEnum},
     toplevel::{DefinitionId, TopLevelDef},
     typecheck::{
         type_inferencer::PrimitiveStore,
         typedef::{Type, TypeEnum, Unifier},
     },
 };
-use nac3parser::ast::StrRef;
+use nac3parser::ast::{self, StrRef};
 use parking_lot::{Mutex, RwLock};
 use pyo3::{
     types::{PyList, PyModule, PyTuple},
@@ -458,9 +458,80 @@ impl InnerResolver {
             }
         }
     }
+
+    fn get_default_param_obj_value(
+        &self,
+        py: Python,
+        obj: &PyAny,
+    ) -> PyResult<Result<SymbolValue, String>> {
+        let ty_id: u64 = self
+            .helper
+            .id_fn
+            .call1(py, (self.helper.type_fn.call1(py, (obj,))?,))?
+            .extract(py)?;
+        Ok(
+            if ty_id == self.primitive_ids.int || ty_id == self.primitive_ids.int32 {
+                let val: i32 = obj.extract()?;
+                Ok(SymbolValue::I32(val))
+            } else if ty_id == self.primitive_ids.int64 {
+                let val: i64 = obj.extract()?;
+                Ok(SymbolValue::I64(val))
+            } else if ty_id == self.primitive_ids.bool {
+                let val: bool = obj.extract()?;
+                Ok(SymbolValue::Bool(val))
+            } else if ty_id == self.primitive_ids.float {
+                let val: f64 = obj.extract()?;
+                Ok(SymbolValue::Double(val))
+            } else if ty_id == self.primitive_ids.tuple {
+                let elements: &PyTuple = obj.cast_as()?;
+                let elements: Result<Result<Vec<_>, String>, _> = elements
+                    .iter()
+                    .map(|elem| self.get_default_param_obj_value(py, elem))
+                    .collect();
+                let elements = match elements? {
+                    Ok(el) => el,
+                    Err(err) => return Ok(Err(err)),
+                };
+                Ok(SymbolValue::Tuple(elements))
+            } else {
+                Err("only primitives values and tuple can be default parameter value".into())
+            },
+        )
+    }
 }
 
 impl SymbolResolver for Resolver {
+    fn get_default_param_value(&self, expr: &ast::Expr) -> Option<SymbolValue> {
+        match &expr.node {
+            ast::ExprKind::Name { id, .. } => {
+                Python::with_gil(|py| -> PyResult<Option<SymbolValue>> {
+                    let obj: &PyAny = self.0.module.extract(py)?;
+                    let members: &PyList = PyModule::import(py, "inspect")?
+                        .getattr("getmembers")?
+                        .call1((obj,))?
+                        .cast_as()?;
+                    let mut sym_value = None;
+                    for member in members.iter() {
+                        let key: &str = member.get_item(0)?.extract()?;
+                        let val = member.get_item(1)?;
+                        if key == id.to_string() {
+                            sym_value = Some(
+                                self.0
+                                    .get_default_param_obj_value(py, val)
+                                    .unwrap()
+                                    .unwrap(),
+                            );
+                            break;
+                        }
+                    }
+                    Ok(sym_value)
+                })
+                .unwrap()
+            }
+            _ => unimplemented!("other type of expr not supported at {}", expr.location),
+        }
+    }
+
     fn get_symbol_type(
         &self,
         unifier: &mut Unifier,

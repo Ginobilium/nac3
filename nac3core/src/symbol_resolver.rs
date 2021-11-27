@@ -102,6 +102,7 @@ pub trait SymbolResolver {
     ) -> Option<ValueEnum<'ctx>>;
 
     fn get_symbol_location(&self, str: StrRef) -> Option<Location>;
+    fn get_default_param_value(&self, expr: &nac3parser::ast::Expr) -> Option<SymbolValue>;
     // handle function call etc.
 }
 

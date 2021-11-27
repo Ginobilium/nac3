@@ -7,7 +7,7 @@ use crate::{
     },
     symbol_resolver::{SymbolValue, ValueEnum},
     toplevel::{DefinitionId, TopLevelDef},
-    typecheck::typedef::{FunSignature, FuncArg, Type, TypeEnum},
+    typecheck::typedef::{FunSignature, FuncArg, Type, TypeEnum, Unifier},
 };
 use inkwell::{
     types::{BasicType, BasicTypeEnum},
@@ -18,6 +18,31 @@ use itertools::{chain, izip, zip, Itertools};
 use nac3parser::ast::{self, Boolop, Comprehension, Constant, Expr, ExprKind, Operator, StrRef};
 
 use super::CodeGenerator;
+
+pub fn get_subst_key(
+    unifier: &mut Unifier,
+    obj: Option<Type>,
+    fun_vars: &HashMap<u32, Type>,
+    filter: Option<&Vec<u32>>,
+) -> String {
+    let mut vars = obj
+        .map(|ty| {
+            if let TypeEnum::TObj { params, .. } = &*unifier.get_ty(ty) {
+                params.borrow().clone()
+            } else {
+                unreachable!()
+            }
+        })
+        .unwrap_or_default();
+    vars.extend(fun_vars.iter());
+    let sorted =
+        vars.keys().filter(|id| filter.map(|v| v.contains(id)).unwrap_or(true)).sorted();
+    sorted
+        .map(|id| {
+            unifier.stringify(vars[id], &mut |id| id.to_string(), &mut |id| id.to_string())
+        })
+        .join(", ")
+}
 
 impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
     pub fn build_gep_and_load(
@@ -34,23 +59,7 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
         fun: &FunSignature,
         filter: Option<&Vec<u32>>,
     ) -> String {
-        let mut vars = obj
-            .map(|ty| {
-                if let TypeEnum::TObj { params, .. } = &*self.unifier.get_ty(ty) {
-                    params.borrow().clone()
-                } else {
-                    unreachable!()
-                }
-            })
-            .unwrap_or_default();
-        vars.extend(fun.vars.iter());
-        let sorted =
-            vars.keys().filter(|id| filter.map(|v| v.contains(id)).unwrap_or(true)).sorted();
-        sorted
-            .map(|id| {
-                self.unifier.stringify(vars[id], &mut |id| id.to_string(), &mut |id| id.to_string())
-            })
-            .join(", ")
+        get_subst_key(&mut self.unifier, obj, &fun.vars, filter)
     }
 
     pub fn get_attr_index(&mut self, ty: Type, attr: StrRef) -> usize {

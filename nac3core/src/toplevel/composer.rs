@@ -6,6 +6,7 @@ use inkwell::FloatPredicate;
 use crate::{
     symbol_resolver::SymbolValue,
     typecheck::type_inferencer::{FunctionData, Inferencer},
+    codegen::expr::get_subst_key,
 };
 
 use super::*;
@@ -194,7 +195,7 @@ impl TopLevelComposer {
                     signature: primitives.1.add_ty(TypeEnum::TFunc(RefCell::new(FunSignature {
                         args: vec![FuncArg { name: "_".into(), ty: num_ty.0, default_value: None }],
                         ret: float,
-                        vars: var_map,
+                        vars: var_map.clone(),
                     }))),
                     var_id: Default::default(),
                     instance_to_symbol: Default::default(),
@@ -397,7 +398,7 @@ impl TopLevelComposer {
                     signature: primitives.1.add_ty(TypeEnum::TFunc(RefCell::new(FunSignature {
                         args: vec![FuncArg { name: "_".into(), ty: num_ty.0, default_value: None }],
                         ret: primitives.0.bool,
-                        vars: Default::default(),
+                        vars: var_map,
                     }))),
                     var_id: Default::default(),
                     instance_to_symbol: Default::default(),
@@ -1066,9 +1067,22 @@ impl TopLevelComposer {
                                 .into());
                         }
 
-                        args.args
+                        let arg_with_default: Vec<(&ast::Located<ast::ArgData<()>>, Option<&ast::Expr>)> = args
+                            .args
                             .iter()
-                            .map(|x| -> Result<FuncArg, String> {
+                            .rev()
+                            .zip(args
+                                .defaults
+                                .iter()
+                                .rev()
+                                .map(|x| -> Option<&ast::Expr> { Some(x) })
+                                .chain(std::iter::repeat(None))
+                            ).collect_vec();
+
+                        arg_with_default
+                            .iter()
+                            .rev()
+                            .map(|(x, default)| -> Result<FuncArg, String> {
                                 let annotation = x
                                     .node
                                     .annotation
@@ -1120,7 +1134,19 @@ impl TopLevelComposer {
                                 Ok(FuncArg {
                                     name: x.node.arg,
                                     ty,
-                                    default_value: Default::default(),
+                                    default_value: match default {
+                                        None => None,
+                                        Some(default) => Some({
+                                            let v = Self::parse_parameter_default_value(default, resolver)?;
+                                            Self::check_default_param_type(
+                                                &v,
+                                                &type_annotation,
+                                                primitives_store,
+                                                unifier
+                                            ).map_err(|err| format!("{} at {}", err, x.location))?;
+                                            v
+                                        })
+                                    }
                                 })
                             })
                             .collect::<Result<Vec<_>, _>>()?
@@ -1170,8 +1196,17 @@ impl TopLevelComposer {
                             primitives_store.none
                         }
                     };
-                    var_id.extend_from_slice(
-                        function_var_map.keys().into_iter().copied().collect_vec().as_slice(),
+                    var_id.extend_from_slice(function_var_map
+                        .iter()
+                        .filter_map(|(id, ty)| {
+                            if matches!(&*unifier.get_ty(*ty), TypeEnum::TVar { range, .. } if range.borrow().is_empty()) {
+                                None
+                            } else {
+                                Some(*id)
+                            }
+                        })
+                        .collect_vec()
+                        .as_slice()
                     );
                     let function_ty = unifier.add_ty(TypeEnum::TFunc(
                         FunSignature { args: arg_types, ret: return_ty, vars: function_var_map }
@@ -1272,7 +1307,20 @@ impl TopLevelComposer {
                         }
 
                         let mut result = Vec::new();
-                        for x in &args.args {
+
+                        let arg_with_default: Vec<(&ast::Located<ast::ArgData<()>>, Option<&ast::Expr>)> = args
+                            .args
+                            .iter()
+                            .rev()
+                            .zip(args
+                                .defaults
+                                .iter()
+                                .rev()
+                                .map(|x| -> Option<&ast::Expr> { Some(x) })
+                                .chain(std::iter::repeat(None))
+                            ).collect_vec();
+
+                        for (x, default) in arg_with_default.into_iter().rev() {
                             let name = x.node.arg;
                             if name != zelf {
                                 let type_ann = {
@@ -1317,8 +1365,20 @@ impl TopLevelComposer {
                                 let dummy_func_arg = FuncArg {
                                     name,
                                     ty: unifier.get_fresh_var().0,
-                                    // TODO: default value?
-                                    default_value: None,
+                                    default_value: match default {
+                                        None => None,
+                                        Some(default) => {
+                                            if name == "self".into() {
+                                                return Err(format!("`self` parameter cannot take default value at {}", x.location));
+                                            }
+                                            Some({
+                                                let v = Self::parse_parameter_default_value(default, class_resolver)?;
+                                                Self::check_default_param_type(&v, &type_ann, primitives, unifier)
+                                                    .map_err(|err| format!("{} at {}", err, x.location))?;
+                                                v
+                                            })
+                                        }
+                                    }
                                 };
                                 // push the dummy type and the type annotation
                                 // into the list for later unification
@@ -1374,9 +1434,20 @@ impl TopLevelComposer {
                     if let TopLevelDef::Function { var_id, .. } =
                         temp_def_list.get(method_id.0).unwrap().write().deref_mut()
                     {
-                        var_id.extend_from_slice(
-                            method_var_map.keys().into_iter().copied().collect_vec().as_slice(),
+                        var_id.extend_from_slice(method_var_map
+                            .iter()
+                            .filter_map(|(id, ty)| {
+                                if matches!(&*unifier.get_ty(*ty), TypeEnum::TVar { range, .. } if range.borrow().is_empty()) {
+                                    None
+                                } else {
+                                    Some(*id)
+                                }
+                            })
+                            .collect_vec()
+                            .as_slice()
                         );
+                    } else {
+                        unreachable!()
                     }
                     let method_type = unifier.add_ty(TypeEnum::TFunc(
                         FunSignature { args: arg_types, ret: ret_type, vars: method_var_map }
@@ -1625,11 +1696,14 @@ impl TopLevelComposer {
                             unreachable!("must be init function here")
                         }
                         let all_inited = Self::get_all_assigned_field(body.as_slice())?;
-                        if fields.iter().any(|x| !all_inited.contains(&x.0)) {
-                            return Err(format!(
-                                "fields of class {} not fully initialized",
-                                class_name
-                            ));
+                        for (f, _, _) in fields {
+                            if !all_inited.contains(f) {
+                                return Err(format!(
+                                    "fields `{}` of class `{}` not fully initialized",
+                                    f,
+                                    class_name
+                                ));
+                            }
                         }
                     }
                 }
@@ -1648,13 +1722,14 @@ impl TopLevelComposer {
                 simple_name,
                 signature,
                 resolver,
+                var_id: insted_vars,
                 ..
             } = &mut *function_def
             {
                 if let TypeEnum::TFunc(func_sig) = self.unifier.get_ty(*signature).as_ref() {
                     let FunSignature { args, ret, vars } = &*func_sig.borrow();
                     // None if is not class method
-                    let self_type = {
+                    let uninst_self_type = {
                         if let Some(class_id) = self.method_class.get(&DefinitionId(id)) {
                             let class_def = self.definition_ast_list.get(class_id.0).unwrap();
                             let class_def = class_def.0.read();
@@ -1666,7 +1741,7 @@ impl TopLevelComposer {
                                     &self.primitives_ty,
                                     &ty_ann,
                                 )?;
-                                Some(self_ty)
+                                Some((self_ty, type_vars.clone()))
                             } else {
                                 unreachable!("must be class def")
                             }
@@ -1674,20 +1749,20 @@ impl TopLevelComposer {
                             None
                         }
                     };
+                    // carefully handle those with bounds, without bounds and no typevars
+                    // if class methods, `vars` also contains all class typevars here
                     let (type_var_subst_comb, no_range_vars) = {
                         let unifier = &mut self.unifier;
                         let mut no_ranges: Vec<Type> = Vec::new();
-                        let var_ids = vars.iter().map(|(id, ty)| {
-                            if matches!(unifier.get_ty(*ty).as_ref(), TypeEnum::TVar { range, .. } if range.borrow().is_empty()) {
-                                no_ranges.push(*ty);
-                            }
-                            *id
-                        })
-                        .collect_vec();
+                        let var_ids = vars.keys().copied().collect_vec();
                         let var_combs = vars
                             .iter()
                             .map(|(_, ty)| {
-                                unifier.get_instantiations(*ty).unwrap_or_else(|| vec![*ty])
+                                unifier.get_instantiations(*ty).unwrap_or_else(|| {
+                                    let rigid = unifier.get_fresh_rigid_var().0;
+                                    no_ranges.push(rigid);
+                                    vec![rigid]
+                                })
                             })
                             .multi_cartesian_product()
                             .collect_vec();
@@ -1717,9 +1792,34 @@ impl TopLevelComposer {
                         };
                         let self_type = {
                             let unifier = &mut self.unifier;
-                            self_type.map(|x| unifier.subst(x, &subst).unwrap_or(x))
+                            uninst_self_type
+                                .clone()
+                                .map(|(self_type, type_vars)| {
+                                    let subst_for_self = {
+                                        let class_ty_var_ids = type_vars
+                                            .iter()
+                                            .map(|x| {
+                                                if let TypeEnum::TVar { id, .. } = &*unifier.get_ty(*x) {
+                                                    *id
+                                                } else {
+                                                    unreachable!("must be type var here");
+                                                }
+                                            })
+                                            .collect::<HashSet<_>>();
+                                        subst
+                                            .iter()
+                                            .filter_map(|(ty_var_id, ty_var_target)| {
+                                                if class_ty_var_ids.contains(ty_var_id) {
+                                                    Some((*ty_var_id, *ty_var_target))
+                                                } else {
+                                                    None
+                                                }
+                                            })
+                                            .collect::<HashMap<_, _>>()
+                                    };
+                                    unifier.subst(self_type, &subst_for_self).unwrap_or(self_type)
+                                })
                         };
-
                         let mut identifiers = {
                             // NOTE: none and function args?
                             let mut result: HashSet<_> = HashSet::new();
@@ -1809,22 +1909,12 @@ impl TopLevelComposer {
                         }
 
                         instance_to_stmt.insert(
-                            // NOTE: refer to codegen/expr/get_subst_key function
-                            {
-                                let unifier = &mut self.unifier;
-                                subst
-                                    .keys()
-                                    .sorted()
-                                    .map(|id| {
-                                        let ty = subst.get(id).unwrap();
-                                        unifier.stringify(
-                                            *ty,
-                                            &mut |id| id.to_string(),
-                                            &mut |id| id.to_string(),
-                                        )
-                                    })
-                                    .join(", ")
-                            },
+                            get_subst_key(
+                                &mut self.unifier,
+                                self_type,
+                                &subst,
+                                Some(insted_vars),
+                            ),
                             FunInstance {
                                 body: Arc::new(fun_body),
                                 unifier_id: 0,

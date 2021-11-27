@@ -147,8 +147,15 @@ impl ConcreteTypeStore {
                     fields: fields
                         .borrow()
                         .iter()
-                        .map(|(name, ty)| {
-                            (*name, (self.from_unifier_type(unifier, primitives, ty.0, cache), ty.1))
+                        .filter_map(|(name, ty)| {
+                            // here we should not have type vars, but some partial instantiated
+                            // class methods can still have uninstantiated type vars, so
+                            // filter out all the methods, as this will not affect codegen
+                            if let TypeEnum::TFunc( .. ) = &*unifier.get_ty(ty.0) {
+                                None
+                            } else {
+                                Some((*name, (self.from_unifier_type(unifier, primitives, ty.0, cache), ty.1)))
+                            }
                         })
                         .collect(),
                     params: params
