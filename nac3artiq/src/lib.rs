@@ -520,7 +520,6 @@ impl Nac3 {
                     &working_directory.join(&format!("{}.o", module.get_name().to_str().unwrap())),
                 )
                 .expect("couldn't write module to file");
-            println!("{}", module.print_to_string().to_str().unwrap());
         })));
         let thread_names: Vec<String> = (0..4).map(|i| format!("module{}", i)).collect();
         let threads: Vec<_> = thread_names
