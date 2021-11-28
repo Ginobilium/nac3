@@ -2,6 +2,7 @@ use nac3core::{
     codegen::{expr::gen_call, stmt::gen_with, CodeGenContext, CodeGenerator},
     toplevel::DefinitionId,
     typecheck::typedef::{FunSignature, Type},
+    symbol_resolver::ValueEnum,
 };
 
 use nac3parser::ast::{Expr, ExprKind, Located, Stmt, StmtKind, StrRef};
@@ -38,13 +39,13 @@ impl<'b> CodeGenerator for ArtiqCodeGenerator<'b> {
     fn gen_call<'ctx, 'a>(
         &mut self,
         ctx: &mut CodeGenContext<'ctx, 'a>,
-        obj: Option<(Type, BasicValueEnum<'ctx>)>,
+        obj: Option<(Type, ValueEnum<'ctx>)>,
         fun: (&FunSignature, DefinitionId),
-        params: Vec<(Option<StrRef>, BasicValueEnum<'ctx>)>,
+        params: Vec<(Option<StrRef>, ValueEnum<'ctx>)>,
     ) -> Option<BasicValueEnum<'ctx>> {
         let result = gen_call(self, ctx, obj, fun, params);
         if let Some(end) = self.end.clone() {
-            let old_end = self.gen_expr(ctx, &end).unwrap();
+            let old_end = self.gen_expr(ctx, &end).unwrap().to_basic_value_enum(ctx);
             let now = self.timeline.emit_now_mu(ctx);
             let smax = ctx.module.get_function("llvm.smax.i64").unwrap_or_else(|| {
                 let i64 = ctx.ctx.i64_type();
@@ -64,7 +65,7 @@ impl<'b> CodeGenerator for ArtiqCodeGenerator<'b> {
             ctx.builder.build_store(end_store, max);
         }
         if let Some(start) = self.start.clone() {
-            let start_val = self.gen_expr(ctx, &start).unwrap();
+            let start_val = self.gen_expr(ctx, &start).unwrap().to_basic_value_enum(ctx);
             self.timeline.emit_at_mu(ctx, start_val);
         }
         result
@@ -96,7 +97,7 @@ impl<'b> CodeGenerator for ArtiqCodeGenerator<'b> {
                         let old_start = self.start.take();
                         let old_end = self.end.take();
                         let now = if let Some(old_start) = &old_start {
-                            self.gen_expr(ctx, old_start).unwrap()
+                            self.gen_expr(ctx, old_start).unwrap().to_basic_value_enum(ctx)
                         } else {
                             self.timeline.emit_now_mu(ctx)
                         };
@@ -145,7 +146,7 @@ impl<'b> CodeGenerator for ArtiqCodeGenerator<'b> {
                         }
                         // set duration
                         let end_expr = self.end.take().unwrap();
-                        let end_val = self.gen_expr(ctx, &end_expr).unwrap();
+                        let end_val = self.gen_expr(ctx, &end_expr).unwrap().to_basic_value_enum(ctx);
 
                         // inside an sequential block
                         if old_start.is_none() {
@@ -153,7 +154,7 @@ impl<'b> CodeGenerator for ArtiqCodeGenerator<'b> {
                         }
                         // inside a parallel block, should update the outer max now_mu
                         if let Some(old_end) = &old_end {
-                            let outer_end_val = self.gen_expr(ctx, old_end).unwrap();
+                            let outer_end_val = self.gen_expr(ctx, old_end).unwrap().to_basic_value_enum(ctx);
                             let smax = ctx.module.get_function("llvm.smax.i64").unwrap_or_else(|| {
                                 let i64 = ctx.ctx.i64_type();
                                 ctx.module.add_function(

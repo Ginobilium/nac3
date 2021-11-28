@@ -4,7 +4,7 @@ use crate::{
         WithCall, WorkerRegistry,
     },
     location::Location,
-    symbol_resolver::SymbolResolver,
+    symbol_resolver::{SymbolResolver, ValueEnum},
     toplevel::{
         composer::TopLevelComposer, DefinitionId, FunInstance, TopLevelContext, TopLevelDef,
     },
@@ -14,12 +14,11 @@ use crate::{
     },
 };
 use indoc::indoc;
-use inkwell::values::BasicValueEnum;
-use parking_lot::RwLock;
 use nac3parser::{
     ast::{fold::Fold, StrRef},
     parser::parse_program,
 };
+use parking_lot::RwLock;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -55,7 +54,7 @@ impl SymbolResolver for Resolver {
         &self,
         _: StrRef,
         _: &mut CodeGenContext<'ctx, 'a>,
-    ) -> Option<BasicValueEnum<'ctx>> {
+    ) -> Option<ValueEnum<'ctx>> {
         unimplemented!()
     }
 
@@ -147,6 +146,7 @@ fn test_primitives() {
         resolver,
         store,
         signature,
+        id: 0,
     };
     let f = Arc::new(WithCall::new(Box::new(|module| {
         // the following IR is equivalent to
@@ -314,6 +314,7 @@ fn test_simple_call() {
         resolver,
         signature,
         store,
+        id: 0,
     };
     let f = Arc::new(WithCall::new(Box::new(|module| {
         let expected = indoc! {"

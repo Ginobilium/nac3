@@ -1,5 +1,5 @@
 use crate::{
-    symbol_resolver::SymbolResolver,
+    symbol_resolver::{StaticValue, SymbolResolver},
     toplevel::{TopLevelContext, TopLevelDef},
     typecheck::{
         type_inferencer::{CodeLocation, PrimitiveStore},
@@ -18,8 +18,8 @@ use inkwell::{
     AddressSpace, OptimizationLevel,
 };
 use itertools::Itertools;
-use parking_lot::{Condvar, Mutex};
 use nac3parser::ast::{Stmt, StrRef};
+use parking_lot::{Condvar, Mutex};
 use std::collections::HashMap;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
@@ -29,14 +29,22 @@ use std::thread;
 
 pub mod concrete_type;
 pub mod expr;
-pub mod stmt;
 mod generator;
+pub mod stmt;
 
 #[cfg(test)]
 mod test;
 
 use concrete_type::{ConcreteType, ConcreteTypeEnum, ConcreteTypeStore};
 pub use generator::{CodeGenerator, DefaultCodeGenerator};
+
+#[derive(Default)]
+pub struct StaticValueStore {
+    pub lookup: HashMap<Vec<(usize, u64)>, usize>,
+    pub store: Vec<HashMap<usize, Arc<dyn StaticValue + Send + Sync>>>,
+}
+
+pub type VarValue<'ctx> = (PointerValue<'ctx>, Option<Arc<dyn StaticValue + Send + Sync>>, i64);
 
 pub struct CodeGenContext<'ctx, 'a> {
     pub ctx: &'ctx Context,
@@ -45,7 +53,8 @@ pub struct CodeGenContext<'ctx, 'a> {
     pub top_level: &'a TopLevelContext,
     pub unifier: Unifier,
     pub resolver: Arc<dyn SymbolResolver + Send + Sync>,
-    pub var_assignment: HashMap<StrRef, PointerValue<'ctx>>,
+    pub static_value_store: Arc<Mutex<StaticValueStore>>,
+    pub var_assignment: HashMap<StrRef, VarValue<'ctx>>,
     pub type_cache: HashMap<Type, BasicTypeEnum<'ctx>>,
     pub primitives: PrimitiveStore,
     pub calls: Arc<HashMap<CodeLocation, CallId>>,
@@ -80,6 +89,8 @@ pub struct WorkerRegistry {
     task_count: Mutex<usize>,
     thread_count: usize,
     wait_condvar: Condvar,
+    top_level_ctx: Arc<TopLevelContext>,
+    static_value_store: Arc<Mutex<StaticValueStore>>,
 }
 
 impl WorkerRegistry {
@@ -92,23 +103,29 @@ impl WorkerRegistry {
         let task_count = Mutex::new(0);
         let wait_condvar = Condvar::new();
 
+        // init: 0 to be empty
+        let mut static_value_store: StaticValueStore = Default::default();
+        static_value_store.lookup.insert(Default::default(), 0);
+        static_value_store.store.push(Default::default());
+
         let registry = Arc::new(WorkerRegistry {
             sender: Arc::new(sender),
             receiver: Arc::new(receiver),
             thread_count: generators.len(),
             panicked: AtomicBool::new(false),
+            static_value_store: Arc::new(Mutex::new(static_value_store)),
             task_count,
             wait_condvar,
+            top_level_ctx,
         });
 
         let mut handles = Vec::new();
         for mut generator in generators.into_iter() {
-            let top_level_ctx = top_level_ctx.clone();
             let registry = registry.clone();
             let registry2 = registry.clone();
             let f = f.clone();
             let handle = thread::spawn(move || {
-                registry.worker_thread(generator.as_mut(), top_level_ctx, f);
+                registry.worker_thread(generator.as_mut(), f);
             });
             let handle = thread::spawn(move || {
                 if let Err(e) = handle.join() {
@@ -161,12 +178,7 @@ impl WorkerRegistry {
         self.sender.send(Some(task)).unwrap();
     }
 
-    fn worker_thread<G: CodeGenerator>(
-        &self,
-        generator: &mut G,
-        top_level_ctx: Arc<TopLevelContext>,
-        f: Arc<WithCall>,
-    ) {
+    fn worker_thread<G: CodeGenerator>(&self, generator: &mut G, f: Arc<WithCall>) {
         let context = Context::create();
         let mut builder = context.create_builder();
         let mut module = context.create_module(generator.get_name());
@@ -177,8 +189,7 @@ impl WorkerRegistry {
         pass_builder.populate_function_pass_manager(&passes);
 
         while let Some(task) = self.receiver.recv().unwrap() {
-            let result =
-                gen_func(&context, generator, self, builder, module, task, top_level_ctx.clone());
+            let result = gen_func(&context, generator, self, builder, module, task);
             builder = result.0;
             module = result.1;
             passes.run_on(&result.2);
@@ -208,6 +219,7 @@ pub struct CodeGenTask {
     pub calls: Arc<HashMap<CodeLocation, CallId>>,
     pub unifier_index: usize,
     pub resolver: Arc<dyn SymbolResolver + Send + Sync>,
+    pub id: usize,
 }
 
 fn get_llvm_type<'ctx>(
@@ -268,8 +280,9 @@ pub fn gen_func<'ctx, G: CodeGenerator + ?Sized>(
     builder: Builder<'ctx>,
     module: Module<'ctx>,
     task: CodeGenTask,
-    top_level_ctx: Arc<TopLevelContext>,
 ) -> (Builder<'ctx>, Module<'ctx>, FunctionValue<'ctx>) {
+    let top_level_ctx = registry.top_level_ctx.clone();
+    let static_value_store = registry.static_value_store.clone();
     let (mut unifier, primitives) = {
         let (unifier, primitives) = &top_level_ctx.unifiers.read()[task.unifier_index];
         (Unifier::from_shared_unifier(unifier), *primitives)
@@ -306,7 +319,10 @@ pub fn gen_func<'ctx, G: CodeGenerator + ?Sized>(
         (unifier.get_representative(primitives.int64), context.i64_type().into()),
         (unifier.get_representative(primitives.float), context.f64_type().into()),
         (unifier.get_representative(primitives.bool), context.bool_type().into()),
-        (unifier.get_representative(primitives.str), context.i8_type().ptr_type(AddressSpace::Generic).into()),
+        (
+            unifier.get_representative(primitives.str),
+            context.i8_type().ptr_type(AddressSpace::Generic).into(),
+        ),
     ]
     .iter()
     .cloned()
@@ -366,8 +382,17 @@ pub fn gen_func<'ctx, G: CodeGenerator + ?Sized>(
             &arg.name.to_string(),
         );
         builder.build_store(alloca, param);
-        var_assignment.insert(arg.name, alloca);
+        var_assignment.insert(arg.name, (alloca, None, 0));
     }
+    let static_values = {
+        let store = registry.static_value_store.lock();
+        store.store[task.id].clone()
+    };
+    for (k, v) in static_values.into_iter() {
+        let (_, static_val, _) = var_assignment.get_mut(&args[k].name).unwrap();
+        *static_val = Some(v);
+    }
+
     builder.build_unconditional_branch(body_bb);
     builder.position_at_end(body_bb);
 
@@ -385,6 +410,7 @@ pub fn gen_func<'ctx, G: CodeGenerator + ?Sized>(
         builder,
         module,
         unifier,
+        static_value_store,
     };
 
     let mut returned = false;

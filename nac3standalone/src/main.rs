@@ -183,6 +183,7 @@ fn main() {
         store,
         unifier_index: instance.unifier_id,
         calls: instance.calls,
+        id: 0,
     };
     let f = Arc::new(WithCall::new(Box::new(move |module| {
         let builder = PassManagerBuilder::create();

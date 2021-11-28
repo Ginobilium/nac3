@@ -1,16 +1,15 @@
-use inkwell::values::BasicValueEnum;
 use nac3core::{
     codegen::CodeGenContext,
     location::Location,
-    symbol_resolver::{SymbolResolver, SymbolValue},
+    symbol_resolver::{SymbolResolver, SymbolValue, ValueEnum},
     toplevel::{DefinitionId, TopLevelDef},
     typecheck::{
         type_inferencer::PrimitiveStore,
         typedef::{Type, Unifier},
     },
 };
-use parking_lot::{Mutex, RwLock};
 use nac3parser::ast::{self, StrRef};
+use parking_lot::{Mutex, RwLock};
 use std::{collections::HashMap, sync::Arc};
 
 pub struct ResolverInternal {
@@ -64,7 +63,7 @@ impl SymbolResolver for Resolver {
         &self,
         _: StrRef,
         _: &mut CodeGenContext<'ctx, 'a>,
-    ) -> Option<BasicValueEnum<'ctx>> {
+    ) -> Option<ValueEnum<'ctx>> {
         unimplemented!()
     }
 
