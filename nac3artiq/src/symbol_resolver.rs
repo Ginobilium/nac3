@@ -91,7 +91,6 @@ impl StaticValue for PythonValue {
             Ok(if mutable {
                 None
             } else {
-                println!("getting attribute {}", name);
                 let obj = self.value.getattr(py, &name.to_string())?;
                 let id = self.resolver.helper.id_fn.call1(py, (&obj,))?.extract(py)?;
                 Some(ValueEnum::Static(Arc::new(PythonValue {
