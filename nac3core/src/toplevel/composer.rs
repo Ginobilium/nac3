@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 
 use nac3parser::ast::fold::Fold;
-use inkwell::FloatPredicate;
+use inkwell::{FloatPredicate, IntPredicate};
 
 use crate::{
     symbol_resolver::SymbolValue,
@@ -415,15 +415,12 @@ impl TopLevelComposer {
                             if ctx.unifier.unioned(arg_ty, boolean) {
                                 Some(arg)
                             } else if ctx.unifier.unioned(arg_ty, int32) || ctx.unifier.unioned(arg_ty, int64) {
-                                Some(
-                                    ctx.builder
-                                        .build_int_truncate(
-                                            arg.into_int_value(),
-                                            ctx.ctx.bool_type(),
-                                            "trunc",
-                                        )
-                                        .into(),
-                                )
+                                Some(ctx.builder.build_int_compare(
+                                    IntPredicate::NE,
+                                    ctx.ctx.i64_type().const_zero(),
+                                    arg.into_int_value(),
+                                    "bool",
+                                ).into())
                             } else if ctx.unifier.unioned(arg_ty, float) {
                                 let val = ctx.builder.
                                     build_float_compare(
