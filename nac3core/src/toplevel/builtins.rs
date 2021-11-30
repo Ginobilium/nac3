@@ -1,12 +1,14 @@
 use std::cell::RefCell;
-
 use inkwell::{IntPredicate, FloatPredicate};
-
 use crate::symbol_resolver::SymbolValue;
-
 use super::*;
 
-pub fn get_built_ins(primitives: &mut (PrimitiveStore, Unifier)) -> Vec<(Arc<RwLock<TopLevelDef>>, Option<Stmt>)> {
+type BuiltinInfo = (
+    Vec<(Arc<RwLock<TopLevelDef>>, Option<Stmt>)>,
+    &'static [&'static str]
+);
+
+pub fn get_built_ins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
     let int32 = primitives.0.int32;
     let int64 = primitives.0.int64;
     let float = primitives.0.float;
@@ -400,8 +402,172 @@ pub fn get_built_ins(primitives: &mut (PrimitiveStore, Unifier)) -> Vec<(Arc<RwL
                 },
             )))),
         })),
+        Arc::new(RwLock::new(TopLevelDef::Function {
+            name: "floor".into(),
+            simple_name: "floor".into(),
+            signature: primitives.1.add_ty(TypeEnum::TFunc(RefCell::new(FunSignature {
+                args: vec![FuncArg { name: "_".into(), ty: float, default_value: None }],
+                ret: int32,
+                vars: Default::default(),
+            }))),
+            var_id: Default::default(),
+            instance_to_symbol: Default::default(),
+            instance_to_stmt: Default::default(),
+            resolver: None,
+            codegen_callback: Some(Arc::new(GenCall::new(Box::new(|ctx, _, _, args| {
+                let arg = args[0].1;
+                let floor_intrinsic =
+                    ctx.module.get_function("llvm.floor.f64").unwrap_or_else(|| {
+                        let float = ctx.ctx.f64_type();
+                        let fn_type = float.fn_type(&[float.into()], false);
+                        ctx.module.add_function("llvm.floor.f64", fn_type, None)
+                    });
+                let val = ctx
+                    .builder
+                    .build_call(floor_intrinsic, &[arg], "floor")
+                    .try_as_basic_value()
+                    .left()
+                    .unwrap();
+                Some(
+                    ctx.builder
+                        .build_float_to_signed_int(
+                            val.into_float_value(),
+                            ctx.ctx.i32_type(),
+                            "fptosi",
+                        )
+                        .into(),
+                )
+            })))),
+        })),
+        Arc::new(RwLock::new(TopLevelDef::Function {
+            name: "floor64".into(),
+            simple_name: "floor64".into(),
+            signature: primitives.1.add_ty(TypeEnum::TFunc(RefCell::new(FunSignature {
+                args: vec![FuncArg { name: "_".into(), ty: float, default_value: None }],
+                ret: int64,
+                vars: Default::default(),
+            }))),
+            var_id: Default::default(),
+            instance_to_symbol: Default::default(),
+            instance_to_stmt: Default::default(),
+            resolver: None,
+            codegen_callback: Some(Arc::new(GenCall::new(Box::new(|ctx, _, _, args| {
+                let arg = args[0].1;
+                let floor_intrinsic =
+                    ctx.module.get_function("llvm.floor.f64").unwrap_or_else(|| {
+                        let float = ctx.ctx.f64_type();
+                        let fn_type = float.fn_type(&[float.into()], false);
+                        ctx.module.add_function("llvm.floor.f64", fn_type, None)
+                    });
+                let val = ctx
+                    .builder
+                    .build_call(floor_intrinsic, &[arg], "floor")
+                    .try_as_basic_value()
+                    .left()
+                    .unwrap();
+                Some(
+                    ctx.builder
+                        .build_float_to_signed_int(
+                            val.into_float_value(),
+                            ctx.ctx.i64_type(),
+                            "fptosi",
+                        )
+                        .into(),
+                )
+            })))),
+        })),
+        Arc::new(RwLock::new(TopLevelDef::Function {
+            name: "ceil".into(),
+            simple_name: "ceil".into(),
+            signature: primitives.1.add_ty(TypeEnum::TFunc(RefCell::new(FunSignature {
+                args: vec![FuncArg { name: "_".into(), ty: float, default_value: None }],
+                ret: int32,
+                vars: Default::default(),
+            }))),
+            var_id: Default::default(),
+            instance_to_symbol: Default::default(),
+            instance_to_stmt: Default::default(),
+            resolver: None,
+            codegen_callback: Some(Arc::new(GenCall::new(Box::new(|ctx, _, _, args| {
+                let arg = args[0].1;
+                let ceil_intrinsic =
+                    ctx.module.get_function("llvm.ceil.f64").unwrap_or_else(|| {
+                        let float = ctx.ctx.f64_type();
+                        let fn_type = float.fn_type(&[float.into()], false);
+                        ctx.module.add_function("llvm.ceil.f64", fn_type, None)
+                    });
+                let val = ctx
+                    .builder
+                    .build_call(ceil_intrinsic, &[arg], "ceil")
+                    .try_as_basic_value()
+                    .left()
+                    .unwrap();
+                Some(
+                    ctx.builder
+                        .build_float_to_signed_int(
+                            val.into_float_value(),
+                            ctx.ctx.i32_type(),
+                            "fptosi",
+                        )
+                        .into(),
+                )
+            })))),
+        })),
+        Arc::new(RwLock::new(TopLevelDef::Function {
+            name: "ceil64".into(),
+            simple_name: "ceil64".into(),
+            signature: primitives.1.add_ty(TypeEnum::TFunc(RefCell::new(FunSignature {
+                args: vec![FuncArg { name: "_".into(), ty: float, default_value: None }],
+                ret: int64,
+                vars: Default::default(),
+            }))),
+            var_id: Default::default(),
+            instance_to_symbol: Default::default(),
+            instance_to_stmt: Default::default(),
+            resolver: None,
+            codegen_callback: Some(Arc::new(GenCall::new(Box::new(|ctx, _, _, args| {
+                let arg = args[0].1;
+                let ceil_intrinsic =
+                    ctx.module.get_function("llvm.ceil.f64").unwrap_or_else(|| {
+                        let float = ctx.ctx.f64_type();
+                        let fn_type = float.fn_type(&[float.into()], false);
+                        ctx.module.add_function("llvm.ceil.f64", fn_type, None)
+                    });
+                let val = ctx
+                    .builder
+                    .build_call(ceil_intrinsic, &[arg], "ceil")
+                    .try_as_basic_value()
+                    .left()
+                    .unwrap();
+                Some(
+                    ctx.builder
+                        .build_float_to_signed_int(
+                            val.into_float_value(),
+                            ctx.ctx.i64_type(),
+                            "fptosi",
+                        )
+                        .into(),
+                )
+            })))),
+        })),
     ];
     let ast_list: Vec<Option<ast::Stmt<()>>> =
         (0..top_level_def_list.len()).map(|_| None).collect();
-    izip!(top_level_def_list, ast_list).collect_vec()
+    (
+        izip!(top_level_def_list, ast_list).collect_vec(),
+        &[
+            "int32",
+            "int64",
+            "float",
+            "round",
+            "round64",
+            "range",
+            "str",
+            "bool",
+            "floor",
+            "floor64",
+            "ceil",
+            "ceil64"
+        ]
+    )
 }

@@ -42,7 +42,7 @@ impl TopLevelComposer {
         builtins: Vec<(StrRef, FunSignature, Arc<GenCall>)>,
     ) -> (Self, HashMap<StrRef, DefinitionId>, HashMap<StrRef, Type>) {
         let mut primitives = Self::make_primitives();
-        let mut definition_ast_list = builtins::get_built_ins(&mut primitives);
+        let (mut definition_ast_list, builtin_name_list) = builtins::get_built_ins(&mut primitives);
         let primitives_ty = primitives.0;
         let mut unifier = primitives.1;
         let mut keyword_list: HashSet<StrRef> = HashSet::from_iter(vec![
@@ -68,9 +68,7 @@ impl TopLevelComposer {
         let mut built_in_id: HashMap<StrRef, DefinitionId> = Default::default();
         let mut built_in_ty: HashMap<StrRef, Type> = Default::default();
 
-        for (id, name) in
-            ["int32", "int64", "float", "round", "round64", "range", "str", "bool"].iter().rev().enumerate()
-        {
+        for (id, name) in builtin_name_list.iter().rev().enumerate() {
             let name = (**name).into();
             let id = definition_ast_list.len() - id - 1;
             let def = definition_ast_list[id].0.read();
