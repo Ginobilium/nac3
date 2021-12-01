@@ -195,7 +195,6 @@ impl InnerResolver {
                                     if let TypeEnum::TVar { id, .. } = &*unifier.get_ty(*x) {
                                         (*id, *x)
                                     } else {
-                                        println!("{}", unifier.default_stringify(*x));
                                         unreachable!()
                                     }
                                 }).collect()
