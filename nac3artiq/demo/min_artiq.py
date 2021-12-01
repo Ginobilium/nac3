@@ -17,8 +17,7 @@ T = TypeVar('T')
 class KernelInvariant(Generic[T]):
     pass
 
-# place the `virtual` class infront of the construct of NAC3 object to ensure the
-# virtual class is known during the initializing of NAC3 object
+# The virtual class must exist before nac3artiq.NAC3 is created.
 class virtual(Generic[T]):
     pass
 
