@@ -55,6 +55,10 @@ pub struct PrimitivePythonId {
     bool: u64,
     list: u64,
     tuple: u64,
+    typevar: u64,
+    none: u64,
+    generic_alias: (u64, u64),
+    virtual_id: u64,
 }
 
 // TopLevelComposer is unsendable as it holds the unification table, which is
@@ -96,10 +100,13 @@ impl Nac3 {
                     let val = id_fn.call1((member.get_item(1)?,))?.extract()?;
                     name_to_pyid.insert(key.into(), val);
                 }
+                let typings = PyModule::import(py, "typing")?;
                 let helper = PythonHelper {
                     id_fn: builtins.getattr("id").unwrap().to_object(py),
                     len_fn: builtins.getattr("len").unwrap().to_object(py),
                     type_fn: builtins.getattr("type").unwrap().to_object(py),
+                    origin_ty_fn: typings.getattr("get_origin").unwrap().to_object(py),
+                    args_ty_fn: typings.getattr("get_args").unwrap().to_object(py),
                 };
                 Ok((
                     module.getattr("__name__")?.extract()?,
@@ -284,7 +291,42 @@ impl Nac3 {
         let builtins_mod = PyModule::import(py, "builtins").unwrap();
         let id_fn = builtins_mod.getattr("id").unwrap();
         let numpy_mod = PyModule::import(py, "numpy").unwrap();
+        let typing_mod = PyModule::import(py, "typing").unwrap();
+        let types_mod = PyModule::import(py, "types").unwrap();
         let primitive_ids = PrimitivePythonId {
+            virtual_id: id_fn
+                .call1((builtins_mod
+                    .getattr("globals")
+                    .unwrap()
+                    .call0()
+                    .unwrap()
+                    .get_item("virtual")
+                    .unwrap(),
+                )).unwrap()
+                .extract()
+                .unwrap(),
+            generic_alias: (
+                id_fn
+                    .call1((typing_mod.getattr("_GenericAlias").unwrap(),))
+                    .unwrap()
+                    .extract()
+                    .unwrap(),
+                id_fn
+                    .call1((types_mod.getattr("GenericAlias").unwrap(),))
+                    .unwrap()
+                    .extract()
+                    .unwrap(),
+            ),
+            none: id_fn
+                .call1((builtins_mod.getattr("None").unwrap(),))
+                .unwrap()
+                .extract()
+                .unwrap(),
+            typevar: id_fn
+                .call1((typing_mod.getattr("TypeVar").unwrap(),))
+                .unwrap()
+                .extract()
+                .unwrap(),
             int: id_fn
                 .call1((builtins_mod.getattr("int").unwrap(),))
                 .unwrap()
@@ -403,10 +445,13 @@ impl Nac3 {
         };
         let mut synthesized = parse_program(&synthesized).unwrap();
         let builtins = PyModule::import(py, "builtins")?;
+        let typings = PyModule::import(py, "typing")?;
         let helper = PythonHelper {
             id_fn: builtins.getattr("id").unwrap().to_object(py),
             len_fn: builtins.getattr("len").unwrap().to_object(py),
             type_fn: builtins.getattr("type").unwrap().to_object(py),
+            origin_ty_fn: typings.getattr("get_origin").unwrap().to_object(py),
+            args_ty_fn: typings.getattr("get_args").unwrap().to_object(py),
         };
         let resolver = Arc::new(Resolver(Arc::new(InnerResolver {
             id_to_type: self.builtins_ty.clone().into(),

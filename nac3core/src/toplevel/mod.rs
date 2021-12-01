@@ -24,7 +24,7 @@ pub struct DefinitionId(pub usize);
 
 pub mod composer;
 pub mod helper;
-mod type_annotation;
+pub mod type_annotation;
 use composer::*;
 use type_annotation::*;
 #[cfg(test)]

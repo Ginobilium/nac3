@@ -532,7 +532,7 @@ impl TopLevelComposer {
         }
     }
 
-    fn extract_def_list(&self) -> Vec<Arc<RwLock<TopLevelDef>>> {
+    pub fn extract_def_list(&self) -> Vec<Arc<RwLock<TopLevelDef>>> {
         self.definition_ast_list.iter().map(|(def, ..)| def.clone()).collect_vec()
     }
 
