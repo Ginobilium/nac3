@@ -24,6 +24,21 @@
         mkdir $out
         tar xvf ${msys2-python-tar} -C $out
         '';
+      pyo3-mingw-config = pkgs.writeTextFile {
+        name = "pyo3-mingw-config";
+        text =
+          ''
+          implementation=CPython
+          version=3.9
+          shared=true
+          abi3=false
+          lib_name=python3.9
+          lib_dir=${msys2-python}/mingw64/lib
+          pointer_width=64
+          build_flags=WITH_THREAD
+          suppress_build_script_link_lines=false
+          '';
+      };
     in rec {
       inherit nixpkgs-patched;
 
@@ -53,13 +68,12 @@
             name = "nac3artiq";
             src = self;
             inherit cargoSha256;
-            nativeBuildInputs = [ pkgs-mingw.llvm_12 ];
-            buildInputs = [ pkgs-mingw.libffi pkgs-mingw.libxml2 pkgs-mingw.llvm_12 ];
             configurePhase =
               ''
-              export PYO3_CROSS_PYTHON_VERSION=3.9
-              export PYO3_CROSS_LIB_DIR=${msys2-python}/mingw64/lib
-              echo Using Python $PYO3_CROSS_PYTHON_VERSION in $PYO3_CROSS_LIB_DIR
+              export PYO3_CONFIG_FILE=${pyo3-mingw-config}
+              mkdir llvm-cfg
+              ln -s ${pkgs-mingw.llvm_12.dev}/bin/llvm-config-native llvm-cfg/llvm-config
+              export PATH=$PATH:`pwd`/llvm-cfg
               '';
             cargoBuildFlags = [ "--package" "nac3artiq" ];
             doCheck = false;
