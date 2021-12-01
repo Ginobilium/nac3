@@ -5,7 +5,7 @@
 
 use std::iter::FromIterator;
 
-use crate::ast;
+use crate::ast::{self, Constant};
 use crate::fstring::parse_located_fstring;
 use crate::function::{ArgumentList, parse_args, parse_params};
 use crate::error::LexicalError;
@@ -916,7 +916,17 @@ Factor: ast::Expr = {
     <location:@L> <op:UnaryOp> <e:Factor> => ast::Expr {
         location,
         custom: (),
-        node: ast::ExprKind::UnaryOp { operand: Box::new(e), op }
+        node: {
+            match (&op, &e.node) {
+                (ast::Unaryop::USub, ast::ExprKind::Constant { value: Constant::Int(val), kind }) => {
+                    ast::ExprKind::Constant {
+                        value: Constant::Int(-val),
+                        kind: kind.clone()
+                    }
+                }
+                _ => ast::ExprKind::UnaryOp { operand: Box::new(e), op }
+            }
+        }
     },
     Power,
 };
