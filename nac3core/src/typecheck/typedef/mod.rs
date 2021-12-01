@@ -855,7 +855,6 @@ impl Unifier {
                 }
             }
             _ => {
-                println!("{}", ty.get_type_name());
                 unreachable!("{} not expected", ty.get_type_name())
             }
         }

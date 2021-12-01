@@ -167,7 +167,6 @@ impl<'a> Inferencer<'a> {
             }
             ExprKind::Constant { .. } => {}
             _ => {
-                println!("{:?}", expr.node);
                 unimplemented!()
             }
         }

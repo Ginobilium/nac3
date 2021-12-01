@@ -1,10 +1,8 @@
 use std::cell::RefCell;
 
 use nac3parser::ast::fold::Fold;
-use inkwell::{FloatPredicate, IntPredicate};
 
 use crate::{
-    symbol_resolver::SymbolValue,
     typecheck::type_inferencer::{FunctionData, Inferencer},
     codegen::expr::get_subst_key,
 };
@@ -131,7 +129,7 @@ impl TopLevelComposer {
         }
     }
 
-    fn extract_def_list(&self) -> Vec<Arc<RwLock<TopLevelDef>>> {
+    pub fn extract_def_list(&self) -> Vec<Arc<RwLock<TopLevelDef>>> {
         self.definition_ast_list.iter().map(|(def, ..)| def.clone()).collect_vec()
     }
 

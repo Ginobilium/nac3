@@ -379,7 +379,14 @@ pub fn get_built_ins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo 
                     let arg = args[0].1;
                     if ctx.unifier.unioned(arg_ty, boolean) {
                         Some(arg)
-                    } else if ctx.unifier.unioned(arg_ty, int32) || ctx.unifier.unioned(arg_ty, int64) {
+                    } else if ctx.unifier.unioned(arg_ty, int32) {
+                        Some(ctx.builder.build_int_compare(
+                            IntPredicate::NE,
+                            ctx.ctx.i32_type().const_zero(),
+                            arg.into_int_value(),
+                            "bool",
+                        ).into())
+                    } else if ctx.unifier.unioned(arg_ty, int64) {
                         Some(ctx.builder.build_int_compare(
                             IntPredicate::NE,
                             ctx.ctx.i64_type().const_zero(),

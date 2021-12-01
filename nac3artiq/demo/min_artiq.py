@@ -9,13 +9,17 @@ import nac3artiq
 __all__ = ["KernelInvariant", "extern", "kernel", "portable", "nac3",
            "ms", "us", "ns",
            "print_int32", "print_int64",
-           "Core", "TTLOut", "parallel", "sequential"]
+           "Core", "TTLOut", "parallel", "sequential", "virtual"]
 
 
 T = TypeVar('T')
+
 class KernelInvariant(Generic[T]):
     pass
 
+# The virtual class must exist before nac3artiq.NAC3 is created.
+class virtual(Generic[T]):
+    pass
 
 import device_db
 core_arguments = device_db.device_db["core"]["arguments"]
