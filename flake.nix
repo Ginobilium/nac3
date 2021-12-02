@@ -68,12 +68,19 @@
             name = "nac3artiq";
             src = self;
             inherit cargoSha256;
-            buildInputs = [ pkgs-mingw.libffi ];
+            buildInputs = [ pkgs-mingw.libffi pkgs-mingw.zlib pkgs-mingw.windows.mcfgthreads ];
             configurePhase =
               ''
               export PYO3_CONFIG_FILE=${pyo3-mingw-config}
+
               mkdir llvm-cfg
-              ln -s ${pkgs-mingw.llvm_12.dev}/bin/llvm-config-native llvm-cfg/llvm-config
+              cat << EOF > llvm-cfg/llvm-config
+              #!${pkgs.bash}/bin/bash
+              set -e
+              # gross hack to work around llvm-config asking for the wrong system libraries
+              exec ${pkgs-mingw.llvm_12.dev}/bin/llvm-config-native \$@ | ${pkgs.gnused}/bin/sed s/-lrt\ -ldl/-lmcfgthread\ -lz/
+              EOF
+              chmod +x llvm-cfg/llvm-config
               export PATH=$PATH:`pwd`/llvm-cfg
               '';
             cargoBuildFlags = [ "--package" "nac3artiq" ];
