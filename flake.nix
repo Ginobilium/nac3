@@ -90,7 +90,7 @@
             installPhase =
               ''
               mkdir -p $out
-              cp target/x86_64-pc-windows-gnu/release/nac3artiq.dll $out
+              cp target/x86_64-pc-windows-gnu/release/nac3artiq.dll $out/nac3artiq.pyd
               '';
             meta.platforms = ["x86_64-windows"];
           }
