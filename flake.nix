@@ -10,7 +10,7 @@
       nixpkgs-patched = pkgs-orig.applyPatches {
         name = "nixpkgs";
         src = nixpkgs;
-        patches = [ ./llvm-future-riscv-abi.diff ./llvm-restrict-targets.diff ./llvm-mingw-crosscompile.diff ];
+        patches = [ ./llvm-future-riscv-abi.diff ./llvm-restrict-targets.diff ./llvm-mingw-crosscompile.diff ./llvm-unbreak-static-cross.diff ];
       };
       pkgs = import nixpkgs-patched { system = "x86_64-linux"; };
       pkgs-mingw = import nixpkgs-patched { system = "x86_64-linux"; crossSystem = { config = "x86_64-w64-mingw32"; libc = "msvcrt"; }; };
