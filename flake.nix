@@ -77,8 +77,9 @@
               cat << EOF > llvm-cfg/llvm-config
               #!${pkgs.bash}/bin/bash
               set -e
-              # gross hack to work around llvm-config asking for the wrong system libraries
-              exec ${pkgs-mingw.llvm_12.dev}/bin/llvm-config-native \$@ | ${pkgs.gnused}/bin/sed s/-lrt\ -ldl/-lmcfgthread\ -lz/
+              # Gross hack to work around llvm-config asking for the wrong system libraries.
+              # Also add some other libraries we need here.
+              exec ${pkgs-mingw.llvm_12.dev}/bin/llvm-config-native \$@ | ${pkgs.gnused}/bin/sed s/-lrt\ -ldl\ -lpthread\ -lm/-lmcfgthread\ -lz\ -luuid\ -lole32/
               EOF
               chmod +x llvm-cfg/llvm-config
               export PATH=$PATH:`pwd`/llvm-cfg
