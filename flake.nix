@@ -68,7 +68,7 @@
             name = "nac3artiq";
             src = self;
             inherit cargoSha256;
-            buildInputs = [ pkgs-mingw.libffi pkgs-mingw.zlib pkgs-mingw.windows.mcfgthreads ];
+            buildInputs = [ pkgs-mingw.libffi pkgs-mingw.zlib ];
             configurePhase =
               ''
               export PYO3_CONFIG_FILE=${pyo3-mingw-config}
@@ -78,20 +78,19 @@
               #!${pkgs.bash}/bin/bash
               set -e
               # Gross hack to work around llvm-config asking for the wrong system libraries.
-              # Also add some other libraries we need here.
-              exec ${pkgs-mingw.llvm_12.dev}/bin/llvm-config-native \$@ | ${pkgs.gnused}/bin/sed s/-lrt\ -ldl\ -lpthread\ -lm/-lmcfgthread\ -lz\ -luuid\ -lole32/
+              exec ${pkgs-mingw.llvm_12.dev}/bin/llvm-config-native \$@ | ${pkgs.gnused}/bin/sed s/-lrt\ -ldl\ -lpthread\ -lm//
               EOF
               chmod +x llvm-cfg/llvm-config
               export PATH=$PATH:`pwd`/llvm-cfg
+
+              export CARGO_TARGET_X86_64_PC_WINDOWS_GNU_RUSTFLAGS="-C link-arg=-lz -C link-arg=-luuid -C link-arg=-lole32 -C link-arg=-lmcfgthread"
               '';
             cargoBuildFlags = [ "--package" "nac3artiq" ];
             doCheck = false;
             installPhase =
               ''
-              TARGET_DIR=$out/${pkgs.python3Packages.python.sitePackages}
-              mkdir -p $TARGET_DIR
-              #cp target/x86_64-unknown-linux-gnu/release/libnac3artiq.so $TARGET_DIR/nac3artiq.so
-              ls target
+              mkdir -p $out
+              cp target/x86_64-pc-windows-gnu/release/nac3artiq.dll $out
               '';
             meta.platforms = ["x86_64-windows"];
           }
