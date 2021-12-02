@@ -115,6 +115,7 @@
 
       hydraJobs = {
         inherit (packages.x86_64-linux) nac3artiq;
+        mingw-nac3artiq = packages.x86_64-w64-mingw32.nac3artiq;
       } // (pkgs.lib.foldr (a: b: {"${pkgs.lib.strings.getName a}" = a;} // b) {} devShell.x86_64-linux.buildInputs);
   };
 
