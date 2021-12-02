@@ -19,11 +19,17 @@
         url = "https://mirror.msys2.org/mingw/mingw64/mingw-w64-x86_64-python-3.9.7-4-any.pkg.tar.zst";
         sha256 = "0iwlgbk4b457yn9djwqswid55xhyyi35qymz1lfh42xwdpxdm47c";
       };
-      msys2-python = pkgs.runCommand "msys2-python" { buildInputs = [ pkgs.gnutar pkgs.zstd ]; }
-        ''
-        mkdir $out
-        tar xvf ${msys2-python-tar} -C $out
-        '';
+      msys2-python = pkgs.stdenvNoCC.mkDerivation {
+        name = "msys2-python";
+        src = msys2-python-tar;
+        buildInputs = [ pkgs.gnutar pkgs.zstd ];
+        phases = [ "installPhase" ];
+        installPhase =
+          ''
+          mkdir $out
+          tar xf $src -C $out
+          '';
+      };
       pyo3-mingw-config = pkgs.writeTextFile {
         name = "pyo3-mingw-config";
         text =
