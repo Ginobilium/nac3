@@ -24,6 +24,7 @@ pub struct DefinitionId(pub usize);
 
 pub mod composer;
 pub mod helper;
+pub mod builtins;
 pub mod type_annotation;
 use composer::*;
 use type_annotation::*;
