@@ -24,7 +24,7 @@ pub struct TopLevelComposer {
     // get the class def id of a class method
     pub method_class: HashMap<DefinitionId, DefinitionId>,
     // number of built-in function and classes in the definition list, later skip
-    pub built_in_num: usize,
+    pub builtin_num: usize,
 }
 
 impl Default for TopLevelComposer {
@@ -40,7 +40,7 @@ impl TopLevelComposer {
         builtins: Vec<(StrRef, FunSignature, Arc<GenCall>)>,
     ) -> (Self, HashMap<StrRef, DefinitionId>, HashMap<StrRef, Type>) {
         let mut primitives = Self::make_primitives();
-        let (mut definition_ast_list, builtin_name_list) = builtins::get_built_ins(&mut primitives);
+        let (mut definition_ast_list, builtin_name_list) = builtins::get_builtins(&mut primitives);
         let primitives_ty = primitives.0;
         let mut unifier = primitives.1;
         let mut keyword_list: HashSet<StrRef> = HashSet::from_iter(vec![
@@ -63,8 +63,8 @@ impl TopLevelComposer {
         let defined_names: HashSet<String> = Default::default();
         let method_class: HashMap<DefinitionId, DefinitionId> = Default::default();
 
-        let mut built_in_id: HashMap<StrRef, DefinitionId> = Default::default();
-        let mut built_in_ty: HashMap<StrRef, Type> = Default::default();
+        let mut builtin_id: HashMap<StrRef, DefinitionId> = Default::default();
+        let mut builtin_ty: HashMap<StrRef, Type> = Default::default();
 
         for (id, name) in builtin_name_list.iter().rev().enumerate() {
             let name = (**name).into();
@@ -72,8 +72,8 @@ impl TopLevelComposer {
             let def = definition_ast_list[id].0.read();
             if let TopLevelDef::Function { simple_name, signature, .. } = &*def {
                 assert!(name == *simple_name);
-                built_in_ty.insert(name, *signature);
-                built_in_id.insert(name, DefinitionId(id));
+                builtin_ty.insert(name, *signature);
+                builtin_id.insert(name, DefinitionId(id));
             } else {
                 unreachable!()
             }
@@ -81,8 +81,8 @@ impl TopLevelComposer {
 
         for (name, sig, codegen_callback) in builtins {
             let fun_sig = unifier.add_ty(TypeEnum::TFunc(RefCell::new(sig)));
-            built_in_ty.insert(name, fun_sig);
-            built_in_id.insert(name, DefinitionId(definition_ast_list.len()));
+            builtin_ty.insert(name, fun_sig);
+            builtin_id.insert(name, DefinitionId(definition_ast_list.len()));
             definition_ast_list.push((
                 Arc::new(RwLock::new(TopLevelDef::Function {
                     name: name.into(),
@@ -101,7 +101,7 @@ impl TopLevelComposer {
 
         (
             TopLevelComposer {
-                built_in_num: definition_ast_list.len(),
+                builtin_num: definition_ast_list.len(),
                 definition_ast_list,
                 primitives_ty,
                 unifier,
@@ -109,8 +109,8 @@ impl TopLevelComposer {
                 defined_names,
                 method_class,
             },
-            built_in_id,
-            built_in_ty,
+            builtin_id,
+            builtin_ty,
         )
     }
 
@@ -320,7 +320,7 @@ impl TopLevelComposer {
         let primitives_store = &self.primitives_ty;
 
         // skip 5 to skip analyzing the primitives
-        for (class_def, class_ast) in def_list.iter().skip(self.built_in_num) {
+        for (class_def, class_ast) in def_list.iter().skip(self.builtin_num) {
             // only deal with class def here
             let mut class_def = class_def.write();
             let (class_bases_ast, class_def_type_vars, class_resolver) = {
@@ -426,7 +426,7 @@ impl TopLevelComposer {
 
         // first, only push direct parent into the list
         // skip 5 to skip analyzing the primitives
-        for (class_def, class_ast) in self.definition_ast_list.iter_mut().skip(self.built_in_num) {
+        for (class_def, class_ast) in self.definition_ast_list.iter_mut().skip(self.builtin_num) {
             let mut class_def = class_def.write();
             let (class_def_id, class_bases, class_ancestors, class_resolver, class_type_vars) = {
                 if let TopLevelDef::Class { ancestors, resolver, object_id, type_vars, .. } =
@@ -490,7 +490,7 @@ impl TopLevelComposer {
         // second, get all ancestors
         let mut ancestors_store: HashMap<DefinitionId, Vec<TypeAnnotation>> = Default::default();
         // skip 5 to skip analyzing the primitives
-        for (class_def, _) in self.definition_ast_list.iter().skip(self.built_in_num) {
+        for (class_def, _) in self.definition_ast_list.iter().skip(self.builtin_num) {
             let class_def = class_def.read();
             let (class_ancestors, class_id) = {
                 if let TopLevelDef::Class { ancestors, object_id, .. } = class_def.deref() {
@@ -512,7 +512,7 @@ impl TopLevelComposer {
 
         // insert the ancestors to the def list
         // skip 5 to skip analyzing the primitives
-        for (class_def, _) in self.definition_ast_list.iter_mut().skip(self.built_in_num) {
+        for (class_def, _) in self.definition_ast_list.iter_mut().skip(self.builtin_num) {
             let mut class_def = class_def.write();
             let (class_ancestors, class_id, class_type_vars) = {
                 if let TopLevelDef::Class { ancestors, object_id, type_vars, .. } =
@@ -545,7 +545,7 @@ impl TopLevelComposer {
         let mut type_var_to_concrete_def: HashMap<Type, TypeAnnotation> = HashMap::new();
 
         // skip 5 to skip analyzing the primitives
-        for (class_def, class_ast) in def_ast_list.iter().skip(self.built_in_num) {
+        for (class_def, class_ast) in def_ast_list.iter().skip(self.builtin_num) {
             if matches!(&*class_def.read(), TopLevelDef::Class { .. }) {
                 Self::analyze_single_class_methods_fields(
                     class_def.clone(),
@@ -566,7 +566,7 @@ impl TopLevelComposer {
         loop {
             let mut finished = true;
 
-            for (class_def, _) in def_ast_list.iter().skip(self.built_in_num) {
+            for (class_def, _) in def_ast_list.iter().skip(self.builtin_num) {
                 let mut class_def = class_def.write();
                 if let TopLevelDef::Class { ancestors, .. } = class_def.deref() {
                     // if the length of the ancestor is equal to the current depth
@@ -625,7 +625,7 @@ impl TopLevelComposer {
         let primitives_store = &self.primitives_ty;
 
         // skip 5 to skip analyzing the primitives
-        for (function_def, function_ast) in def_list.iter().skip(self.built_in_num) {
+        for (function_def, function_ast) in def_list.iter().skip(self.builtin_num) {
             let mut function_def = function_def.write();
             let function_def = function_def.deref_mut();
             let function_ast = if let Some(x) = function_ast.as_ref() {
@@ -1235,7 +1235,7 @@ impl TopLevelComposer {
     fn analyze_function_instance(&mut self) -> Result<(), String> {
         // first get the class contructor type correct for the following type check in function body
         // also do class field instantiation check
-        for (def, ast) in self.definition_ast_list.iter().skip(self.built_in_num) {
+        for (def, ast) in self.definition_ast_list.iter().skip(self.builtin_num) {
             let class_def = def.read();
             if let TopLevelDef::Class {
                 constructor,
@@ -1306,7 +1306,7 @@ impl TopLevelComposer {
 
         let ctx = Arc::new(self.make_top_level_context());
         // type inference inside function body
-        for (id, (def, ast)) in self.definition_ast_list.iter().enumerate().skip(self.built_in_num)
+        for (id, (def, ast)) in self.definition_ast_list.iter().enumerate().skip(self.builtin_num)
         {
             let mut function_def = def.write();
             if let TopLevelDef::Function {

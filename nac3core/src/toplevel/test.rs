@@ -162,7 +162,7 @@ fn test_simple_function_analyze(source: Vec<&str>, tys: Vec<&str>, names: Vec<&s
 
     composer.start_analysis(true).unwrap();
 
-    for (i, (def, _)) in composer.definition_ast_list.iter().skip(composer.built_in_num).enumerate()
+    for (i, (def, _)) in composer.definition_ast_list.iter().skip(composer.builtin_num).enumerate()
     {
         let def = &*def.read();
         if let TopLevelDef::Function { signature, name, .. } = def {
@@ -530,7 +530,7 @@ fn test_analyze(source: Vec<&str>, res: Vec<&str>) {
     } else {
         // skip 5 to skip primitives
         let mut res_vec: Vec<String> = Vec::new();
-        for (def, _) in composer.definition_ast_list.iter().skip(composer.built_in_num) {
+        for (def, _) in composer.definition_ast_list.iter().skip(composer.builtin_num) {
             let def = &*def.read();
             res_vec.push(format!("{}\n", def.to_string(composer.unifier.borrow_mut())));
         }
@@ -715,7 +715,7 @@ fn test_inference(source: Vec<&str>, res: Vec<&str>) {
         // skip 5 to skip primitives
         let mut stringify_folder = TypeToStringFolder { unifier: &mut composer.unifier };
         for (_i, (def, _)) in
-            composer.definition_ast_list.iter().skip(composer.built_in_num).enumerate()
+            composer.definition_ast_list.iter().skip(composer.builtin_num).enumerate()
         {
             let def = &*def.read();
 

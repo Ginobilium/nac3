@@ -8,7 +8,7 @@ type BuiltinInfo = (
     &'static [&'static str]
 );
 
-pub fn get_built_ins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
+pub fn get_builtins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
     let int32 = primitives.0.int32;
     let int64 = primitives.0.int64;
     let float = primitives.0.float;
