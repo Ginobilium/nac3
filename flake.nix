@@ -74,6 +74,7 @@
             name = "nac3artiq";
             src = self;
             inherit cargoSha256;
+            nativeBuildInputs = [ pkgs.zip ];
             buildInputs = [ pkgs-mingw.libffi pkgs-mingw.zlib ];
             configurePhase =
               ''
@@ -95,8 +96,10 @@
             doCheck = false;
             installPhase =
               ''
-              mkdir -p $out
-              cp target/x86_64-pc-windows-gnu/release/nac3artiq.dll $out/nac3artiq.pyd
+              mkdir -p $out $out/nix-support
+              ln -s target/x86_64-pc-windows-gnu/release/nac3artiq.dll nac3artiq.pyd
+              zip $out/nac3artiq.zip nac3artiq.pyd
+              echo file binary-dist $out/nac3artiq.zip >> $out/nix-support/hydra-build-products
               '';
             meta.platforms = ["x86_64-windows"];
           }
