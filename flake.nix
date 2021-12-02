@@ -68,6 +68,7 @@
             name = "nac3artiq";
             src = self;
             inherit cargoSha256;
+            buildInputs = [ pkgs-mingw.libffi ];
             configurePhase =
               ''
               export PYO3_CONFIG_FILE=${pyo3-mingw-config}
