@@ -1,5 +1,93 @@
+diff --git a/pkgs/development/compilers/llvm/10/llvm/default.nix b/pkgs/development/compilers/llvm/10/llvm/default.nix
+index 4e590dba4337d..413de2f868a3e 100644
+--- a/pkgs/development/compilers/llvm/10/llvm/default.nix
++++ b/pkgs/development/compilers/llvm/10/llvm/default.nix
+@@ -81,7 +81,7 @@ in stdenv.mkDerivation (rec {
+       --replace 'set(_install_rpath "@loader_path/../''${CMAKE_INSTALL_LIBDIR}''${LLVM_LIBDIR_SUFFIX}" ''${extra_libdir})' ""
+   ''
+   # Patch llvm-config to return correct library path based on --link-{shared,static}.
+-  + optionalString (enableSharedLibraries) ''
++  + ''
+     substitute '${./outputs.patch}' ./outputs.patch --subst-var lib
+     patch -p1 < ./outputs.patch
+   '' + ''
+diff --git a/pkgs/development/compilers/llvm/10/llvm/outputs.patch b/pkgs/development/compilers/llvm/10/llvm/outputs.patch
+index 40096fa3497fd..878460e05b8af 100644
+--- a/pkgs/development/compilers/llvm/10/llvm/outputs.patch
++++ b/pkgs/development/compilers/llvm/10/llvm/outputs.patch
+@@ -2,23 +2,13 @@ diff --git a/tools/llvm-config/llvm-config.cpp b/tools/llvm-config/llvm-config.c
+ index 94d426b..37f7794 100644
+ --- a/tools/llvm-config/llvm-config.cpp
+ +++ b/tools/llvm-config/llvm-config.cpp
+-@@ -333,6 +333,21 @@ int main(int argc, char **argv) {
++@@ -333,6 +333,11 @@ int main(int argc, char **argv) {
+      ActiveIncludeOption = "-I" + ActiveIncludeDir;
+    }
+  
+-+  /// Nix-specific multiple-output handling: override ActiveLibDir if --link-shared
+++  /// Nix-specific multiple-output handling: override ActiveLibDir
+ +  if (!IsInDevelopmentTree) {
+-+    bool WantShared = true;
+-+    for (int i = 1; i < argc; ++i) {
+-+      StringRef Arg = argv[i];
+-+      if (Arg == "--link-shared")
+-+        WantShared = true;
+-+      else if (Arg == "--link-static")
+-+        WantShared = false; // the last one wins
+-+    }
+-+
+-+    if (WantShared)
+-+      ActiveLibDir = std::string("@lib@") + "/lib" + LLVM_LIBDIR_SUFFIX;
+++    ActiveLibDir = std::string("@lib@") + "/lib" + LLVM_LIBDIR_SUFFIX;
+ +  }
+ +
+    /// We only use `shared library` mode in cases where the static library form
+diff --git a/pkgs/development/compilers/llvm/11/llvm/default.nix b/pkgs/development/compilers/llvm/11/llvm/default.nix
+index f0148850dbe8a..32981b9d4dde8 100644
+--- a/pkgs/development/compilers/llvm/11/llvm/default.nix
++++ b/pkgs/development/compilers/llvm/11/llvm/default.nix
+@@ -73,7 +73,7 @@ in stdenv.mkDerivation (rec {
+       --replace 'set(_install_rpath "@loader_path/../''${CMAKE_INSTALL_LIBDIR}''${LLVM_LIBDIR_SUFFIX}" ''${extra_libdir})' ""
+   ''
+   # Patch llvm-config to return correct library path based on --link-{shared,static}.
+-  + optionalString (enableSharedLibraries) ''
++  + ''
+     substitute '${./outputs.patch}' ./outputs.patch --subst-var lib
+     patch -p1 < ./outputs.patch
+   '' + ''
+diff --git a/pkgs/development/compilers/llvm/11/llvm/outputs.patch b/pkgs/development/compilers/llvm/11/llvm/outputs.patch
+index 40096fa3497fd..878460e05b8af 100644
+--- a/pkgs/development/compilers/llvm/11/llvm/outputs.patch
++++ b/pkgs/development/compilers/llvm/11/llvm/outputs.patch
+@@ -2,23 +2,13 @@ diff --git a/tools/llvm-config/llvm-config.cpp b/tools/llvm-config/llvm-config.c
+ index 94d426b..37f7794 100644
+ --- a/tools/llvm-config/llvm-config.cpp
+ +++ b/tools/llvm-config/llvm-config.cpp
+-@@ -333,6 +333,21 @@ int main(int argc, char **argv) {
++@@ -333,6 +333,11 @@ int main(int argc, char **argv) {
+      ActiveIncludeOption = "-I" + ActiveIncludeDir;
+    }
+  
+-+  /// Nix-specific multiple-output handling: override ActiveLibDir if --link-shared
+++  /// Nix-specific multiple-output handling: override ActiveLibDir
+ +  if (!IsInDevelopmentTree) {
+-+    bool WantShared = true;
+-+    for (int i = 1; i < argc; ++i) {
+-+      StringRef Arg = argv[i];
+-+      if (Arg == "--link-shared")
+-+        WantShared = true;
+-+      else if (Arg == "--link-static")
+-+        WantShared = false; // the last one wins
+-+    }
+-+
+-+    if (WantShared)
+-+      ActiveLibDir = std::string("@lib@") + "/lib" + LLVM_LIBDIR_SUFFIX;
+++    ActiveLibDir = std::string("@lib@") + "/lib" + LLVM_LIBDIR_SUFFIX;
+ +  }
+ +
+    /// We only use `shared library` mode in cases where the static library form
 diff --git a/pkgs/development/compilers/llvm/12/llvm/default.nix b/pkgs/development/compilers/llvm/12/llvm/default.nix
-index 30a1a7a16df..bb5676b9d48 100644
+index 30a1a7a16df83..bb5676b9d48e4 100644
 --- a/pkgs/development/compilers/llvm/12/llvm/default.nix
 +++ b/pkgs/development/compilers/llvm/12/llvm/default.nix
 @@ -74,7 +74,7 @@ in stdenv.mkDerivation (rec {
@@ -12,9 +100,348 @@ index 30a1a7a16df..bb5676b9d48 100644
      patch -p1 < ./outputs.patch
    '' + ''
 diff --git a/pkgs/development/compilers/llvm/12/llvm/outputs.patch b/pkgs/development/compilers/llvm/12/llvm/outputs.patch
-index 40096fa3497..878460e05b8 100644
+index 40096fa3497fd..878460e05b8af 100644
 --- a/pkgs/development/compilers/llvm/12/llvm/outputs.patch
 +++ b/pkgs/development/compilers/llvm/12/llvm/outputs.patch
+@@ -2,23 +2,13 @@ diff --git a/tools/llvm-config/llvm-config.cpp b/tools/llvm-config/llvm-config.c
+ index 94d426b..37f7794 100644
+ --- a/tools/llvm-config/llvm-config.cpp
+ +++ b/tools/llvm-config/llvm-config.cpp
+-@@ -333,6 +333,21 @@ int main(int argc, char **argv) {
++@@ -333,6 +333,11 @@ int main(int argc, char **argv) {
+      ActiveIncludeOption = "-I" + ActiveIncludeDir;
+    }
+  
+-+  /// Nix-specific multiple-output handling: override ActiveLibDir if --link-shared
+++  /// Nix-specific multiple-output handling: override ActiveLibDir
+ +  if (!IsInDevelopmentTree) {
+-+    bool WantShared = true;
+-+    for (int i = 1; i < argc; ++i) {
+-+      StringRef Arg = argv[i];
+-+      if (Arg == "--link-shared")
+-+        WantShared = true;
+-+      else if (Arg == "--link-static")
+-+        WantShared = false; // the last one wins
+-+    }
+-+
+-+    if (WantShared)
+-+      ActiveLibDir = std::string("@lib@") + "/lib" + LLVM_LIBDIR_SUFFIX;
+++    ActiveLibDir = std::string("@lib@") + "/lib" + LLVM_LIBDIR_SUFFIX;
+ +  }
+ +
+    /// We only use `shared library` mode in cases where the static library form
+diff --git a/pkgs/development/compilers/llvm/13/llvm/default.nix b/pkgs/development/compilers/llvm/13/llvm/default.nix
+index 957f29e44994a..115b56396e8d8 100644
+--- a/pkgs/development/compilers/llvm/13/llvm/default.nix
++++ b/pkgs/development/compilers/llvm/13/llvm/default.nix
+@@ -68,7 +68,7 @@ in stdenv.mkDerivation (rec {
+       --replace 'set(_install_rpath "@loader_path/../''${CMAKE_INSTALL_LIBDIR}''${LLVM_LIBDIR_SUFFIX}" ''${extra_libdir})' ""
+   ''
+   # Patch llvm-config to return correct library path based on --link-{shared,static}.
+-  + optionalString (enableSharedLibraries) ''
++  + ''
+     substitute '${./outputs.patch}' ./outputs.patch --subst-var lib
+     patch -p1 < ./outputs.patch
+   '' + ''
+diff --git a/pkgs/development/compilers/llvm/13/llvm/outputs.patch b/pkgs/development/compilers/llvm/13/llvm/outputs.patch
+index 40096fa3497fd..878460e05b8af 100644
+--- a/pkgs/development/compilers/llvm/13/llvm/outputs.patch
++++ b/pkgs/development/compilers/llvm/13/llvm/outputs.patch
+@@ -2,23 +2,13 @@ diff --git a/tools/llvm-config/llvm-config.cpp b/tools/llvm-config/llvm-config.c
+ index 94d426b..37f7794 100644
+ --- a/tools/llvm-config/llvm-config.cpp
+ +++ b/tools/llvm-config/llvm-config.cpp
+-@@ -333,6 +333,21 @@ int main(int argc, char **argv) {
++@@ -333,6 +333,11 @@ int main(int argc, char **argv) {
+      ActiveIncludeOption = "-I" + ActiveIncludeDir;
+    }
+  
+-+  /// Nix-specific multiple-output handling: override ActiveLibDir if --link-shared
+++  /// Nix-specific multiple-output handling: override ActiveLibDir
+ +  if (!IsInDevelopmentTree) {
+-+    bool WantShared = true;
+-+    for (int i = 1; i < argc; ++i) {
+-+      StringRef Arg = argv[i];
+-+      if (Arg == "--link-shared")
+-+        WantShared = true;
+-+      else if (Arg == "--link-static")
+-+        WantShared = false; // the last one wins
+-+    }
+-+
+-+    if (WantShared)
+-+      ActiveLibDir = std::string("@lib@") + "/lib" + LLVM_LIBDIR_SUFFIX;
+++    ActiveLibDir = std::string("@lib@") + "/lib" + LLVM_LIBDIR_SUFFIX;
+ +  }
+ +
+    /// We only use `shared library` mode in cases where the static library form
+diff --git a/pkgs/development/compilers/llvm/5/llvm/default.nix b/pkgs/development/compilers/llvm/5/llvm/default.nix
+index 6388cd65fbf47..a4d2fec36193d 100644
+--- a/pkgs/development/compilers/llvm/5/llvm/default.nix
++++ b/pkgs/development/compilers/llvm/5/llvm/default.nix
+@@ -74,7 +74,7 @@ stdenv.mkDerivation ({
+       --replace 'set(_install_rpath "@loader_path/../''${CMAKE_INSTALL_LIBDIR}" ''${extra_libdir})' ""
+   ''
+   # Patch llvm-config to return correct library path based on --link-{shared,static}.
+-  + optionalString (enableSharedLibraries) ''
++  + ''
+     substitute '${./outputs.patch}' ./outputs.patch --subst-var lib
+     patch -p1 < ./outputs.patch
+   '' + ''
+diff --git a/pkgs/development/compilers/llvm/5/llvm/outputs.patch b/pkgs/development/compilers/llvm/5/llvm/outputs.patch
+index 40096fa3497fd..878460e05b8af 100644
+--- a/pkgs/development/compilers/llvm/5/llvm/outputs.patch
++++ b/pkgs/development/compilers/llvm/5/llvm/outputs.patch
+@@ -2,23 +2,13 @@ diff --git a/tools/llvm-config/llvm-config.cpp b/tools/llvm-config/llvm-config.c
+ index 94d426b..37f7794 100644
+ --- a/tools/llvm-config/llvm-config.cpp
+ +++ b/tools/llvm-config/llvm-config.cpp
+-@@ -333,6 +333,21 @@ int main(int argc, char **argv) {
++@@ -333,6 +333,11 @@ int main(int argc, char **argv) {
+      ActiveIncludeOption = "-I" + ActiveIncludeDir;
+    }
+  
+-+  /// Nix-specific multiple-output handling: override ActiveLibDir if --link-shared
+++  /// Nix-specific multiple-output handling: override ActiveLibDir
+ +  if (!IsInDevelopmentTree) {
+-+    bool WantShared = true;
+-+    for (int i = 1; i < argc; ++i) {
+-+      StringRef Arg = argv[i];
+-+      if (Arg == "--link-shared")
+-+        WantShared = true;
+-+      else if (Arg == "--link-static")
+-+        WantShared = false; // the last one wins
+-+    }
+-+
+-+    if (WantShared)
+-+      ActiveLibDir = std::string("@lib@") + "/lib" + LLVM_LIBDIR_SUFFIX;
+++    ActiveLibDir = std::string("@lib@") + "/lib" + LLVM_LIBDIR_SUFFIX;
+ +  }
+ +
+    /// We only use `shared library` mode in cases where the static library form
+diff --git a/pkgs/development/compilers/llvm/6/llvm/default.nix b/pkgs/development/compilers/llvm/6/llvm/default.nix
+index 0907c89561717..1c010980048cd 100644
+--- a/pkgs/development/compilers/llvm/6/llvm/default.nix
++++ b/pkgs/development/compilers/llvm/6/llvm/default.nix
+@@ -72,7 +72,7 @@ stdenv.mkDerivation ({
+       --replace 'set(_install_rpath "@loader_path/../''${CMAKE_INSTALL_LIBDIR}" ''${extra_libdir})' ""
+   ''
+   # Patch llvm-config to return correct library path based on --link-{shared,static}.
+-  + optionalString (enableSharedLibraries) ''
++  + ''
+     substitute '${./outputs.patch}' ./outputs.patch --subst-var lib
+     patch -p1 < ./outputs.patch
+   '' + ''
+diff --git a/pkgs/development/compilers/llvm/6/llvm/outputs.patch b/pkgs/development/compilers/llvm/6/llvm/outputs.patch
+index 40096fa3497fd..878460e05b8af 100644
+--- a/pkgs/development/compilers/llvm/6/llvm/outputs.patch
++++ b/pkgs/development/compilers/llvm/6/llvm/outputs.patch
+@@ -2,23 +2,13 @@ diff --git a/tools/llvm-config/llvm-config.cpp b/tools/llvm-config/llvm-config.c
+ index 94d426b..37f7794 100644
+ --- a/tools/llvm-config/llvm-config.cpp
+ +++ b/tools/llvm-config/llvm-config.cpp
+-@@ -333,6 +333,21 @@ int main(int argc, char **argv) {
++@@ -333,6 +333,11 @@ int main(int argc, char **argv) {
+      ActiveIncludeOption = "-I" + ActiveIncludeDir;
+    }
+  
+-+  /// Nix-specific multiple-output handling: override ActiveLibDir if --link-shared
+++  /// Nix-specific multiple-output handling: override ActiveLibDir
+ +  if (!IsInDevelopmentTree) {
+-+    bool WantShared = true;
+-+    for (int i = 1; i < argc; ++i) {
+-+      StringRef Arg = argv[i];
+-+      if (Arg == "--link-shared")
+-+        WantShared = true;
+-+      else if (Arg == "--link-static")
+-+        WantShared = false; // the last one wins
+-+    }
+-+
+-+    if (WantShared)
+-+      ActiveLibDir = std::string("@lib@") + "/lib" + LLVM_LIBDIR_SUFFIX;
+++    ActiveLibDir = std::string("@lib@") + "/lib" + LLVM_LIBDIR_SUFFIX;
+ +  }
+ +
+    /// We only use `shared library` mode in cases where the static library form
+diff --git a/pkgs/development/compilers/llvm/7/llvm/default.nix b/pkgs/development/compilers/llvm/7/llvm/default.nix
+index 4a9b4f5182056..ac6efaccb865e 100644
+--- a/pkgs/development/compilers/llvm/7/llvm/default.nix
++++ b/pkgs/development/compilers/llvm/7/llvm/default.nix
+@@ -76,7 +76,7 @@ in stdenv.mkDerivation ({
+       --replace 'set(_install_rpath "@loader_path/../''${CMAKE_INSTALL_LIBDIR}" ''${extra_libdir})' ""
+   ''
+   # Patch llvm-config to return correct library path based on --link-{shared,static}.
+-  + optionalString (enableSharedLibraries) ''
++  + ''
+     substitute '${./outputs.patch}' ./outputs.patch --subst-var lib
+     patch -p1 < ./outputs.patch
+   '' + ''
+diff --git a/pkgs/development/compilers/llvm/7/llvm/outputs.patch b/pkgs/development/compilers/llvm/7/llvm/outputs.patch
+index 40096fa3497fd..878460e05b8af 100644
+--- a/pkgs/development/compilers/llvm/7/llvm/outputs.patch
++++ b/pkgs/development/compilers/llvm/7/llvm/outputs.patch
+@@ -2,23 +2,13 @@ diff --git a/tools/llvm-config/llvm-config.cpp b/tools/llvm-config/llvm-config.c
+ index 94d426b..37f7794 100644
+ --- a/tools/llvm-config/llvm-config.cpp
+ +++ b/tools/llvm-config/llvm-config.cpp
+-@@ -333,6 +333,21 @@ int main(int argc, char **argv) {
++@@ -333,6 +333,11 @@ int main(int argc, char **argv) {
+      ActiveIncludeOption = "-I" + ActiveIncludeDir;
+    }
+  
+-+  /// Nix-specific multiple-output handling: override ActiveLibDir if --link-shared
+++  /// Nix-specific multiple-output handling: override ActiveLibDir
+ +  if (!IsInDevelopmentTree) {
+-+    bool WantShared = true;
+-+    for (int i = 1; i < argc; ++i) {
+-+      StringRef Arg = argv[i];
+-+      if (Arg == "--link-shared")
+-+        WantShared = true;
+-+      else if (Arg == "--link-static")
+-+        WantShared = false; // the last one wins
+-+    }
+-+
+-+    if (WantShared)
+-+      ActiveLibDir = std::string("@lib@") + "/lib" + LLVM_LIBDIR_SUFFIX;
+++    ActiveLibDir = std::string("@lib@") + "/lib" + LLVM_LIBDIR_SUFFIX;
+ +  }
+ +
+    /// We only use `shared library` mode in cases where the static library form
+diff --git a/pkgs/development/compilers/llvm/8/llvm/default.nix b/pkgs/development/compilers/llvm/8/llvm/default.nix
+index 83b779b56d827..48a434b24c7cd 100644
+--- a/pkgs/development/compilers/llvm/8/llvm/default.nix
++++ b/pkgs/development/compilers/llvm/8/llvm/default.nix
+@@ -79,7 +79,7 @@ in stdenv.mkDerivation ({
+       --replace 'set(_install_rpath "@loader_path/../''${CMAKE_INSTALL_LIBDIR}" ''${extra_libdir})' ""
+   ''
+   # Patch llvm-config to return correct library path based on --link-{shared,static}.
+-  + optionalString (enableSharedLibraries) ''
++  + ''
+     substitute '${./outputs.patch}' ./outputs.patch --subst-var lib
+     patch -p1 < ./outputs.patch
+   '' + ''
+diff --git a/pkgs/development/compilers/llvm/8/llvm/outputs.patch b/pkgs/development/compilers/llvm/8/llvm/outputs.patch
+index 40096fa3497fd..878460e05b8af 100644
+--- a/pkgs/development/compilers/llvm/8/llvm/outputs.patch
++++ b/pkgs/development/compilers/llvm/8/llvm/outputs.patch
+@@ -2,23 +2,13 @@ diff --git a/tools/llvm-config/llvm-config.cpp b/tools/llvm-config/llvm-config.c
+ index 94d426b..37f7794 100644
+ --- a/tools/llvm-config/llvm-config.cpp
+ +++ b/tools/llvm-config/llvm-config.cpp
+-@@ -333,6 +333,21 @@ int main(int argc, char **argv) {
++@@ -333,6 +333,11 @@ int main(int argc, char **argv) {
+      ActiveIncludeOption = "-I" + ActiveIncludeDir;
+    }
+  
+-+  /// Nix-specific multiple-output handling: override ActiveLibDir if --link-shared
+++  /// Nix-specific multiple-output handling: override ActiveLibDir
+ +  if (!IsInDevelopmentTree) {
+-+    bool WantShared = true;
+-+    for (int i = 1; i < argc; ++i) {
+-+      StringRef Arg = argv[i];
+-+      if (Arg == "--link-shared")
+-+        WantShared = true;
+-+      else if (Arg == "--link-static")
+-+        WantShared = false; // the last one wins
+-+    }
+-+
+-+    if (WantShared)
+-+      ActiveLibDir = std::string("@lib@") + "/lib" + LLVM_LIBDIR_SUFFIX;
+++    ActiveLibDir = std::string("@lib@") + "/lib" + LLVM_LIBDIR_SUFFIX;
+ +  }
+ +
+    /// We only use `shared library` mode in cases where the static library form
+diff --git a/pkgs/development/compilers/llvm/9/llvm/default.nix b/pkgs/development/compilers/llvm/9/llvm/default.nix
+index 570795824ee58..a569c00071de0 100644
+--- a/pkgs/development/compilers/llvm/9/llvm/default.nix
++++ b/pkgs/development/compilers/llvm/9/llvm/default.nix
+@@ -77,7 +77,7 @@ in stdenv.mkDerivation (rec {
+       --replace 'set(_install_rpath "@loader_path/../''${CMAKE_INSTALL_LIBDIR}" ''${extra_libdir})' ""
+   ''
+   # Patch llvm-config to return correct library path based on --link-{shared,static}.
+-  + optionalString (enableSharedLibraries) ''
++  + ''
+     substitute '${./outputs.patch}' ./outputs.patch --subst-var lib
+     patch -p1 < ./outputs.patch
+   '' + ''
+diff --git a/pkgs/development/compilers/llvm/9/llvm/outputs.patch b/pkgs/development/compilers/llvm/9/llvm/outputs.patch
+index 40096fa3497fd..878460e05b8af 100644
+--- a/pkgs/development/compilers/llvm/9/llvm/outputs.patch
++++ b/pkgs/development/compilers/llvm/9/llvm/outputs.patch
+@@ -2,23 +2,13 @@ diff --git a/tools/llvm-config/llvm-config.cpp b/tools/llvm-config/llvm-config.c
+ index 94d426b..37f7794 100644
+ --- a/tools/llvm-config/llvm-config.cpp
+ +++ b/tools/llvm-config/llvm-config.cpp
+-@@ -333,6 +333,21 @@ int main(int argc, char **argv) {
++@@ -333,6 +333,11 @@ int main(int argc, char **argv) {
+      ActiveIncludeOption = "-I" + ActiveIncludeDir;
+    }
+  
+-+  /// Nix-specific multiple-output handling: override ActiveLibDir if --link-shared
+++  /// Nix-specific multiple-output handling: override ActiveLibDir
+ +  if (!IsInDevelopmentTree) {
+-+    bool WantShared = true;
+-+    for (int i = 1; i < argc; ++i) {
+-+      StringRef Arg = argv[i];
+-+      if (Arg == "--link-shared")
+-+        WantShared = true;
+-+      else if (Arg == "--link-static")
+-+        WantShared = false; // the last one wins
+-+    }
+-+
+-+    if (WantShared)
+-+      ActiveLibDir = std::string("@lib@") + "/lib" + LLVM_LIBDIR_SUFFIX;
+++    ActiveLibDir = std::string("@lib@") + "/lib" + LLVM_LIBDIR_SUFFIX;
+ +  }
+ +
+    /// We only use `shared library` mode in cases where the static library form
+diff --git a/pkgs/development/compilers/llvm/git/llvm/default.nix b/pkgs/development/compilers/llvm/git/llvm/default.nix
+index daf4cfe808b6c..4c895f81dbbac 100644
+--- a/pkgs/development/compilers/llvm/git/llvm/default.nix
++++ b/pkgs/development/compilers/llvm/git/llvm/default.nix
+@@ -60,7 +60,7 @@ in stdenv.mkDerivation (rec {
+       --replace 'set(_install_rpath "@loader_path/../''${CMAKE_INSTALL_LIBDIR}''${LLVM_LIBDIR_SUFFIX}" ''${extra_libdir})' ""
+   ''
+   # Patch llvm-config to return correct library path based on --link-{shared,static}.
+-  + optionalString (enableSharedLibraries) ''
++  + ''
+     substitute '${./outputs.patch}' ./outputs.patch --subst-var lib
+     patch -p1 < ./outputs.patch
+   '' + ''
+diff --git a/pkgs/development/compilers/llvm/git/llvm/outputs.patch b/pkgs/development/compilers/llvm/git/llvm/outputs.patch
+index 40096fa3497fd..878460e05b8af 100644
+--- a/pkgs/development/compilers/llvm/git/llvm/outputs.patch
++++ b/pkgs/development/compilers/llvm/git/llvm/outputs.patch
+@@ -2,23 +2,13 @@ diff --git a/tools/llvm-config/llvm-config.cpp b/tools/llvm-config/llvm-config.c
+ index 94d426b..37f7794 100644
+ --- a/tools/llvm-config/llvm-config.cpp
+ +++ b/tools/llvm-config/llvm-config.cpp
+-@@ -333,6 +333,21 @@ int main(int argc, char **argv) {
++@@ -333,6 +333,11 @@ int main(int argc, char **argv) {
+      ActiveIncludeOption = "-I" + ActiveIncludeDir;
+    }
+  
+-+  /// Nix-specific multiple-output handling: override ActiveLibDir if --link-shared
+++  /// Nix-specific multiple-output handling: override ActiveLibDir
+ +  if (!IsInDevelopmentTree) {
+-+    bool WantShared = true;
+-+    for (int i = 1; i < argc; ++i) {
+-+      StringRef Arg = argv[i];
+-+      if (Arg == "--link-shared")
+-+        WantShared = true;
+-+      else if (Arg == "--link-static")
+-+        WantShared = false; // the last one wins
+-+    }
+-+
+-+    if (WantShared)
+-+      ActiveLibDir = std::string("@lib@") + "/lib" + LLVM_LIBDIR_SUFFIX;
+++    ActiveLibDir = std::string("@lib@") + "/lib" + LLVM_LIBDIR_SUFFIX;
+ +  }
+ +
+    /// We only use `shared library` mode in cases where the static library form
+diff --git a/pkgs/development/compilers/llvm/rocm/llvm/outputs.patch b/pkgs/development/compilers/llvm/rocm/llvm/outputs.patch
+index 40096fa3497fd..878460e05b8af 100644
+--- a/pkgs/development/compilers/llvm/rocm/llvm/outputs.patch
++++ b/pkgs/development/compilers/llvm/rocm/llvm/outputs.patch
 @@ -2,23 +2,13 @@ diff --git a/tools/llvm-config/llvm-config.cpp b/tools/llvm-config/llvm-config.c
  index 94d426b..37f7794 100644
  --- a/tools/llvm-config/llvm-config.cpp
