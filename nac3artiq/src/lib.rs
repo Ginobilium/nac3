@@ -4,6 +4,7 @@ use std::process::Command;
 use std::sync::Arc;
 
 use inkwell::{
+    memory_buffer::MemoryBuffer,
     passes::{PassManager, PassManagerBuilder},
     targets::*,
     OptimizationLevel,
@@ -301,8 +302,8 @@ impl Nac3 {
                     .call0()
                     .unwrap()
                     .get_item("virtual")
-                    .unwrap(),
-                )).unwrap()
+                    .unwrap(),))
+                .unwrap()
                 .extract()
                 .unwrap(),
             generic_alias: (
@@ -521,52 +522,17 @@ impl Nac3 {
         };
         let isa = self.isa;
         let working_directory = self.working_directory.path().to_owned();
-        let f = Arc::new(WithCall::new(Box::new(move |module| {
-            let builder = PassManagerBuilder::create();
-            builder.set_optimization_level(OptimizationLevel::Default);
-            let passes = PassManager::create(());
-            builder.populate_module_pass_manager(&passes);
-            passes.run_on(module);
 
-            let (triple, features) = match isa {
-                Isa::Host => (
-                    TargetMachine::get_default_triple(),
-                    TargetMachine::get_host_cpu_features().to_string(),
-                ),
-                Isa::RiscV32G => (
-                    TargetTriple::create("riscv32-unknown-linux"),
-                    "+a,+m,+f,+d".to_string(),
-                ),
-                Isa::RiscV32IMA => (
-                    TargetTriple::create("riscv32-unknown-linux"),
-                    "+a,+m".to_string(),
-                ),
-                Isa::CortexA9 => (
-                    TargetTriple::create("armv7-unknown-linux-gnueabihf"),
-                    "+dsp,+fp16,+neon,+vfp3".to_string(),
-                ),
-            };
-            let target =
-                Target::from_triple(&triple).expect("couldn't create target from target triple");
-            let target_machine = target
-                .create_target_machine(
-                    &triple,
-                    "",
-                    &features,
-                    OptimizationLevel::Default,
-                    RelocMode::PIC,
-                    CodeModel::Default,
-                )
-                .expect("couldn't create target machine");
-            target_machine
-                .write_to_file(
-                    module,
-                    FileType::Object,
-                    &working_directory.join(&format!("{}.o", module.get_name().to_str().unwrap())),
-                )
-                .expect("couldn't write module to file");
+        let membuffers: Arc<Mutex<Vec<Vec<u8>>>> = Default::default();
+
+        let membuffer = membuffers.clone();
+
+        let f = Arc::new(WithCall::new(Box::new(move |module| {
+            let buffer = module.write_bitcode_to_memory();
+            let buffer = buffer.as_slice().into();
+            membuffer.lock().push(buffer);
         })));
-        let thread_names: Vec<String> = (0..4).map(|i| format!("module{}", i)).collect();
+        let thread_names: Vec<String> = (0..4).map(|_| "main".to_string()).collect();
         let threads: Vec<_> = thread_names
             .iter()
             .map(|s| Box::new(ArtiqCodeGenerator::new(s.to_string(), self.time_fns)))
@@ -578,12 +544,79 @@ impl Nac3 {
             registry.wait_tasks_complete(handles);
         });
 
+        let buffers = membuffers.lock();
+        let context = inkwell::context::Context::create();
+        let main = context
+            .create_module_from_ir(MemoryBuffer::create_from_memory_range(&buffers[0], "main"))
+            .unwrap();
+        for buffer in buffers.iter().skip(1) {
+            let other = context
+                .create_module_from_ir(MemoryBuffer::create_from_memory_range(buffer, "main"))
+                .unwrap();
+
+            main.link_in_module(other)
+                .map_err(|err| exceptions::PyRuntimeError::new_err(err.to_string()))?;
+        }
+
+        let mut function_iter = main.get_first_function();
+        while let Some(func) = function_iter {
+            if func.count_basic_blocks() > 0 && func.get_name().to_str().unwrap() != "__modinit__" {
+                func.set_linkage(inkwell::module::Linkage::Private);
+            }
+            function_iter = func.get_next_function();
+        }
+
+        let builder = PassManagerBuilder::create();
+        builder.set_optimization_level(OptimizationLevel::Aggressive);
+        let passes = PassManager::create(());
+        builder.set_inliner_with_threshold(255);
+        builder.populate_module_pass_manager(&passes);
+        passes.run_on(&main);
+
+        let (triple, features) = match isa {
+            Isa::Host => (
+                TargetMachine::get_default_triple(),
+                TargetMachine::get_host_cpu_features().to_string(),
+            ),
+            Isa::RiscV32G => (
+                TargetTriple::create("riscv32-unknown-linux"),
+                "+a,+m,+f,+d".to_string(),
+            ),
+            Isa::RiscV32IMA => (
+                TargetTriple::create("riscv32-unknown-linux"),
+                "+a,+m".to_string(),
+            ),
+            Isa::CortexA9 => (
+                TargetTriple::create("armv7-unknown-linux-gnueabihf"),
+                "+dsp,+fp16,+neon,+vfp3".to_string(),
+            ),
+        };
+        let target =
+            Target::from_triple(&triple).expect("couldn't create target from target triple");
+        let target_machine = target
+            .create_target_machine(
+                &triple,
+                "",
+                &features,
+                OptimizationLevel::Default,
+                RelocMode::PIC,
+                CodeModel::Default,
+            )
+            .expect("couldn't create target machine");
+        target_machine
+            .write_to_file(&main, FileType::Object, &working_directory.join("module.o"))
+            .expect("couldn't write module to file");
+
         let mut linker_args = vec![
             "-shared".to_string(),
             "--eh-frame-hdr".to_string(),
             "-x".to_string(),
             "-o".to_string(),
             filename.to_string(),
+            working_directory
+                .join("module.o")
+                .to_string_lossy()
+                .to_string(),
         ];
         if isa != Isa::Host {
             linker_args.push(
@@ -596,15 +629,7 @@ impl Nac3 {
                         .unwrap(),
             );
         }
-        linker_args.extend(thread_names.iter().map(|name| {
-            let name_o = name.to_owned() + ".o";
-            self.working_directory
-                .path()
-                .join(name_o.as_str())
-                .to_str()
-                .unwrap()
-                .to_string()
-        }));
+
         if let Ok(linker_status) = Command::new("ld.lld").args(linker_args).status() {
             if !linker_status.success() {
                 return Err(exceptions::PyRuntimeError::new_err(
