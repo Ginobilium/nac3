@@ -39,6 +39,7 @@ pub struct InnerResolver {
 
 pub struct Resolver(pub Arc<InnerResolver>);
 
+#[derive(Clone)]
 pub struct PythonHelper {
     pub type_fn: PyObject,
     pub len_fn: PyObject,
