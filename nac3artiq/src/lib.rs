@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::process::Command;
+use std::rc::Rc;
 use std::sync::Arc;
 
 use inkwell::{
@@ -10,7 +11,7 @@ use inkwell::{
     OptimizationLevel,
 };
 use nac3parser::{
-    ast::{self, StrRef},
+    ast::{self, Stmt, StrRef},
     parser::{self, parse_program},
 };
 use pyo3::prelude::*;
@@ -21,7 +22,7 @@ use parking_lot::{Mutex, RwLock};
 use nac3core::{
     codegen::{concrete_type::ConcreteTypeStore, CodeGenTask, WithCall, WorkerRegistry},
     symbol_resolver::SymbolResolver,
-    toplevel::{composer::TopLevelComposer, DefinitionId, GenCall, TopLevelContext, TopLevelDef},
+    toplevel::{composer::TopLevelComposer, DefinitionId, GenCall, TopLevelDef},
     typecheck::typedef::{FunSignature, FuncArg},
     typecheck::{type_inferencer::PrimitiveStore, typedef::Type},
 };
@@ -62,6 +63,13 @@ pub struct PrimitivePythonId {
     virtual_id: u64,
 }
 
+type TopLevelComponent = (
+    Stmt,
+    Arc<dyn SymbolResolver + Send + Sync>,
+    String,
+    Rc<HashMap<StrRef, u64>>,
+);
+
 // TopLevelComposer is unsendable as it holds the unification table, which is
 // unsendable due to Rc. Arc would cause a performance hit.
 #[pyclass(unsendable, name = "NAC3")]
@@ -69,15 +77,15 @@ struct Nac3 {
     isa: Isa,
     time_fns: &'static (dyn TimeFns + Sync),
     primitive: PrimitiveStore,
+    builtins: Vec<(StrRef, FunSignature, Arc<GenCall>)>,
     builtins_ty: HashMap<StrRef, Type>,
     builtins_def: HashMap<StrRef, DefinitionId>,
     pyid_to_def: Arc<RwLock<HashMap<u64, DefinitionId>>>,
     pyid_to_type: Arc<RwLock<HashMap<u64, Type>>>,
-    composer: TopLevelComposer,
-    top_level: Option<Arc<TopLevelContext>>,
     primitive_ids: PrimitivePythonId,
     global_value_ids: Arc<Mutex<HashSet<u64>>>,
     working_directory: TempDir,
+    top_levels: Vec<TopLevelComponent>,
 }
 
 impl Nac3 {
@@ -134,8 +142,7 @@ impl Nac3 {
             module: module.clone(),
             helper,
         }))) as Arc<dyn SymbolResolver + Send + Sync>;
-        let mut name_to_def = HashMap::new();
-        let mut name_to_type = HashMap::new();
+        let name_to_pyid = Rc::new(name_to_pyid);
 
         for mut stmt in parser_result.into_iter() {
             let include = match stmt.node {
@@ -202,23 +209,13 @@ impl Nac3 {
             };
 
             if include {
-                let (name, def_id, ty) = self
-                    .composer
-                    .register_top_level(stmt, Some(resolver.clone()), module_name.clone())
-                    .unwrap();
-                name_to_def.insert(name, def_id);
-                if let Some(ty) = ty {
-                    name_to_type.insert(name, ty);
-                }
+                self.top_levels.push((
+                    stmt,
+                    resolver.clone(),
+                    module_name.clone(),
+                    name_to_pyid.clone(),
+                ));
             }
-        }
-        let mut map = self.pyid_to_def.write();
-        for (name, def) in name_to_def.into_iter() {
-            map.insert(*name_to_pyid.get(&name).unwrap(), def);
-        }
-        let mut map = self.pyid_to_type.write();
-        for (name, ty) in name_to_type.into_iter() {
-            map.insert(*name_to_pyid.get(&name).unwrap(), ty);
         }
         Ok(())
     }
@@ -287,7 +284,7 @@ impl Nac3 {
                 }))),
             ),
         ];
-        let (composer, builtins_def, builtins_ty) = TopLevelComposer::new(builtins);
+        let (_, builtins_def, builtins_ty) = TopLevelComposer::new(builtins.clone());
 
         let builtins_mod = PyModule::import(py, "builtins").unwrap();
         let id_fn = builtins_mod.getattr("id").unwrap();
@@ -376,11 +373,11 @@ impl Nac3 {
             isa,
             time_fns,
             primitive,
+            builtins,
             builtins_ty,
             builtins_def,
-            composer,
             primitive_ids,
-            top_level: None,
+            top_levels: Default::default(),
             pyid_to_def: Default::default(),
             pyid_to_type: Default::default(),
             global_value_ids: Default::default(),
@@ -423,6 +420,30 @@ impl Nac3 {
         filename: &str,
         py: Python,
     ) -> PyResult<()> {
+        let (mut composer, _, _) = TopLevelComposer::new(self.builtins.clone());
+        let mut id_to_def = HashMap::new();
+        let mut id_to_type = HashMap::new();
+        for (stmt, resolver, path, name_to_pyid) in self.top_levels.iter() {
+            let (name, def_id, ty) = composer
+                .register_top_level(stmt.clone(), Some(resolver.clone()), path.clone())
+                .unwrap();
+            let id = *name_to_pyid.get(&name).unwrap();
+            id_to_def.insert(id, def_id);
+            if let Some(ty) = ty {
+                id_to_type.insert(id, ty);
+            }
+        }
+        {
+            let mut map = self.pyid_to_def.write();
+            for (id, def) in id_to_def.into_iter() {
+                map.insert(id, def);
+            }
+            let mut map = self.pyid_to_type.write();
+            for (id, ty) in id_to_type.into_iter() {
+                map.insert(id, ty);
+            }
+        }
+
         let id_fun = PyModule::import(py, "builtins")?.getattr("id")?;
         let mut name_to_pyid: HashMap<StrRef, u64> = HashMap::new();
         let module = PyModule::new(py, "tmp")?;
@@ -466,8 +487,7 @@ impl Nac3 {
             module: module.to_object(py),
             helper,
         }))) as Arc<dyn SymbolResolver + Send + Sync>;
-        let (_, def_id, _) = self
-            .composer
+        let (_, def_id, _) = composer
             .register_top_level(
                 synthesized.pop().unwrap(),
                 Some(resolver.clone()),
@@ -483,16 +503,15 @@ impl Nac3 {
         let mut store = ConcreteTypeStore::new();
         let mut cache = HashMap::new();
         let signature = store.from_signature(
-            &mut self.composer.unifier,
+            &mut composer.unifier,
             &self.primitive,
             &signature,
             &mut cache,
         );
         let signature = store.add_cty(signature);
 
-        self.composer.start_analysis(true).unwrap();
-        self.top_level = Some(Arc::new(self.composer.make_top_level_context()));
-        let top_level = self.top_level.as_ref().unwrap();
+        composer.start_analysis(true).unwrap();
+        let top_level = Arc::new(composer.make_top_level_context());
         let instance = {
             let defs = top_level.definitions.read();
             let mut definition = defs[def_id.0].write();
