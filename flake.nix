@@ -106,9 +106,13 @@
         );
       };
 
-      devShell.x86_64-linux = pkgs.mkShell {
+      # Use "nix develop" to debug the derivation.
+      devShell.x86_64-linux = packages.x86_64-linux.nac3artiq;
+
+      # Use "nix shell" to enter a development environment.
+      defaultPackage.x86_64-linux = pkgs.buildEnv {
         name = "nac3-dev-shell";
-        buildInputs = with pkgs; [
+        paths = with pkgs; [
           llvm_12
           clang_12
           lld_12
@@ -125,7 +129,7 @@
       hydraJobs = {
         inherit (packages.x86_64-linux) nac3artiq;
         nac3artiq-mingw = packages.x86_64-w64-mingw32.nac3artiq;
-      } // (pkgs.lib.foldr (a: b: {"${pkgs.lib.strings.getName a}" = a;} // b) {} devShell.x86_64-linux.buildInputs);
+      } // (pkgs.lib.foldr (a: b: {"${pkgs.lib.strings.getName a}" = a;} // b) {} defaultPackage.x86_64-linux.paths);
   };
 
   nixConfig = {
