@@ -101,6 +101,7 @@
               zip $out/nac3artiq.zip nac3artiq.pyd
               echo file binary-dist $out/nac3artiq.zip >> $out/nix-support/hydra-build-products
               '';
+            dontFixup = true;
             meta.platforms = ["x86_64-windows"];
           }
         );
