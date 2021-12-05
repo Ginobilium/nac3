@@ -78,7 +78,7 @@ struct Nac3 {
     pyid_to_def: Arc<RwLock<HashMap<u64, DefinitionId>>>,
     pyid_to_type: Arc<RwLock<HashMap<u64, Type>>>,
     primitive_ids: PrimitivePythonId,
-    global_value_ids: Arc<Mutex<HashSet<u64>>>,
+    global_value_ids: Arc<RwLock<HashSet<u64>>>,
     working_directory: TempDir,
     top_levels: Vec<TopLevelComponent>,
 }
@@ -417,6 +417,9 @@ impl Nac3 {
                         class_names: Default::default(),
                         name_to_pyid: name_to_pyid.clone(),
                         module: module.clone(),
+                        id_to_pyval: Default::default(),
+                        id_to_primitive: Default::default(),
+                        field_to_val: Default::default(),
                         helper,
                     })))
                         as Arc<dyn SymbolResolver + Send + Sync>;
@@ -468,15 +471,6 @@ impl Nac3 {
             )
         };
         let mut synthesized = parse_program(&synthesized).unwrap();
-        let builtins = PyModule::import(py, "builtins")?;
-        let typings = PyModule::import(py, "typing")?;
-        let helper = PythonHelper {
-            id_fn: builtins.getattr("id").unwrap().to_object(py),
-            len_fn: builtins.getattr("len").unwrap().to_object(py),
-            type_fn: builtins.getattr("type").unwrap().to_object(py),
-            origin_ty_fn: typings.getattr("get_origin").unwrap().to_object(py),
-            args_ty_fn: typings.getattr("get_args").unwrap().to_object(py),
-        };
         let resolver = Arc::new(Resolver(Arc::new(InnerResolver {
             id_to_type: self.builtins_ty.clone().into(),
             id_to_def: self.builtins_def.clone().into(),
@@ -485,6 +479,9 @@ impl Nac3 {
             primitive_ids: self.primitive_ids.clone(),
             global_value_ids: self.global_value_ids.clone(),
             class_names: Default::default(),
+            id_to_pyval: Default::default(),
+            id_to_primitive: Default::default(),
+            field_to_val: Default::default(),
             name_to_pyid,
             module: module.to_object(py),
             helper,
