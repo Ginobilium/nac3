@@ -323,6 +323,10 @@ pub fn gen_func<'ctx, G: CodeGenerator + ?Sized>(
             unifier.get_representative(primitives.str),
             context.i8_type().ptr_type(AddressSpace::Generic).into(),
         ),
+        (
+            unifier.get_representative(primitives.range),
+            context.i32_type().array_type(3).ptr_type(AddressSpace::Generic).into()
+        ),
     ]
     .iter()
     .cloned()
