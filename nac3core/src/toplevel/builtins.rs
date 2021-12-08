@@ -1,6 +1,6 @@
 use std::cell::RefCell;
-use inkwell::{IntPredicate, FloatPredicate};
-use crate::symbol_resolver::SymbolValue;
+use inkwell::{IntPredicate, FloatPredicate, values::BasicValueEnum};
+use crate::{symbol_resolver::SymbolValue, codegen::expr::destructure_range};
 use super::*;
 
 type BuiltinInfo = (
@@ -557,6 +557,76 @@ pub fn get_builtins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
                 )
             })))),
         })),
+        Arc::new(RwLock::new({
+            let list_var = primitives.1.get_fresh_var();
+            let list = primitives.1.add_ty(TypeEnum::TList { ty: list_var.0 });
+            let arg_ty = primitives.1.get_fresh_var_with_range(&[list, primitives.0.range]);
+            TopLevelDef::Function {
+                name: "len".into(),
+                simple_name: "len".into(),
+                signature: primitives.1.add_ty(TypeEnum::TFunc(RefCell::new(FunSignature {
+                    args: vec![FuncArg {
+                        name: "_".into(),
+                        ty: arg_ty.0,
+                        default_value: None
+                    }],
+                    ret: int32,
+                    vars: vec![(list_var.1, list_var.0), (arg_ty.1, arg_ty.0)].into_iter().collect(),
+                }))),
+                var_id: Default::default(),
+                instance_to_symbol: Default::default(),
+                instance_to_stmt: Default::default(),
+                resolver: None,
+                codegen_callback: Some(Arc::new(GenCall::new(Box::new(
+                    |ctx, _, fun, args| {
+                        let range_ty = ctx.primitives.range;
+                        let arg_ty = fun.0.args[0].ty;
+                        let arg = args[0].1;
+                        let int32 = ctx.ctx.i32_type();
+                        let zero = int32.const_zero();
+                        if ctx.unifier.unioned(arg_ty, range_ty) {
+                            let int1 = ctx.ctx.bool_type();
+                            let one = int32.const_int(1, false);
+                            let falze = int1.const_int(0, false);
+                            let abs_intrinsic =
+                                ctx.module.get_function("llvm.abs.i32").unwrap_or_else(|| {
+                                    let fn_type = int32.fn_type(&[int32.into(), int1.into()], false);
+                                    ctx.module.add_function("llvm.abs.i32", fn_type, None)
+                                });
+                            let arg = arg.into_pointer_value();
+                            let (start, end, step) = destructure_range(ctx, arg);
+                            let diff = ctx.builder.build_int_sub(end, start, "diff");
+                            let diff = if let BasicValueEnum::IntValue(val) = ctx
+                                .builder
+                                .build_call(abs_intrinsic, &[diff.into(), falze.into()], "absdiff")
+                                .try_as_basic_value()
+                                .left()
+                                .unwrap() {
+                                    val
+                                } else {
+                                    unreachable!();
+                                };
+                            let diff = ctx.builder.build_int_sub(diff, one, "diff");
+                            let step = if let BasicValueEnum::IntValue(val) = ctx
+                                .builder
+                                .build_call(abs_intrinsic, &[step.into(), falze.into()], "absstep")
+                                .try_as_basic_value()
+                                .left()
+                                .unwrap() {
+                                    val
+                                } else {
+                                    unreachable!();
+                                };
+                            let length = ctx.builder.build_int_signed_div(diff, step, "div");
+                            let length = ctx.builder.build_int_add(length, int32.const_int(1, false), "add1");
+                            Some(length.into())
+                        } else {
+                            Some(ctx.build_gep_and_load(arg.into_pointer_value(), &[zero, zero]))
+                        }
+                    },
+                )))),
+            }
+        }))
     ];
     let ast_list: Vec<Option<ast::Stmt<()>>> =
         (0..top_level_def_list.len()).map(|_| None).collect();
@@ -574,7 +644,8 @@ pub fn get_builtins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
             "floor",
             "floor64",
             "ceil",
-            "ceil64"
+            "ceil64",
+            "len",
         ]
     )
 }
