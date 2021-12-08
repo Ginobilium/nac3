@@ -4,21 +4,13 @@
 , fetchpatch
 , cmake
 , python3
-, libffi
 , libbfd
-, libpfm
-, libxml2
 , ncurses
 , zlib
 , llvmPackages_12
 , debugVersion ? false
 , enableManpages ? false
-, enableSharedLibraries ? (!stdenv.hostPlatform.isStatic && !stdenv.targetPlatform.isMinGW)
-, enablePFM ? !(stdenv.isDarwin
-  || stdenv.isAarch64 # broken for Ampere eMAG 8180 (c2.large.arm on Packet) #56245
-  || stdenv.isAarch32 # broken for the armv7l builder
-  || stdenv.targetPlatform.isMinGW
-)
+, enableSharedLibraries ? false
 , enablePolly ? false
 }:
 
@@ -59,8 +51,7 @@ in stdenv.mkDerivation (rec {
   nativeBuildInputs = [ cmake python3 ]
     ++ optionals enableManpages [ python3.pkgs.sphinx python3.pkgs.recommonmark ];
 
-  buildInputs = [ libxml2 libffi ]
-    ++ optional enablePFM libpfm; # exegesis
+  buildInputs = [ ];
 
   propagatedBuildInputs = optionals (stdenv.buildPlatform == stdenv.hostPlatform) [ ncurses ]
     ++ [ zlib ];
@@ -128,13 +119,10 @@ in stdenv.mkDerivation (rec {
   cmakeFlags = with stdenv; [
     "-DLLVM_INSTALL_CMAKE_DIR=${placeholder "dev"}/lib/cmake/llvm/"
     "-DCMAKE_BUILD_TYPE=${if debugVersion then "Debug" else "Release"}"
-    "-DLLVM_INSTALL_UTILS=ON"  # Needed by rustc
     "-DLLVM_BUILD_TESTS=${if stdenv.targetPlatform.isMinGW then "OFF" else "ON"}"
-    "-DLLVM_ENABLE_FFI=ON"
-    "-DLLVM_ENABLE_RTTI=ON"
     "-DLLVM_HOST_TRIPLE=${stdenv.hostPlatform.config}"
     "-DLLVM_DEFAULT_TARGET_TRIPLE=${stdenv.hostPlatform.config}"
-    "-DLLVM_ENABLE_DUMP=ON"
+    "-DLLVM_ENABLE_UNWIND_TABLES=OFF"
     "-DLLVM_TARGETS_TO_BUILD=X86;ARM;RISCV"
   ] ++ optionals enableSharedLibraries [
     "-DLLVM_LINK_LLVM_DYLIB=ON"

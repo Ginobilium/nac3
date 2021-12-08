@@ -17,7 +17,7 @@ nac3parser = { path = "../nac3parser" }
 git = "https://github.com/TheDan64/inkwell"
 branch = "master"
 default-features = false
-features = ["llvm12-0", "target-x86", "target-arm", "target-riscv"]
+features = ["llvm12-0", "target-x86", "target-arm", "target-riscv", "no-libffi-linking"]
 
 [dev-dependencies]
 test-case = "1.2.0"

@@ -47,7 +47,7 @@
             src = self;
             inherit cargoSha256;
             nativeBuildInputs = [ pkgs.python3 llvm-nac3 ];
-            buildInputs = [ pkgs.python3 pkgs.libffi pkgs.libxml2 llvm-nac3 ];
+            buildInputs = [ pkgs.python3 llvm-nac3 ];
             cargoBuildFlags = [ "--package" "nac3artiq" ];
             cargoTestFlags = [ "--package" "nac3ast" "--package" "nac3parser" "--package" "nac3core" "--package" "nac3artiq" ];
             installPhase =
@@ -68,7 +68,7 @@
             src = self;
             inherit cargoSha256;
             nativeBuildInputs = [ pkgs.zip ];
-            buildInputs = [ pkgs-mingw.libffi pkgs-mingw.zlib ];
+            buildInputs = [ pkgs-mingw.zlib ];
             configurePhase =
               ''
               export PYO3_CONFIG_FILE=${pyo3-mingw-config}
@@ -109,8 +109,6 @@
           cargo
           cargo-insta
           rustc
-          libffi
-          libxml2
           clippy
           (python3.withPackages(ps: [ ps.numpy ]))
         ];
