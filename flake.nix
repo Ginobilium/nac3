@@ -5,15 +5,8 @@
 
   outputs = { self, nixpkgs }:
     let
-      # We can't use overlays because llvm dependencies are handled internally in llvmPackages_xx
-      pkgs-orig = import nixpkgs { system = "x86_64-linux"; };
-      nixpkgs-patched = pkgs-orig.applyPatches {
-        name = "nixpkgs";
-        src = nixpkgs;
-        patches = [ ./llvm-future-riscv-abi.diff ./llvm-restrict-targets.diff ./llvm-mingw-crosscompile.diff ./llvm-unbreak-static-cross.diff ];
-      };
-      pkgs = import nixpkgs-patched { system = "x86_64-linux"; };
-      pkgs-mingw = import nixpkgs-patched { system = "x86_64-linux"; crossSystem = { config = "x86_64-w64-mingw32"; libc = "msvcrt"; }; };
+      pkgs = import nixpkgs { system = "x86_64-linux"; };
+      pkgs-mingw = import nixpkgs { system = "x86_64-linux"; crossSystem = { config = "x86_64-w64-mingw32"; libc = "msvcrt"; }; };
       cargoSha256 = "sha256-otKLhr58HYMjVXAof6AdObNpggPnvK6qOl7I+4LWIP8=";
       msys2-python-tar = pkgs.fetchurl {
         url = "https://mirror.msys2.org/mingw/mingw64/mingw-w64-x86_64-python-3.9.7-4-any.pkg.tar.zst";
@@ -46,16 +39,15 @@
           '';
       };
     in rec {
-      inherit nixpkgs-patched;
-
-      packages.x86_64-linux = {
+      packages.x86_64-linux = rec {
+        llvm-nac3 = pkgs.callPackage "${self}/llvm" {};
         nac3artiq = pkgs.python3Packages.toPythonModule (
           pkgs.rustPlatform.buildRustPackage {
             name = "nac3artiq";
             src = self;
             inherit cargoSha256;
-            nativeBuildInputs = [ pkgs.python3 pkgs.llvm_12 ];
-            buildInputs = [ pkgs.python3 pkgs.libffi pkgs.libxml2 pkgs.llvm_12 ];
+            nativeBuildInputs = [ pkgs.python3 llvm-nac3 ];
+            buildInputs = [ pkgs.python3 pkgs.libffi pkgs.libxml2 llvm-nac3 ];
             cargoBuildFlags = [ "--package" "nac3artiq" ];
             cargoTestFlags = [ "--package" "nac3ast" "--package" "nac3parser" "--package" "nac3core" "--package" "nac3artiq" ];
             installPhase =
@@ -68,7 +60,8 @@
         );
       };
 
-      packages.x86_64-w64-mingw32 = {
+      packages.x86_64-w64-mingw32 = rec {
+        llvm-nac3 = pkgs-mingw.callPackage "${self}/llvm" { inherit (pkgs) llvmPackages_12; };
         nac3artiq = pkgs-mingw.python3Packages.toPythonModule (
           pkgs-mingw.rustPlatform.buildRustPackage {
             name = "nac3artiq";
@@ -85,7 +78,7 @@
               #!${pkgs.bash}/bin/bash
               set -e
               # Gross hack to work around llvm-config asking for the wrong system libraries.
-              exec ${pkgs-mingw.llvm_12.dev}/bin/llvm-config-native \$@ | ${pkgs.gnused}/bin/sed s/-lrt\ -ldl\ -lpthread\ -lm//
+              exec ${llvm-nac3.dev}/bin/llvm-config-native \$@ | ${pkgs.gnused}/bin/sed s/-lrt\ -ldl\ -lpthread\ -lm//
               EOF
               chmod +x llvm-cfg/llvm-config
               export PATH=$PATH:`pwd`/llvm-cfg
@@ -110,7 +103,7 @@
       devShell.x86_64-linux = pkgs.mkShell {
         name = "nac3-dev-shell";
         buildInputs = with pkgs; [
-          llvm_12
+          packages.x86_64-linux.llvm-nac3
           clang_12
           lld_12
           cargo
