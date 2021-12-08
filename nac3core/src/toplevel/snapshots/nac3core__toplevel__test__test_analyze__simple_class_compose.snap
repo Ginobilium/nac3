@@ -4,15 +4,15 @@ expression: res_vec
 
 ---
 [
-    "Class {\nname: \"A\",\nancestors: [\"{class: A, params: []}\"],\nfields: [\"a\"],\nmethods: [(\"__init__\", \"fn[[], none]\"), (\"fun\", \"fn[[b=B], none]\"), (\"foo\", \"fn[[a=var3, b=var4], none]\")],\ntype_vars: []\n}\n",
+    "Class {\nname: \"A\",\nancestors: [\"{class: A, params: []}\"],\nfields: [\"a\"],\nmethods: [(\"__init__\", \"fn[[], none]\"), (\"fun\", \"fn[[b=B], none]\"), (\"foo\", \"fn[[a=var5, b=var6], none]\")],\ntype_vars: []\n}\n",
     "Function {\nname: \"A.__init__\",\nsig: \"fn[[], none]\",\nvar_id: []\n}\n",
     "Function {\nname: \"A.fun\",\nsig: \"fn[[b=B], none]\",\nvar_id: []\n}\n",
-    "Function {\nname: \"A.foo\",\nsig: \"fn[[a=var3, b=var4], none]\",\nvar_id: [4]\n}\n",
-    "Class {\nname: \"B\",\nancestors: [\"{class: B, params: []}\", \"{class: C, params: []}\", \"{class: A, params: []}\"],\nfields: [\"a\"],\nmethods: [(\"__init__\", \"fn[[], none]\"), (\"fun\", \"fn[[b=B], none]\"), (\"foo\", \"fn[[a=var3, b=var4], none]\")],\ntype_vars: []\n}\n",
+    "Function {\nname: \"A.foo\",\nsig: \"fn[[a=var5, b=var6], none]\",\nvar_id: [6]\n}\n",
+    "Class {\nname: \"B\",\nancestors: [\"{class: B, params: []}\", \"{class: C, params: []}\", \"{class: A, params: []}\"],\nfields: [\"a\"],\nmethods: [(\"__init__\", \"fn[[], none]\"), (\"fun\", \"fn[[b=B], none]\"), (\"foo\", \"fn[[a=var5, b=var6], none]\")],\ntype_vars: []\n}\n",
     "Function {\nname: \"B.__init__\",\nsig: \"fn[[], none]\",\nvar_id: []\n}\n",
-    "Class {\nname: \"C\",\nancestors: [\"{class: C, params: []}\", \"{class: A, params: []}\"],\nfields: [\"a\"],\nmethods: [(\"__init__\", \"fn[[], none]\"), (\"fun\", \"fn[[b=B], none]\"), (\"foo\", \"fn[[a=var3, b=var4], none]\")],\ntype_vars: []\n}\n",
+    "Class {\nname: \"C\",\nancestors: [\"{class: C, params: []}\", \"{class: A, params: []}\"],\nfields: [\"a\"],\nmethods: [(\"__init__\", \"fn[[], none]\"), (\"fun\", \"fn[[b=B], none]\"), (\"foo\", \"fn[[a=var5, b=var6], none]\")],\ntype_vars: []\n}\n",
     "Function {\nname: \"C.__init__\",\nsig: \"fn[[], none]\",\nvar_id: []\n}\n",
     "Function {\nname: \"C.fun\",\nsig: \"fn[[b=B], none]\",\nvar_id: []\n}\n",
     "Function {\nname: \"foo\",\nsig: \"fn[[a=A], none]\",\nvar_id: []\n}\n",
-    "Function {\nname: \"ff\",\nsig: \"fn[[a=var3], var4]\",\nvar_id: [4]\n}\n",
+    "Function {\nname: \"ff\",\nsig: \"fn[[a=var5], var6]\",\nvar_id: [6]\n}\n",
 ]

@@ -4,11 +4,11 @@ expression: res_vec
 
 ---
 [
-    "Function {\nname: \"foo\",\nsig: \"fn[[a=list[int32], b=tuple[var3, float]], A[3->B, 4->bool]]\",\nvar_id: []\n}\n",
-    "Class {\nname: \"A\",\nancestors: [\"{class: A, params: [\\\"var3\\\", \\\"var4\\\"]}\"],\nfields: [\"a\", \"b\"],\nmethods: [(\"__init__\", \"fn[[v=var4], none]\"), (\"fun\", \"fn[[a=var3], var4]\")],\ntype_vars: [\"var3\", \"var4\"]\n}\n",
-    "Function {\nname: \"A.__init__\",\nsig: \"fn[[v=var4], none]\",\nvar_id: [4]\n}\n",
-    "Function {\nname: \"A.fun\",\nsig: \"fn[[a=var3], var4]\",\nvar_id: [4]\n}\n",
-    "Function {\nname: \"gfun\",\nsig: \"fn[[a=A[3->list[float], 4->int32]], none]\",\nvar_id: []\n}\n",
+    "Function {\nname: \"foo\",\nsig: \"fn[[a=list[int32], b=tuple[var5, float]], A[5->B, 6->bool]]\",\nvar_id: []\n}\n",
+    "Class {\nname: \"A\",\nancestors: [\"{class: A, params: [\\\"var5\\\", \\\"var6\\\"]}\"],\nfields: [\"a\", \"b\"],\nmethods: [(\"__init__\", \"fn[[v=var6], none]\"), (\"fun\", \"fn[[a=var5], var6]\")],\ntype_vars: [\"var5\", \"var6\"]\n}\n",
+    "Function {\nname: \"A.__init__\",\nsig: \"fn[[v=var6], none]\",\nvar_id: [6]\n}\n",
+    "Function {\nname: \"A.fun\",\nsig: \"fn[[a=var5], var6]\",\nvar_id: [6]\n}\n",
+    "Function {\nname: \"gfun\",\nsig: \"fn[[a=A[5->list[float], 6->int32]], none]\",\nvar_id: []\n}\n",
     "Class {\nname: \"B\",\nancestors: [\"{class: B, params: []}\"],\nfields: [],\nmethods: [(\"__init__\", \"fn[[], none]\")],\ntype_vars: []\n}\n",
     "Function {\nname: \"B.__init__\",\nsig: \"fn[[], none]\",\nvar_id: []\n}\n",
 ]
