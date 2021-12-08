@@ -1,12 +1,21 @@
 {
   description = "The third-generation ARTIQ compiler";
 
-  inputs.nixpkgs.url = github:NixOS/nixpkgs/0f4b4b85d959200f52c16bbb74036994e7db5f74;
+  inputs.nixpkgs.url = github:NixOS/nixpkgs/nixos-21.11;
 
   outputs = { self, nixpkgs }:
     let
       pkgs = import nixpkgs { system = "x86_64-linux"; };
-      pkgs-mingw = import nixpkgs { system = "x86_64-linux"; crossSystem = { config = "x86_64-w64-mingw32"; libc = "msvcrt"; }; };
+      pkgs-mingw = import nixpkgs {
+        system = "x86_64-linux";
+        crossSystem = { config = "x86_64-w64-mingw32"; libc = "msvcrt"; };
+        # work around https://github.com/NixOS/nixpkgs/issues/149593
+        overlays = [
+          (self: super: {
+            openssh = super.openssh.overrideAttrs(oa: { doCheck = false; });
+          })
+        ];
+      };
       cargoSha256 = "sha256-otKLhr58HYMjVXAof6AdObNpggPnvK6qOl7I+4LWIP8=";
       msys2-python-tar = pkgs.fetchurl {
         url = "https://mirror.msys2.org/mingw/mingw64/mingw-w64-x86_64-python-3.9.7-4-any.pkg.tar.zst";
