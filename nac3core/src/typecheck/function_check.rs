@@ -24,11 +24,13 @@ impl<'a> Inferencer<'a> {
                 if !defined_identifiers.contains(id) {
                     defined_identifiers.insert(*id);
                 }
+                self.check_expr(pattern, defined_identifiers)?;
                 self.should_have_value(pattern)?;
                 Ok(())
             }
             ExprKind::Tuple { elts, .. } => {
                 for elt in elts.iter() {
+                    self.check_expr(pattern, defined_identifiers)?;
                     self.check_pattern(elt, defined_identifiers)?;
                     self.should_have_value(elt)?;
                 }
