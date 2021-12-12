@@ -69,10 +69,10 @@ pub fn get_builtins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
                     if ctx.unifier.unioned(arg_ty, boolean) {
                         Some(
                             ctx.builder
-                                .build_int_s_extend(
+                                .build_int_z_extend(
                                     arg.into_int_value(),
                                     ctx.ctx.i32_type(),
-                                    "sext",
+                                    "zext",
                                 )
                                 .into(),
                         )
@@ -129,10 +129,10 @@ pub fn get_builtins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
                     {
                         Some(
                             ctx.builder
-                                .build_int_s_extend(
+                                .build_int_z_extend(
                                     arg.into_int_value(),
                                     ctx.ctx.i64_type(),
-                                    "sext",
+                                    "zext",
                                 )
                                 .into(),
                         )
