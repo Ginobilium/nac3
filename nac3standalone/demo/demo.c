@@ -5,6 +5,10 @@ void output_int(int x) {
     printf("%d\n", x);
 }
 
+void output_long(long x) {
+    printf("%ld\n", x);
+}
+
 void output_asciiart(int x) {
     static char chars[] = " .,-:;i+hHM$*#@  ";
     if(x < 0) {

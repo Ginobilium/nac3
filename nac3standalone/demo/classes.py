@@ -2,6 +2,10 @@
 def output_int(x: int32):
     ...
 
+@extern
+def output_long(x: int64):
+    ...
+
 
 class A:
     a: int32
