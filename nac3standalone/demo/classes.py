@@ -1,9 +1,9 @@
 @extern
-def output_int(x: int32):
+def output_int32(x: int32):
     ...
 
 @extern
-def output_long(x: int64):
+def output_int64(x: int64):
     ...
 
 
@@ -31,10 +31,10 @@ class B:
 
 def run() -> int32:
     a = A(10)
-    output_int(a.a)
+    output_int32(a.a)
 
     a = A(20)
-    output_int(a.a)
-    output_int(a.get_a())
-    output_int(a.get_b().b)
+    output_int32(a.a)
+    output_int32(a.get_a())
+    output_int32(a.get_b().b)
     return 0
