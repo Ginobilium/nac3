@@ -22,7 +22,7 @@ use parking_lot::{Mutex, RwLock};
 use nac3core::{
     codegen::{concrete_type::ConcreteTypeStore, CodeGenTask, WithCall, WorkerRegistry},
     symbol_resolver::SymbolResolver,
-    toplevel::{composer::TopLevelComposer, DefinitionId, GenCall, TopLevelDef},
+    toplevel::{composer::{TopLevelComposer, ComposerConfig}, DefinitionId, GenCall, TopLevelDef},
     typecheck::typedef::{FunSignature, FuncArg},
     typecheck::{type_inferencer::PrimitiveStore, typedef::Type},
 };
@@ -239,7 +239,10 @@ impl Nac3 {
                 }))),
             ),
         ];
-        let (_, builtins_def, builtins_ty) = TopLevelComposer::new(builtins.clone());
+        let (_, builtins_def, builtins_ty) = TopLevelComposer::new(builtins.clone(), ComposerConfig {
+            kernel_ann: Some("Kernel"),
+            kernel_invariant_ann: "KernelInvariant"
+        });
 
         let builtins_mod = PyModule::import(py, "builtins").unwrap();
         let id_fn = builtins_mod.getattr("id").unwrap();
@@ -375,7 +378,10 @@ impl Nac3 {
         filename: &str,
         py: Python,
     ) -> PyResult<()> {
-        let (mut composer, _, _) = TopLevelComposer::new(self.builtins.clone());
+        let (mut composer, _, _) = TopLevelComposer::new(self.builtins.clone(), ComposerConfig {
+            kernel_ann: Some("Kernel"),
+            kernel_invariant_ann: "KernelInvariant"
+        });
         let mut id_to_def = HashMap::new();
         let mut id_to_type = HashMap::new();
 

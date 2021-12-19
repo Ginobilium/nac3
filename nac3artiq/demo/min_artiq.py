@@ -9,7 +9,7 @@ import nac3artiq
 
 
 __all__ = [
-    "KernelInvariant", "virtual",
+    "Kernel", "KernelInvariant", "virtual",
     "round64", "floor64", "ceil64",
     "extern", "kernel", "portable", "nac3",
     "ms", "us", "ns",
@@ -20,6 +20,9 @@ __all__ = [
 
 
 T = TypeVar('T')
+
+class Kernel(Generic[T]):
+    pass
 
 class KernelInvariant(Generic[T]):
     pass

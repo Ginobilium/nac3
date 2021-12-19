@@ -3,13 +3,10 @@ use inkwell::{
     targets::*,
     OptimizationLevel,
 };
-use nac3core::typecheck::{type_inferencer::PrimitiveStore, typedef::{Type, Unifier}};
-use nac3parser::{ast::{Expr, ExprKind, StmtKind}, parser};
+use std::{borrow::Borrow, collections::HashMap, env, fs, path::Path, sync::Arc, time::SystemTime};
 use parking_lot::RwLock;
-use std::{borrow::Borrow, env};
-use std::fs;
-use std::{collections::HashMap, path::Path, sync::Arc, time::SystemTime};
 
+use nac3parser::{ast::{Expr, ExprKind, StmtKind}, parser};
 use nac3core::{
     codegen::{
         concrete_type::ConcreteTypeStore, CodeGenTask, DefaultCodeGenerator, WithCall,
@@ -17,11 +14,11 @@ use nac3core::{
     },
     symbol_resolver::SymbolResolver,
     toplevel::{
-        composer::TopLevelComposer,
+        composer::{TopLevelComposer, ComposerConfig},
         TopLevelDef, helper::parse_parameter_default_value,
         type_annotation::*,
     },
-    typecheck::typedef::FunSignature,
+    typecheck::{type_inferencer::PrimitiveStore, typedef::{Type, Unifier, FunSignature}}
 };
 
 mod basic_symbol_resolver;
@@ -47,7 +44,10 @@ fn main() {
     };
 
     let primitive: PrimitiveStore = TopLevelComposer::make_primitives().0;
-    let (mut composer, builtins_def, builtins_ty) = TopLevelComposer::new(vec![]);
+    let (mut composer, builtins_def, builtins_ty) = TopLevelComposer::new(
+        vec![],
+        Default::default()
+    );
 
     let internal_resolver: Arc<ResolverInternal> = ResolverInternal {
         id_to_type: builtins_ty.into(),
