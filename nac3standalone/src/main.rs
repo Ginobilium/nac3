@@ -14,7 +14,7 @@ use nac3core::{
     },
     symbol_resolver::SymbolResolver,
     toplevel::{
-        composer::{TopLevelComposer, ComposerConfig},
+        composer::TopLevelComposer,
         TopLevelDef, helper::parse_parameter_default_value,
         type_annotation::*,
     },
