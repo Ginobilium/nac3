@@ -70,7 +70,10 @@ pub fn parse_ast_to_type_annotation_kinds<T>(
                     if let TopLevelDef::Class { type_vars, .. } = &*def_read {
                         type_vars.clone()
                     } else {
-                        return Err("function cannot be used as a type".into());
+                        return Err(format!(
+                            "function cannot be used as a type (at {})",
+                            expr.location
+                        ));
                     }
                 } else {
                     locked.get(&obj_id).unwrap().clone()
@@ -79,8 +82,9 @@ pub fn parse_ast_to_type_annotation_kinds<T>(
             // check param number here
             if !type_vars.is_empty() {
                 return Err(format!(
-                    "expect {} type variable parameter but got 0",
-                    type_vars.len()
+                    "expect {} type variable parameter but got 0 (at {})",
+                    type_vars.len(),
+                    expr.location,
                 ));
             }
             Ok(TypeAnnotation::CustomClass { id: obj_id, params: vec![] })
@@ -88,10 +92,13 @@ pub fn parse_ast_to_type_annotation_kinds<T>(
             if let TypeEnum::TVar { .. } = unifier.get_ty(ty).as_ref() {
                 Ok(TypeAnnotation::TypeVar(ty))
             } else {
-                Err("not a type variable identifier".into())
+                Err(format!(
+                    "not a type variable identifier at {}",
+                    expr.location
+                ))
             }
         } else {
-            Err("name cannot be parsed as a type annotation".into())
+            Err(format!("name cannot be parsed as a type annotation at {}", expr.location))
         }
     };
 
@@ -100,7 +107,7 @@ pub fn parse_ast_to_type_annotation_kinds<T>(
         if vec!["virtual".into(), "Generic".into(), "list".into(), "tuple".into()]
                 .contains(id)
             {
-                return Err("keywords cannot be class name".into());
+                return Err(format!("keywords cannot be class name (at {})", expr.location));
             }
         let obj_id = resolver
             .get_identifier_def(*id)
@@ -126,13 +133,14 @@ pub fn parse_ast_to_type_annotation_kinds<T>(
             };
             if type_vars.len() != params_ast.len() {
                 return Err(format!(
-                    "expect {} type parameters but got {}",
+                    "expect {} type parameters but got {} (at {})",
                     type_vars.len(),
-                    params_ast.len()
+                    params_ast.len(),
+                    params_ast[0].location,
                 ));
             }
             let result = params_ast
-                .into_iter()
+                .iter()
                 .map(|x| {
                     parse_ast_to_type_annotation_kinds(
                         resolver,
@@ -154,9 +162,11 @@ pub fn parse_ast_to_type_annotation_kinds<T>(
             if no_type_var {
                 result
             } else {
-                return Err("application of type vars to generic class \
-                is not currently supported"
-                    .into());
+                return Err(format!(
+                    "application of type vars to generic class \
+                    is not currently supported (at {})",
+                    params_ast[0].location
+                ));
             }
         };
         Ok(TypeAnnotation::CustomClass { id: obj_id, params: param_type_infos })
@@ -206,24 +216,27 @@ pub fn parse_ast_to_type_annotation_kinds<T>(
                 matches!(&value.node, ast::ExprKind::Name { id, .. } if id == &"tuple".into())
             } =>
         {
-            if let ast::ExprKind::Tuple { elts, .. } = &slice.node {
-                let type_annotations = elts
-                    .iter()
-                    .map(|e| {
-                        parse_ast_to_type_annotation_kinds(
-                            resolver,
-                            top_level_defs,
-                            unifier,
-                            primitives,
-                            e,
-                            locked.clone(),
-                        )
-                    })
-                    .collect::<Result<Vec<_>, _>>()?;
-                Ok(TypeAnnotation::Tuple(type_annotations))
-            } else {
-                Err("Expect multiple elements for tuple".into())
-            }
+            let tup_elts = {
+                if let ast::ExprKind::Tuple { elts, .. } = &slice.node {
+                    elts.as_slice()
+                } else {
+                    std::slice::from_ref(slice.as_ref())
+                }
+            };
+            let type_annotations = tup_elts
+                .iter()
+                .map(|e| {
+                    parse_ast_to_type_annotation_kinds(
+                        resolver,
+                        top_level_defs,
+                        unifier,
+                        primitives,
+                        e,
+                        locked.clone(),
+                    )
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(TypeAnnotation::Tuple(type_annotations))
         }
 
         // custom class
@@ -231,11 +244,11 @@ pub fn parse_ast_to_type_annotation_kinds<T>(
             if let ast::ExprKind::Name { id, .. } = &value.node {
                 class_name_handle(id, slice, unifier, locked)
             } else {
-                Err("unsupported expression type for class name".into())
+                Err(format!("unsupported expression type for class name at {}", value.location))
             }
         }
 
-        _ => Err("unsupported expression for type annotation".into()),
+        _ => Err(format!("unsupported expression for type annotation at {}", expr.location)),
     }
 }
 

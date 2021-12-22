@@ -162,14 +162,24 @@ impl TopLevelComposer {
         match &ast.node {
             ast::StmtKind::ClassDef { name: class_name, body, .. } => {
                 if self.keyword_list.contains(class_name) {
-                    return Err("cannot use keyword as a class name".into());
+                    return Err(format!(
+                        "cannot use keyword `{}` as a class name ({} at {})",
+                        class_name,
+                        mod_path,
+                        ast.location
+                    ));
                 }
                 if !defined_names.insert({
                     let mut n = mod_path.clone();
                     n.push_str(&class_name.to_string());
                     n
                 }) {
-                    return Err("duplicate definition of class".into());
+                    return Err(format!(
+                        "duplicate definition of class `{}` ({} at {})",
+                        class_name,
+                        mod_path,
+                        ast.location
+                    ));
                 }
 
                 let class_name = *class_name;
@@ -212,7 +222,12 @@ impl TopLevelComposer {
                             contains_constructor = true;
                         }
                         if self.keyword_list.contains(method_name) {
-                            return Err("cannot use keyword as a method name".into());
+                            return Err(format!(
+                                "cannot use keyword `{}` as a method name ({} at {})",
+                                method_name,
+                                mod_path,
+                                b.location
+                            ));
                         }
                         let global_class_method_name = {
                             let mut n = mod_path.clone();
@@ -226,7 +241,12 @@ impl TopLevelComposer {
                             n
                         };
                         if !defined_names.insert(global_class_method_name.clone()) {
-                            return Err("duplicate class method definition".into());
+                            return Err(format!(
+                                "class method `{}` defined twice ({} at {})",
+                                &global_class_method_name[mod_path.len()..],
+                                mod_path,
+                                b.location
+                            ));
                         }
                         let method_def_id = self.definition_ast_list.len() + {
                             // plus 1 here since we already have the class def
@@ -283,12 +303,17 @@ impl TopLevelComposer {
                 //     return Err("cannot use keyword as a top level function name".into());
                 // }
                 let global_fun_name = {
-                    let mut n = mod_path;
+                    let mut n = mod_path.clone();
                     n.push_str(&name.to_string());
                     n
                 };
                 if !defined_names.insert(global_fun_name.clone()) {
-                    return Err("duplicate top level function define".into());
+                    return Err(format!(
+                        "top level function `{}` defined twice ({} at {})",
+                        &global_fun_name[mod_path.len()..],
+                        mod_path,
+                        ast.location
+                    ));
                 }
 
                 let fun_name = *name;
@@ -314,7 +339,11 @@ impl TopLevelComposer {
                 ))
             }
 
-            _ => Err("only registrations of top level classes/functions are supported".into()),
+            _ => Err(format!(
+                "registrations of constructs other than top level classes/functions are not supported ({} at {})",
+                mod_path,
+                ast.location
+            )),
         }
     }
 
@@ -376,7 +405,10 @@ impl TopLevelComposer {
                         if !is_generic {
                             is_generic = true;
                         } else {
-                            return Err("Only single Generic[...] can be in bases".into());
+                            return Err(format!(
+                                "only single Generic[...] is allowed (at {})",
+                                b.location
+                            ));
                         }
 
                         let type_var_list: Vec<&ast::Expr<()>>;
@@ -414,7 +446,10 @@ impl TopLevelComposer {
                             })
                         };
                         if !all_unique_type_var {
-                            return Err("expect unique type variables".into());
+                            return Err(format!(
+                                "duplicate type variable occurs (at {})",
+                                slice.location
+                            ));
                         }
 
                         // add to TopLevelDef
@@ -479,9 +514,11 @@ impl TopLevelComposer {
                 }
 
                 if has_base {
-                    return Err("a class def can only have at most one base class \
-                    declaration and one generic declaration"
-                        .into());
+                    return Err(format!(
+                        "a class definition can only have at most one base class \
+                        declaration and one generic declaration (at {})",
+                        b.location
+                    ));
                 }
                 has_base = true;
 
@@ -499,7 +536,10 @@ impl TopLevelComposer {
                 if let TypeAnnotation::CustomClass { .. } = &base_ty {
                     class_ancestors.push(base_ty);
                 } else {
-                    return Err("class base declaration can only be custom class".into());
+                    return Err(format!(
+                        "class base declaration can only be custom class (at {})",
+                        b.location,
+                    ));
                 }
             }
         }
@@ -668,14 +708,14 @@ impl TopLevelComposer {
                     let arg_types = {
                         // make sure no duplicate parameter
                         let mut defined_paramter_name: HashSet<_> = HashSet::new();
-                        let have_unique_fuction_parameter_name = args.args.iter().all(|x| {
-                            defined_paramter_name.insert(x.node.arg)
-                                && !keyword_list.contains(&x.node.arg)
-                        });
-                        if !have_unique_fuction_parameter_name {
-                            return Err("top level function must have unique parameter names \
-                            and names thould not be the same as the keywords"
-                                .into());
+                        for x in args.args.iter() {
+                            if !defined_paramter_name.insert(x.node.arg) || keyword_list.contains(&x.node.arg) {
+                                return Err(format!(
+                                    "top level function must have unique parameter names \
+                                    and names should not be the same as the keywords (at {})",
+                                    x.location
+                                ));
+                            }
                         }
 
                         let arg_with_default: Vec<(&ast::Located<ast::ArgData<()>>, Option<&ast::Expr>)> = args
@@ -902,20 +942,22 @@ impl TopLevelComposer {
                         // check method parameters cannot have same name
                         let mut defined_paramter_name: HashSet<_> = HashSet::new();
                         let zelf: StrRef = "self".into();
-                        let have_unique_fuction_parameter_name = args.args.iter().all(|x| {
-                            defined_paramter_name.insert(x.node.arg)
-                                && (!keyword_list.contains(&x.node.arg) || x.node.arg == zelf)
-                        });
-                        if !have_unique_fuction_parameter_name {
-                            return Err("class method must have unique parameter names \
-                            and names thould not be the same as the keywords"
-                                .into());
+                        for x in args.args.iter() {
+                            if !defined_paramter_name.insert(x.node.arg)
+                                || (keyword_list.contains(&x.node.arg) && x.node.arg != zelf) {
+                                return Err(format!(
+                                    "top level function must have unique parameter names \
+                                    and names should not be the same as the keywords (at {})",
+                                    x.location
+                                ))
+                            }
                         }
+                        
                         if name == &"__init__".into() && !defined_paramter_name.contains(&zelf) {
-                            return Err("__init__ function must have a `self` parameter".into());
+                            return Err(format!("__init__ method must have a `self` parameter (at {})", b.location));
                         }
                         if !defined_paramter_name.contains(&zelf) {
-                            return Err("currently does not support static method".into());
+                            return Err(format!("class method must have a `self` parameter (at {})", b.location));
                         }
 
                         let mut result = Vec::new();
@@ -981,7 +1023,7 @@ impl TopLevelComposer {
                                         None => None,
                                         Some(default) => {
                                             if name == "self".into() {
-                                                return Err(format!("`self` parameter cannot take default value at {}", x.location));
+                                                return Err(format!("`self` parameter cannot take default value (at {})", x.location));
                                             }
                                             Some({
                                                 let v = Self::parse_parameter_default_value(default, class_resolver)?;
@@ -1090,7 +1132,7 @@ impl TopLevelComposer {
                             };
                             class_fields_def.push((*attr, dummy_field_type, mutable));
 
-                            let annotation = parse_ast_to_type_annotation_kinds(
+                            let parsed_annotation = parse_ast_to_type_annotation_kinds(
                                 class_resolver,
                                 temp_def_list,
                                 unifier,
@@ -1100,30 +1142,42 @@ impl TopLevelComposer {
                             )?;
                             // find type vars within this return type annotation
                             let type_vars_within =
-                                get_type_var_contained_in_type_annotation(&annotation);
+                                get_type_var_contained_in_type_annotation(&parsed_annotation);
                             // handle the class type var and the method type var
                             for type_var_within in type_vars_within {
                                 if let TypeAnnotation::TypeVar(t) = type_var_within {
                                     if !class_type_vars_def.contains(&t) {
-                                        return Err("class fields can only use type \
-                                        vars declared as class generic type vars"
-                                            .into());
+                                        return Err(format!(
+                                            "class fields can only use type \
+                                            vars declared as class generic type vars (at {})",
+                                            annotation.location
+                                        ));
                                     }
                                 } else {
                                     unreachable!("must be type var annotation");
                                 }
                             }
-                            type_var_to_concrete_def.insert(dummy_field_type, annotation);
+                            type_var_to_concrete_def.insert(dummy_field_type, parsed_annotation);
                         } else {
-                            return Err("same class fields defined twice".into());
+                            return Err(format!(
+                                "same class fields `{}` defined twice (at {})",
+                                attr,
+                                target.location
+                            ));
                         }
                     } else {
-                        return Err("unsupported statement type in class definition body".into());
+                        return Err(format!(
+                            "unsupported statement type in class definition body (at {})",
+                            target.location
+                        ));
                     }
                 }
                 ast::StmtKind::Pass { .. } => {}
                 ast::StmtKind::Expr { value: _, .. } => {} // typically a docstring; ignoring all expressions matches CPython behavior
-                _ => return Err("unsupported statement type in class definition body".into()),
+                _ => return Err(format!(
+                    "unsupported statement in class definition body (at {})",
+                    b.location
+                )),
             }
         }
         Ok(())
@@ -1186,7 +1240,10 @@ impl TopLevelComposer {
                                     type_var_to_concrete_def,
                                 );
                             if !ok {
-                                return Err("method has same name as ancestors' method, but incompatible type".into());
+                                return Err(format!(
+                                    "method {} has same name as ancestors' method, but incompatible type",
+                                    class_method_name
+                                ));
                             }
                             // mark it as added
                             is_override.insert(*class_method_name);
@@ -1308,9 +1365,10 @@ impl TopLevelComposer {
                         for (f, _, _) in fields {
                             if !all_inited.contains(f) {
                                 return Err(format!(
-                                    "fields `{}` of class `{}` not fully initialized",
+                                    "fields `{}` of class `{}` not fully initialized in the initializer (at {})",
                                     f,
-                                    class_name
+                                    class_name,
+                                    body[0].location,
                                 ));
                             }
                         }
