@@ -558,10 +558,15 @@ impl Nac3 {
             let buffer = buffer.as_slice().into();
             membuffer.lock().push(buffer);
         })));
+        let size_t = if self.isa == Isa::Host {
+            64
+        } else {
+            32
+        };
         let thread_names: Vec<String> = (0..4).map(|_| "main".to_string()).collect();
         let threads: Vec<_> = thread_names
             .iter()
-            .map(|s| Box::new(ArtiqCodeGenerator::new(s.to_string(), self.time_fns)))
+            .map(|s| Box::new(ArtiqCodeGenerator::new(s.to_string(), size_t, self.time_fns)))
             .collect();
 
         py.allow_threads(|| {
