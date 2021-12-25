@@ -123,7 +123,7 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
                 let ty = self.ctx.bool_type();
                 ty.const_int(if *v { 1 } else { 0 }, false).into()
             }
-            Constant::Int(v) => {
+            Constant::Int(Some(val)) => {
                 let ty = if self.unifier.unioned(ty, self.primitives.int32) {
                     self.ctx.i32_type()
                 } else if self.unifier.unioned(ty, self.primitives.int64) {
@@ -131,8 +131,7 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
                 } else {
                     unreachable!();
                 };
-                let val: i64 = v.try_into().unwrap();
-                ty.const_int(val as u64, false).into()
+                ty.const_int(*val as u64, false).into()
             }
             Constant::Float(v) => {
                 assert!(self.unifier.unioned(ty, self.primitives.float));

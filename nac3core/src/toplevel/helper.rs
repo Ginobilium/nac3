@@ -412,13 +412,23 @@ pub fn parse_parameter_default_value(default: &ast::Expr, resolver: &(dyn Symbol
     fn handle_constant(val: &Constant, loc: &Location) -> Result<SymbolValue, String> {
         match val {
             Constant::Int(v) => {
-                if let Ok(v) = v.try_into() {
-                    Ok(SymbolValue::I32(v))
-                } else {
-                    Err(format!(
-                        "integer value out of range at {}",
-                        loc
-                    ))
+                match v {
+                    Some(v) => {
+                        if let Ok(v) = (*v).try_into() {
+                            Ok(SymbolValue::I32(v))
+                        } else {
+                            Err(format!(
+                                "integer value out of range at {}",
+                                loc
+                            ))
+                        }
+                    },
+                    None => {
+                        Err(format!(
+                            "integer value out of range at {}",
+                            loc
+                        ))
+                    }
                 }
             }
             Constant::Float(v) => Ok(SymbolValue::Double(*v)),
@@ -439,8 +449,8 @@ pub fn parse_parameter_default_value(default: &ast::Expr, resolver: &(dyn Symbol
         } => {
             if args.len() == 1 {
                 match &args[0].node {
-                    ast::ExprKind::Constant { value: Constant::Int(v), .. } =>
-                        Ok(SymbolValue::I64(v.try_into().unwrap())),
+                    ast::ExprKind::Constant { value: Constant::Int(Some(v)), .. } =>
+                        Ok(SymbolValue::I64(*v)),
                     _ => Err(format!("only allow constant integer here at {}", default.location))
                 }
             } else {

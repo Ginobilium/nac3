@@ -1,12 +1,10 @@
-use num_bigint::BigInt;
-
 #[derive(Clone, Debug, PartialEq)]
 pub enum Constant {
     None,
     Bool(bool),
     Str(String),
     Bytes(Vec<u8>),
-    Int(BigInt),
+    Int(Option<i64>),
     Tuple(Vec<Constant>),
     Float(f64),
     Complex { real: f64, imag: f64 },
@@ -28,9 +26,14 @@ impl From<bool> for Constant {
         Self::Bool(b)
     }
 }
-impl From<BigInt> for Constant {
-    fn from(i: BigInt) -> Constant {
-        Self::Int(i)
+impl From<i32> for Constant {
+    fn from(i: i32) -> Constant {
+        Self::Int(Some(i as i64))
+    }
+}
+impl From<i64> for Constant {
+    fn from(i: i64) -> Constant {
+        Self::Int(Some(i))
     }
 }
 
@@ -136,7 +139,7 @@ mod tests {
                         location,
                         custom,
                         node: ExprKind::Constant {
-                            value: BigInt::from(1).into(),
+                            value: 1.into(),
                             kind: None,
                         },
                     },
@@ -144,7 +147,7 @@ mod tests {
                         location,
                         custom,
                         node: ExprKind::Constant {
-                            value: BigInt::from(2).into(),
+                            value: 2.into(),
                             kind: None,
                         },
                     },
@@ -158,7 +161,7 @@ mod tests {
                                     location,
                                     custom,
                                     node: ExprKind::Constant {
-                                        value: BigInt::from(3).into(),
+                                        value: 3.into(),
                                         kind: None,
                                     },
                                 },
@@ -166,7 +169,7 @@ mod tests {
                                     location,
                                     custom,
                                     node: ExprKind::Constant {
-                                        value: BigInt::from(4).into(),
+                                        value: 4.into(),
                                         kind: None,
                                     },
                                 },
@@ -174,7 +177,7 @@ mod tests {
                                     location,
                                     custom,
                                     node: ExprKind::Constant {
-                                        value: BigInt::from(5).into(),
+                                        value: 5.into(),
                                         kind: None,
                                     },
                                 },
@@ -194,12 +197,12 @@ mod tests {
                 custom,
                 node: ExprKind::Constant {
                     value: Constant::Tuple(vec![
-                        BigInt::from(1).into(),
-                        BigInt::from(2).into(),
+                        1.into(),
+                        2.into(),
                         Constant::Tuple(vec![
-                            BigInt::from(3).into(),
-                            BigInt::from(4).into(),
-                            BigInt::from(5).into(),
+                            3.into(),
+                            4.into(),
+                            5.into(),
                         ])
                     ]),
                     kind: None

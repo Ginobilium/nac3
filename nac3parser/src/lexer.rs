@@ -5,12 +5,11 @@
 pub use super::token::Tok;
 use crate::ast::Location;
 use crate::error::{LexicalError, LexicalErrorType};
-use num_bigint::BigInt;
 use num_traits::identities::Zero;
-use num_traits::Num;
 use std::char;
 use std::cmp::Ordering;
 use std::str::FromStr;
+use std::num::IntErrorKind;
 use unic_emoji_char::is_emoji_presentation;
 use unic_ucd_ident::{is_xid_continue, is_xid_start};
 
@@ -287,10 +286,18 @@ where
     fn lex_number_radix(&mut self, start_pos: Location, radix: u32) -> LexResult {
         let value_text = self.radix_run(radix);
         let end_pos = self.get_pos();
-        let value = BigInt::from_str_radix(&value_text, radix).map_err(|e| LexicalError {
-            error: LexicalErrorType::OtherError(format!("{:?}", e)),
-            location: start_pos,
-        })?;
+        let value = match i64::from_str_radix(&value_text, radix) {
+            Ok(value) => Some(value),
+            Err(e) => {
+                match e.kind() {
+                    IntErrorKind::PosOverflow | IntErrorKind::NegOverflow => None,
+                    _ => return Err(LexicalError {
+                        error: LexicalErrorType::OtherError(format!("{:?}", e)),
+                        location: start_pos,
+                    }),
+                }
+            }
+        };
         Ok((start_pos, Tok::Int { value }, end_pos))
     }
 
@@ -353,8 +360,14 @@ where
                 Ok((start_pos, Tok::Complex { real: 0.0, imag }, end_pos))
             } else {
                 let end_pos = self.get_pos();
-                let value = value_text.parse::<BigInt>().unwrap();
-                if start_is_zero && !value.is_zero() {
+                // assumption: value_text contains a valid integer.
+                // parse should only fail because of overflow.
+                let value = value_text.parse::<i64>().ok();
+                let nonzero = match value {
+                    Some(value) => !value.is_zero(),
+                    None => true
+                };
+                if start_is_zero && nonzero {
                     return Err(LexicalError {
                         error: LexicalErrorType::OtherError("Invalid Token".to_owned()),
                         location: self.get_pos(),
@@ -1321,7 +1334,6 @@ where
 #[cfg(test)]
 mod tests {
     use super::{make_tokenizer, NewlineHandler, Tok};
-    use num_bigint::BigInt;
 
     const WINDOWS_EOL: &str = "\r\n";
     const MAC_EOL: &str = "\r";
@@ -1449,16 +1461,16 @@ class Foo(A, B):
             tokens,
             vec![
                 Tok::Int {
-                    value: BigInt::from(47),
+                    value: Some(47i64),
                 },
                 Tok::Int {
-                    value: BigInt::from(13),
+                    value: Some(13i64),
                 },
                 Tok::Int {
-                    value: BigInt::from(0),
+                    value: Some(0i64),
                 },
                 Tok::Int {
-                    value: BigInt::from(123),
+                    value: Some(123i64),
                 },
                 Tok::Float { value: 0.2 },
                 Tok::Complex {
@@ -1481,7 +1493,7 @@ class Foo(A, B):
             fn $name() {
                 let source = format!(r"99232  # {}", $eol);
                 let tokens = lex_source(&source);
-                assert_eq!(tokens, vec![Tok::Int { value: BigInt::from(99232) }, Tok::Newline]);
+                assert_eq!(tokens, vec![Tok::Int { value: Some(99232i64) }, Tok::Newline]);
             }
             )*
         }
@@ -1504,9 +1516,9 @@ class Foo(A, B):
                 assert_eq!(
                     tokens,
                     vec![
-                        Tok::Int { value: BigInt::from(123) },
+                        Tok::Int { value: Some(123i64) },
                         Tok::Newline,
-                        Tok::Int { value: BigInt::from(456) },
+                        Tok::Int { value: Some(456i64) },
                         Tok::Newline,
                     ]
                 )
@@ -1533,15 +1545,15 @@ class Foo(A, B):
                 },
                 Tok::Equal,
                 Tok::Int {
-                    value: BigInt::from(99)
+                    value: Some(99i64)
                 },
                 Tok::Plus,
                 Tok::Int {
-                    value: BigInt::from(2)
+                    value: Some(2i64)
                 },
                 Tok::Minus,
                 Tok::Int {
-                    value: BigInt::from(0)
+                    value: Some(0i64)
                 },
                 Tok::Newline,
             ]
@@ -1568,7 +1580,7 @@ class Foo(A, B):
                         Tok::Newline,
                         Tok::Indent,
                         Tok::Return,
-                        Tok::Int { value: BigInt::from(99) },
+                        Tok::Int { value: Some(99i64) },
                         Tok::Newline,
                         Tok::Dedent,
                     ]
@@ -1611,7 +1623,7 @@ class Foo(A, B):
                         Tok::Newline,
                         Tok::Indent,
                         Tok::Return,
-                        Tok::Int { value: BigInt::from(99) },
+                        Tok::Int { value: Some(99i64) },
                         Tok::Newline,
                         Tok::Dedent,
                         Tok::Dedent,
@@ -1649,7 +1661,7 @@ class Foo(A, B):
                         Tok::Newline,
                         Tok::Indent,
                         Tok::Return,
-                        Tok::Int { value: BigInt::from(99) },
+                        Tok::Int { value: Some(99i64) },
                         Tok::Newline,
                         Tok::Dedent,
                         Tok::Dedent,
@@ -1687,9 +1699,9 @@ class Foo(A, B):
                         },
                         Tok::Equal,
                         Tok::Lsqb,
-                        Tok::Int { value: BigInt::from(1) },
+                        Tok::Int { value: Some(1i64) },
                         Tok::Comma,
-                        Tok::Int { value: BigInt::from(2) },
+                        Tok::Int { value: Some(2i64) },
                         Tok::Rsqb,
                         Tok::Newline,
                     ]

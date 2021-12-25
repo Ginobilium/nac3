@@ -1,5 +1,6 @@
 ---
 source: nac3parser/src/parser.rs
+assertion_line: 186
 expression: parse_program(&source).unwrap()
 
 ---
@@ -74,7 +75,9 @@ expression: parse_program(&source).unwrap()
                             custom: (),
                             node: Constant {
                                 value: Int(
-                                    1,
+                                    Some(
+                                        1,
+                                    ),
                                 ),
                                 kind: None,
                             },
@@ -177,7 +180,9 @@ expression: parse_program(&source).unwrap()
                             custom: (),
                             node: Constant {
                                 value: Int(
-                                    2,
+                                    Some(
+                                        2,
+                                    ),
                                 ),
                                 kind: None,
                             },
@@ -220,7 +225,9 @@ expression: parse_program(&source).unwrap()
                                     custom: (),
                                     node: Constant {
                                         value: Int(
-                                            1,
+                                            Some(
+                                                1,
+                                            ),
                                         ),
                                         kind: None,
                                     },
@@ -234,7 +241,9 @@ expression: parse_program(&source).unwrap()
                                     custom: (),
                                     node: Constant {
                                         value: Int(
-                                            2,
+                                            Some(
+                                                2,
+                                            ),
                                         ),
                                         kind: None,
                                     },
@@ -263,7 +272,9 @@ expression: parse_program(&source).unwrap()
                             custom: (),
                             node: Constant {
                                 value: Int(
-                                    1,
+                                    Some(
+                                        1,
+                                    ),
                                 ),
                                 kind: None,
                             },
@@ -284,7 +295,9 @@ expression: parse_program(&source).unwrap()
                                         custom: (),
                                         node: Constant {
                                             value: Int(
-                                                3,
+                                                Some(
+                                                    3,
+                                                ),
                                             ),
                                             kind: None,
                                         },

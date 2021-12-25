@@ -1,5 +1,6 @@
 ---
-source: parser/src/fstring.rs
+source: nac3parser/src/fstring.rs
+assertion_line: 382
 expression: parse_ast
 
 ---
@@ -25,7 +26,9 @@ Located {
                     custom: (),
                     node: Constant {
                         value: Int(
-                            42,
+                            Some(
+                                42,
+                            ),
                         ),
                         kind: None,
                     },
@@ -42,7 +45,9 @@ Located {
                         custom: (),
                         node: Constant {
                             value: Int(
-                                42,
+                                Some(
+                                    42,
+                                ),
                             ),
                             kind: None,
                         },

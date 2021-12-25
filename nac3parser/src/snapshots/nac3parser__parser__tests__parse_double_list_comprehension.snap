@@ -1,5 +1,6 @@
 ---
-source: parser/src/parser.rs
+source: nac3parser/src/parser.rs
+assertion_line: 164
 expression: parse_ast
 
 ---
@@ -125,7 +126,9 @@ Located {
                                     custom: (),
                                     node: Constant {
                                         value: Int(
-                                            5,
+                                            Some(
+                                                5,
+                                            ),
                                         ),
                                         kind: None,
                                     },
@@ -163,7 +166,9 @@ Located {
                                     custom: (),
                                     node: Constant {
                                         value: Int(
-                                            10,
+                                            Some(
+                                                10,
+                                            ),
                                         ),
                                         kind: None,
                                     },

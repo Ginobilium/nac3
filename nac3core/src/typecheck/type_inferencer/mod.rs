@@ -680,11 +680,8 @@ impl<'a> Inferencer<'a> {
                     if let ExprKind::Constant { value: ast::Constant::Int(val), kind } =
                         &args[0].node
                     {
-                        let int64: Result<i64, _> = val.try_into();
-                        let custom;
-                        if int64.is_ok() {
-                            custom = Some(self.primitives.int64);
-                        } else {
+                        let custom = Some(self.primitives.int64);
+                        if val.is_none() {
                             return Err("Integer out of bound".into());
                         }
                         return Ok(Located {
@@ -777,12 +774,17 @@ impl<'a> Inferencer<'a> {
         match constant {
             ast::Constant::Bool(_) => Ok(self.primitives.bool),
             ast::Constant::Int(val) => {
-                let int32: Result<i32, _> = val.try_into();
-                // int64 would be handled separately in functions
-                if int32.is_ok() {
-                    Ok(self.primitives.int32)
-                } else {
-                    Err("Integer out of bound".into())
+                match val {
+                    Some(val) => {
+                        let int32: Result<i32, _> = (*val).try_into();
+                        // int64 is handled separately in functions
+                        if int32.is_ok() {
+                            Ok(self.primitives.int32)
+                        } else {
+                            Err("Integer out of bound".into())
+                        }
+                    },
+                    None => Err("Integer out of bound".into())
                 }
             }
             ast::Constant::Float(_) => Ok(self.primitives.float),
@@ -907,7 +909,11 @@ impl<'a> Inferencer<'a> {
             }
             ast::ExprKind::Constant { value: ast::Constant::Int(val), .. } => {
                 // the index is a constant, so value can be a sequence.
-                let ind: i32 = val.try_into().map_err(|_| "Index must be int32".to_string())?;
+                let ind: Option<i32> = match val {
+                    Some(val) => (*val).try_into().ok(),
+                    None => None,
+                };
+                let ind = ind.ok_or_else(|| "Index must be int32".to_string())?;
                 let map = once((ind, ty)).collect();
                 let seq = self.unifier.add_sequence(map);
                 self.constrain(value.custom.unwrap(), seq, &value.location)?;

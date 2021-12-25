@@ -1,5 +1,6 @@
 ---
 source: nac3parser/src/parser.rs
+assertion_line: 104
 expression: parse_ast
 
 ---
@@ -51,7 +52,9 @@ expression: parse_ast
                             custom: (),
                             node: Constant {
                                 value: Int(
-                                    2,
+                                    Some(
+                                        2,
+                                    ),
                                 ),
                                 kind: None,
                             },
