@@ -71,7 +71,7 @@
       };
 
       packages.x86_64-w64-mingw32 = rec {
-        llvm-nac3 = pkgs-mingw.callPackage "${self}/llvm" { inherit (pkgs) llvmPackages_12; };
+        llvm-nac3 = pkgs-mingw.callPackage "${self}/llvm" { inherit (pkgs) llvmPackages_13; };
         nac3artiq = pkgs-mingw.python3Packages.toPythonModule (
           pkgs-mingw.rustPlatform.buildRustPackage {
             name = "nac3artiq";
