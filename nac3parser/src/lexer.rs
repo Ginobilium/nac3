@@ -5,7 +5,6 @@
 pub use super::token::Tok;
 use crate::ast::Location;
 use crate::error::{LexicalError, LexicalErrorType};
-use num_traits::identities::Zero;
 use std::char;
 use std::cmp::Ordering;
 use std::str::FromStr;
@@ -364,7 +363,7 @@ where
                 // parse should only fail because of overflow.
                 let value = value_text.parse::<i64>().ok();
                 let nonzero = match value {
-                    Some(value) => !value.is_zero(),
+                    Some(value) => value != 0i64,
                     None => true
                 };
                 if start_is_zero && nonzero {
