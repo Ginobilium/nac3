@@ -420,7 +420,7 @@ pub fn gen_call<'ctx, 'a, G: CodeGenerator>(
                 };
                 param_vals = real_params
                     .into_iter()
-                    .map(|p| p.to_basic_value_enum(ctx, generator))
+                    .map(|p| p.to_basic_value_enum(ctx, generator).into())
                     .collect_vec();
                 instance_to_symbol.get(&key).cloned()
             }
@@ -437,7 +437,7 @@ pub fn gen_call<'ctx, 'a, G: CodeGenerator>(
         if let Some(obj) = &obj {
             args.insert(0, FuncArg { name: "self".into(), ty: obj.0, default_value: None });
         }
-        let params = args.iter().map(|arg| ctx.get_llvm_type(generator, arg.ty)).collect_vec();
+        let params = args.iter().map(|arg| ctx.get_llvm_type(generator, arg.ty).into()).collect_vec();
         let fun_ty = if ctx.unifier.unioned(fun.0.ret, ctx.primitives.none) {
             ctx.ctx.void_type().fn_type(&params, false)
         } else {

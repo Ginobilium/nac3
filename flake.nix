@@ -16,7 +16,6 @@
           })
         ];
       };
-      cargoSha256 = "sha256-otKLhr58HYMjVXAof6AdObNpggPnvK6qOl7I+4LWIP8=";
       msys2-python-tar = pkgs.fetchurl {
         url = "https://mirror.msys2.org/mingw/mingw64/mingw-w64-x86_64-python-3.9.7-4-any.pkg.tar.zst";
         sha256 = "0iwlgbk4b457yn9djwqswid55xhyyi35qymz1lfh42xwdpxdm47c";
@@ -54,7 +53,9 @@
           pkgs.rustPlatform.buildRustPackage {
             name = "nac3artiq";
             src = self;
-            inherit cargoSha256;
+            cargoLock = {
+              lockFile = ./Cargo.lock;
+            };
             nativeBuildInputs = [ pkgs.python3 llvm-nac3 ];
             buildInputs = [ pkgs.python3 llvm-nac3 ];
             cargoBuildFlags = [ "--package" "nac3artiq" ];
@@ -75,7 +76,9 @@
           pkgs-mingw.rustPlatform.buildRustPackage {
             name = "nac3artiq";
             src = self;
-            inherit cargoSha256;
+            cargoLock = {
+              lockFile = ./Cargo.lock;
+            };
             nativeBuildInputs = [ pkgs.zip ];
             buildInputs = [ pkgs-mingw.zlib ];
             configurePhase =

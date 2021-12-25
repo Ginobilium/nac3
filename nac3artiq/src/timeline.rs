@@ -332,7 +332,7 @@ impl TimeFns for ExternTimeFns {
             .get_function("at_mu")
             .unwrap_or_else(|| ctx.module.add_function("at_mu", ctx.ctx.void_type().fn_type(&[ctx.ctx.i64_type().into()], false), None));
         ctx.builder
-            .build_call(at_mu, &[t], "at_mu");
+            .build_call(at_mu, &[t.into()], "at_mu");
     }
 
     fn emit_delay_mu<'ctx, 'a>(&self, ctx: &mut CodeGenContext<'ctx, 'a>, dt: BasicValueEnum<'ctx>) {
@@ -341,7 +341,7 @@ impl TimeFns for ExternTimeFns {
             .get_function("delay_mu")
             .unwrap_or_else(|| ctx.module.add_function("delay_mu", ctx.ctx.void_type().fn_type(&[ctx.ctx.i64_type().into()], false), None));
         ctx.builder
-            .build_call(delay_mu, &[dt], "delay_mu");
+            .build_call(delay_mu, &[dt.into()], "delay_mu");
     }
 }
 

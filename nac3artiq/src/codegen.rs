@@ -68,7 +68,7 @@ impl<'b> CodeGenerator for ArtiqCodeGenerator<'b> {
             });
             let max = ctx
                 .builder
-                .build_call(smax, &[old_end, now], "smax")
+                .build_call(smax, &[old_end.into(), now.into()], "smax")
                 .try_as_basic_value()
                 .left()
                 .unwrap();
@@ -185,7 +185,7 @@ impl<'b> CodeGenerator for ArtiqCodeGenerator<'b> {
                                 });
                             let max = ctx
                                 .builder
-                                .build_call(smax, &[end_val, outer_end_val], "smax")
+                                .build_call(smax, &[end_val.into(), outer_end_val.into()], "smax")
                                 .try_as_basic_value()
                                 .left()
                                 .unwrap();

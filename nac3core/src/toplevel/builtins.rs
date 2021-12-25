@@ -214,7 +214,7 @@ pub fn get_builtins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
                     });
                 let val = ctx
                     .builder
-                    .build_call(round_intrinsic, &[arg], "round")
+                    .build_call(round_intrinsic, &[arg.into()], "round")
                     .try_as_basic_value()
                     .left()
                     .unwrap();
@@ -251,7 +251,7 @@ pub fn get_builtins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
                     });
                 let val = ctx
                     .builder
-                    .build_call(round_intrinsic, &[arg], "round")
+                    .build_call(round_intrinsic, &[arg.into()], "round")
                     .try_as_basic_value()
                     .left()
                     .unwrap();
@@ -431,7 +431,7 @@ pub fn get_builtins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
                     });
                 let val = ctx
                     .builder
-                    .build_call(floor_intrinsic, &[arg], "floor")
+                    .build_call(floor_intrinsic, &[arg.into()], "floor")
                     .try_as_basic_value()
                     .left()
                     .unwrap();
@@ -468,7 +468,7 @@ pub fn get_builtins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
                     });
                 let val = ctx
                     .builder
-                    .build_call(floor_intrinsic, &[arg], "floor")
+                    .build_call(floor_intrinsic, &[arg.into()], "floor")
                     .try_as_basic_value()
                     .left()
                     .unwrap();
@@ -505,7 +505,7 @@ pub fn get_builtins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
                     });
                 let val = ctx
                     .builder
-                    .build_call(ceil_intrinsic, &[arg], "ceil")
+                    .build_call(ceil_intrinsic, &[arg.into()], "ceil")
                     .try_as_basic_value()
                     .left()
                     .unwrap();
@@ -542,7 +542,7 @@ pub fn get_builtins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
                     });
                 let val = ctx
                     .builder
-                    .build_call(ceil_intrinsic, &[arg], "ceil")
+                    .build_call(ceil_intrinsic, &[arg.into()], "ceil")
                     .try_as_basic_value()
                     .left()
                     .unwrap();

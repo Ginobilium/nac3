@@ -352,7 +352,7 @@ pub fn gen_func<'ctx, G: CodeGenerator>(
     let params = args
         .iter()
         .map(|arg| {
-            get_llvm_type(context, generator, &mut unifier, top_level_ctx.as_ref(), &mut type_cache, arg.ty)
+            get_llvm_type(context, generator, &mut unifier, top_level_ctx.as_ref(), &mut type_cache, arg.ty).into()
         })
         .collect_vec();
 
