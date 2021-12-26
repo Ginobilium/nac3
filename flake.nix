@@ -116,8 +116,8 @@
         name = "nac3-dev-shell";
         buildInputs = with pkgs; [
           packages.x86_64-linux.llvm-nac3
-          clang_12
-          lld_12
+          clang_13
+          lld_13
           cargo
           cargo-insta
           rustc
