@@ -224,7 +224,6 @@ pub struct CodeGenTask {
 
 fn get_llvm_type<'ctx>(
     ctx: &'ctx Context,
-    generator: &mut dyn CodeGenerator,
     unifier: &mut Unifier,
     top_level: &TopLevelContext,
     type_cache: &mut HashMap<Type, BasicTypeEnum<'ctx>>,
@@ -245,7 +244,7 @@ fn get_llvm_type<'ctx>(
                     let fields = fields.borrow();
                     let fields = fields_list
                         .iter()
-                        .map(|f| get_llvm_type(ctx, generator, unifier, top_level, type_cache, fields[&f.0].0))
+                        .map(|f| get_llvm_type(ctx, unifier, top_level, type_cache, fields[&f.0].0))
                         .collect_vec();
                     ctx.struct_type(&fields, false).ptr_type(AddressSpace::Generic).into()
                 } else {
@@ -257,15 +256,15 @@ fn get_llvm_type<'ctx>(
                 // a struct with fields in the order present in the tuple
                 let fields = ty
                     .iter()
-                    .map(|ty| get_llvm_type(ctx, generator, unifier, top_level, type_cache, *ty))
+                    .map(|ty| get_llvm_type(ctx, unifier, top_level, type_cache, *ty))
                     .collect_vec();
                 ctx.struct_type(&fields, false).ptr_type(AddressSpace::Generic).into()
             }
             TList { ty } => {
                 // a struct with an integer and a pointer to an array
-                let element_type = get_llvm_type(ctx, generator, unifier, top_level, type_cache, *ty);
+                let element_type = get_llvm_type(ctx, unifier, top_level, type_cache, *ty);
                 let fields =
-                    [element_type.ptr_type(AddressSpace::Generic).into(), generator.get_size_type(ctx).into()];
+                    [ctx.i32_type().into(), element_type.ptr_type(AddressSpace::Generic).into()];
                 ctx.struct_type(&fields, false).ptr_type(AddressSpace::Generic).into()
             }
             TVirtual { .. } => unimplemented!(),
@@ -274,7 +273,7 @@ fn get_llvm_type<'ctx>(
     })
 }
 
-pub fn gen_func<'ctx, G: CodeGenerator>(
+pub fn gen_func<'ctx, G: CodeGenerator + ?Sized>(
     context: &'ctx Context,
     generator: &mut G,
     registry: &WorkerRegistry,
@@ -352,14 +351,14 @@ pub fn gen_func<'ctx, G: CodeGenerator>(
     let params = args
         .iter()
         .map(|arg| {
-            get_llvm_type(context, generator, &mut unifier, top_level_ctx.as_ref(), &mut type_cache, arg.ty).into()
+            get_llvm_type(context, &mut unifier, top_level_ctx.as_ref(), &mut type_cache, arg.ty).into()
         })
         .collect_vec();
 
     let fn_type = if unifier.unioned(ret, primitives.none) {
         context.void_type().fn_type(&params, false)
     } else {
-        get_llvm_type(context, generator, &mut unifier, top_level_ctx.as_ref(), &mut type_cache, ret)
+        get_llvm_type(context, &mut unifier, top_level_ctx.as_ref(), &mut type_cache, ret)
             .fn_type(&params, false)
     };
 
@@ -383,7 +382,7 @@ pub fn gen_func<'ctx, G: CodeGenerator>(
     for (n, arg) in args.iter().enumerate() {
         let param = fn_val.get_nth_param(n as u32).unwrap();
         let alloca = builder.build_alloca(
-            get_llvm_type(context, generator, &mut unifier, top_level_ctx.as_ref(), &mut type_cache, arg.ty),
+            get_llvm_type(context, &mut unifier, top_level_ctx.as_ref(), &mut type_cache, arg.ty),
             &arg.name.to_string(),
         );
         builder.build_store(alloca, param);

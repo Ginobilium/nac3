@@ -35,9 +35,12 @@ pub fn get_subst_key(
         })
         .unwrap_or_default();
     vars.extend(fun_vars.iter());
-    let sorted = vars.keys().filter(|id| filter.map(|v| v.contains(id)).unwrap_or(true)).sorted();
+    let sorted =
+        vars.keys().filter(|id| filter.map(|v| v.contains(id)).unwrap_or(true)).sorted();
     sorted
-        .map(|id| unifier.stringify(vars[id], &mut |id| id.to_string(), &mut |id| id.to_string()))
+        .map(|id| {
+            unifier.stringify(vars[id], &mut |id| id.to_string(), &mut |id| id.to_string())
+        })
         .join(", ")
 }
 
@@ -101,19 +104,8 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
         }
     }
 
-    pub fn get_llvm_type(
-        &mut self,
-        generator: &mut dyn CodeGenerator,
-        ty: Type,
-    ) -> BasicTypeEnum<'ctx> {
-        get_llvm_type(
-            self.ctx,
-            generator,
-            &mut self.unifier,
-            self.top_level,
-            &mut self.type_cache,
-            ty,
-        )
+    pub fn get_llvm_type(&mut self, ty: Type) -> BasicTypeEnum<'ctx> {
+        get_llvm_type(self.ctx, &mut self.unifier, self.top_level, &mut self.type_cache, ty)
     }
 
     fn gen_const(&mut self, value: &Constant, ty: Type) -> BasicValueEnum<'ctx> {
@@ -231,7 +223,7 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
     }
 }
 
-pub fn gen_constructor<'ctx, 'a, G: CodeGenerator>(
+pub fn gen_constructor<'ctx, 'a, G: CodeGenerator + ?Sized>(
     generator: &mut G,
     ctx: &mut CodeGenContext<'ctx, 'a>,
     signature: &FunSignature,
@@ -247,7 +239,7 @@ pub fn gen_constructor<'ctx, 'a, G: CodeGenerator>(
                     fun_id = Some(*id);
                 }
             }
-            let ty = ctx.get_llvm_type(generator, signature.ret).into_pointer_type();
+            let ty = ctx.get_llvm_type(signature.ret).into_pointer_type();
             let zelf_ty: BasicTypeEnum = ty.get_element_type().try_into().unwrap();
             let zelf: BasicValueEnum<'ctx> = ctx.builder.build_alloca(zelf_ty, "alloca").into();
             // call `__init__` if there is one
@@ -336,7 +328,7 @@ pub fn gen_func_instance<'ctx, 'a>(
     }
 }
 
-pub fn gen_call<'ctx, 'a, G: CodeGenerator>(
+pub fn gen_call<'ctx, 'a, G: CodeGenerator + ?Sized>(
     generator: &mut G,
     ctx: &mut CodeGenContext<'ctx, 'a>,
     obj: Option<(Type, ValueEnum<'ctx>)>,
@@ -360,10 +352,10 @@ pub fn gen_call<'ctx, 'a, G: CodeGenerator>(
             } => {
                 if let Some(callback) = codegen_callback {
                     // TODO: Change signature
-                    let obj = obj.map(|(t, v)| (t, v.to_basic_value_enum(ctx, generator)));
+                    let obj = obj.map(|(t, v)| (t, v.to_basic_value_enum(ctx)));
                     let params = params
                         .into_iter()
-                        .map(|(name, val)| (name, val.to_basic_value_enum(ctx, generator)))
+                        .map(|(name, val)| (name, val.to_basic_value_enum(ctx)))
                         .collect();
                     return callback.run(ctx, obj, fun, params);
                 }
@@ -417,10 +409,8 @@ pub fn gen_call<'ctx, 'a, G: CodeGenerator>(
                 } else {
                     format!("{}:{}", id, old_key)
                 };
-                param_vals = real_params
-                    .into_iter()
-                    .map(|p| p.to_basic_value_enum(ctx, generator).into())
-                    .collect_vec();
+                param_vals =
+                    real_params.into_iter().map(|p| p.to_basic_value_enum(ctx).into()).collect_vec();
                 instance_to_symbol.get(&key).cloned()
             }
             TopLevelDef::Class { .. } => {
@@ -436,11 +426,11 @@ pub fn gen_call<'ctx, 'a, G: CodeGenerator>(
         if let Some(obj) = &obj {
             args.insert(0, FuncArg { name: "self".into(), ty: obj.0, default_value: None });
         }
-        let params = args.iter().map(|arg| ctx.get_llvm_type(generator, arg.ty).into()).collect_vec();
+        let params = args.iter().map(|arg| ctx.get_llvm_type(arg.ty).into()).collect_vec();
         let fun_ty = if ctx.unifier.unioned(fun.0.ret, ctx.primitives.none) {
             ctx.ctx.void_type().fn_type(&params, false)
         } else {
-            ctx.get_llvm_type(generator, fun.0.ret).fn_type(&params, false)
+            ctx.get_llvm_type(fun.0.ret).fn_type(&params, false)
         };
         ctx.module.add_function(&symbol, fun_ty, None)
     });
@@ -464,36 +454,32 @@ pub fn destructure_range<'ctx, 'a>(
     (start, end, step)
 }
 
-pub fn allocate_list<'ctx, 'a, G: CodeGenerator>(
-    generator: &mut G,
+pub fn allocate_list<'ctx, 'a>(
     ctx: &mut CodeGenContext<'ctx, 'a>,
     ty: BasicTypeEnum<'ctx>,
     length: IntValue<'ctx>,
 ) -> PointerValue<'ctx> {
     let arr_ptr = ctx.builder.build_array_alloca(ty, length, "tmparr");
-    let size_t = generator.get_size_type(ctx.ctx);
-    let i32_t = ctx.ctx.i32_type();
-    let arr_ty =
-        ctx.ctx.struct_type(&[ty.ptr_type(AddressSpace::Generic).into(), size_t.into()], false);
+    let arr_ty = ctx.ctx.struct_type(
+        &[ctx.ctx.i32_type().into(), ty.ptr_type(AddressSpace::Generic).into()],
+        false,
+    );
     let zero = ctx.ctx.i32_type().const_zero();
     let arr_str_ptr = ctx.builder.build_alloca(arr_ty, "tmparrstr");
     unsafe {
-        let len_ptr = ctx.builder.build_in_bounds_gep(
-            arr_str_ptr,
-            &[zero, i32_t.const_int(1, false)],
-            "len_ptr",
-        );
-        let length = ctx.builder.build_int_z_extend(length, size_t, "zext");
+        let len_ptr = ctx.builder.build_in_bounds_gep(arr_str_ptr, &[zero, zero], "len_ptr");
         ctx.builder.build_store(len_ptr, length);
-        let ptr_to_arr =
-            ctx.builder.build_in_bounds_gep(arr_str_ptr, &[zero, i32_t.const_zero()], "ptr_to_arr");
+        let ptr_to_arr = ctx.builder.build_in_bounds_gep(
+            arr_str_ptr,
+            &[zero, ctx.ctx.i32_type().const_int(1, false)],
+            "ptr_to_arr",
+        );
         ctx.builder.build_store(ptr_to_arr, arr_ptr);
-        println!("arr_str_ptr: {:?}", arr_str_ptr);
         arr_str_ptr
     }
 }
 
-pub fn gen_comprehension<'ctx, 'a, G: CodeGenerator>(
+pub fn gen_comprehension<'ctx, 'a, G: CodeGenerator + ?Sized>(
     generator: &mut G,
     ctx: &mut CodeGenContext<'ctx, 'a>,
     expr: &Expr<Option<Type>>,
@@ -505,16 +491,15 @@ pub fn gen_comprehension<'ctx, 'a, G: CodeGenerator>(
         let cont_bb = ctx.ctx.append_basic_block(current, "cont");
 
         let Comprehension { target, iter, ifs, .. } = &generators[0];
-        let iter_val = generator.gen_expr(ctx, iter).unwrap().to_basic_value_enum(ctx, generator);
+        let iter_val = generator.gen_expr(ctx, iter).unwrap().to_basic_value_enum(ctx);
         let int32 = ctx.ctx.i32_type();
-        let size_t = generator.get_size_type(ctx.ctx);
-        let zero = size_t.const_zero();
+        let zero = int32.const_zero();
 
-        let index = generator.gen_var_alloc(ctx, size_t.into());
+        let index = generator.gen_var_alloc(ctx, ctx.primitives.int32);
         // counter = -1
-        ctx.builder.build_store(index, size_t.const_zero());
+        ctx.builder.build_store(index, ctx.ctx.i32_type().const_zero());
 
-        let elem_ty = ctx.get_llvm_type(generator, elt.custom.unwrap());
+        let elem_ty = ctx.get_llvm_type(elt.custom.unwrap());
         let is_range = ctx.unifier.unioned(iter.custom.unwrap(), ctx.primitives.range);
         let list;
         let list_content;
@@ -537,16 +522,18 @@ pub fn gen_comprehension<'ctx, 'a, G: CodeGenerator>(
             ctx.builder.build_conditional_branch(is_valid, normal, empty);
             // normal: allocate a list
             ctx.builder.position_at_end(normal);
-            let list_a = allocate_list(generator, ctx, elem_ty, length);
+            let list_a = allocate_list(ctx, elem_ty, length);
             ctx.builder.build_unconditional_branch(list_init);
             ctx.builder.position_at_end(empty);
-            let list_b = allocate_list(generator, ctx, elem_ty, zero);
+            let list_b = allocate_list(ctx, elem_ty, zero);
             ctx.builder.build_unconditional_branch(list_init);
             ctx.builder.position_at_end(list_init);
             let phi = ctx.builder.build_phi(list_a.get_type(), "phi");
             phi.add_incoming(&[(&list_a, normal), (&list_b, empty)]);
             list = phi.as_basic_value().into_pointer_value();
-            list_content = ctx.build_gep_and_load(list, &[zero, zero]).into_pointer_value();
+            list_content = ctx
+                .build_gep_and_load(list, &[zero, int32.const_int(1, false)])
+                .into_pointer_value();
 
             let i = generator.gen_store_target(ctx, target);
             ctx.builder.build_store(i, ctx.builder.build_int_sub(start, step, "start_init"));
@@ -579,36 +566,35 @@ pub fn gen_comprehension<'ctx, 'a, G: CodeGenerator>(
             ctx.builder.position_at_end(body_bb);
         } else {
             let length = ctx
-                .build_gep_and_load(
-                    iter_val.into_pointer_value(),
-                    &[zero, int32.const_int(1, false)],
-                )
+                .build_gep_and_load(iter_val.into_pointer_value(), &[zero, zero])
                 .into_int_value();
-            list = allocate_list(generator, ctx, elem_ty, length);
-            list_content = ctx.build_gep_and_load(list, &[zero, zero]).into_pointer_value();
-            let counter = generator.gen_var_alloc(ctx, size_t.into());
+            list = allocate_list(ctx, elem_ty, length);
+            list_content = ctx
+                .build_gep_and_load(list, &[zero, int32.const_int(1, false)])
+                .into_pointer_value();
+            let counter = generator.gen_var_alloc(ctx, ctx.primitives.int32);
             // counter = -1
             ctx.builder.build_store(counter, ctx.ctx.i32_type().const_int(u64::max_value(), true));
             ctx.builder.build_unconditional_branch(test_bb);
             ctx.builder.position_at_end(test_bb);
             let tmp = ctx.builder.build_load(counter, "i").into_int_value();
-            let tmp = ctx.builder.build_int_add(tmp, size_t.const_int(1, false), "inc");
+            let tmp = ctx.builder.build_int_add(tmp, int32.const_int(1, false), "inc");
             ctx.builder.build_store(counter, tmp);
             let cmp = ctx.builder.build_int_compare(inkwell::IntPredicate::SLT, tmp, length, "cmp");
             ctx.builder.build_conditional_branch(cmp, body_bb, cont_bb);
             ctx.builder.position_at_end(body_bb);
             let arr_ptr = ctx
-                .build_gep_and_load(iter_val.into_pointer_value(), &[zero, zero])
+                .build_gep_and_load(
+                    iter_val.into_pointer_value(),
+                    &[zero, int32.const_int(1, false)],
+                )
                 .into_pointer_value();
             let val = ctx.build_gep_and_load(arr_ptr, &[tmp]);
             generator.gen_assign(ctx, target, val.into());
         }
         for cond in ifs.iter() {
-            let result = generator
-                .gen_expr(ctx, cond)
-                .unwrap()
-                .to_basic_value_enum(ctx, generator)
-                .into_int_value();
+            let result =
+                generator.gen_expr(ctx, cond).unwrap().to_basic_value_enum(ctx).into_int_value();
             let succ = ctx.ctx.append_basic_block(current, "then");
             ctx.builder.build_conditional_branch(result, succ, test_bb);
             ctx.builder.position_at_end(succ);
@@ -616,14 +602,13 @@ pub fn gen_comprehension<'ctx, 'a, G: CodeGenerator>(
         let elem = generator.gen_expr(ctx, elt).unwrap();
         let i = ctx.builder.build_load(index, "i").into_int_value();
         let elem_ptr = unsafe { ctx.builder.build_gep(list_content, &[i], "elem_ptr") };
-        let val = elem.to_basic_value_enum(ctx, generator);
+        let val = elem.to_basic_value_enum(ctx);
         ctx.builder.build_store(elem_ptr, val);
         ctx.builder
-            .build_store(index, ctx.builder.build_int_add(i, size_t.const_int(1, false), "inc"));
+            .build_store(index, ctx.builder.build_int_add(i, int32.const_int(1, false), "inc"));
         ctx.builder.build_unconditional_branch(test_bb);
         ctx.builder.position_at_end(cont_bb);
-        let len_ptr =
-            unsafe { ctx.builder.build_gep(list, &[zero, int32.const_int(1, false)], "length") };
+        let len_ptr = unsafe { ctx.builder.build_gep(list, &[zero, zero], "length") };
         ctx.builder.build_store(len_ptr, ctx.builder.build_load(index, "index"));
         list.into()
     } else {
@@ -631,7 +616,7 @@ pub fn gen_comprehension<'ctx, 'a, G: CodeGenerator>(
     }
 }
 
-pub fn gen_expr<'ctx, 'a, G: CodeGenerator>(
+pub fn gen_expr<'ctx, 'a, G: CodeGenerator + ?Sized>(
     generator: &mut G,
     ctx: &mut CodeGenContext<'ctx, 'a>,
     expr: &Expr<Option<Type>>,
@@ -656,12 +641,14 @@ pub fn gen_expr<'ctx, 'a, G: CodeGenerator>(
             // we should use memcpy for that instead of generating thousands of stores
             let elements = elts
                 .iter()
-                .map(|x| generator.gen_expr(ctx, x).unwrap().to_basic_value_enum(ctx, generator))
+                .map(|x| generator.gen_expr(ctx, x).unwrap().to_basic_value_enum(ctx))
                 .collect_vec();
             let ty = if elements.is_empty() { int32.into() } else { elements[0].get_type() };
-            let length = generator.get_size_type(ctx.ctx).const_int(elements.len() as u64, false);
-            let arr_str_ptr = allocate_list(generator, ctx, ty, length);
-            let arr_ptr = ctx.build_gep_and_load(arr_str_ptr, &[zero, zero]).into_pointer_value();
+            let length = int32.const_int(elements.len() as u64, false);
+            let arr_str_ptr = allocate_list(ctx, ty, length);
+            let arr_ptr = ctx
+                .build_gep_and_load(arr_str_ptr, &[zero, int32.const_int(1, false)])
+                .into_pointer_value();
             unsafe {
                 for (i, v) in elements.iter().enumerate() {
                     let elem_ptr = ctx.builder.build_gep(
@@ -677,7 +664,7 @@ pub fn gen_expr<'ctx, 'a, G: CodeGenerator>(
         ExprKind::Tuple { elts, .. } => {
             let element_val = elts
                 .iter()
-                .map(|x| generator.gen_expr(ctx, x).unwrap().to_basic_value_enum(ctx, generator))
+                .map(|x| generator.gen_expr(ctx, x).unwrap().to_basic_value_enum(ctx))
                 .collect_vec();
             let element_ty = element_val.iter().map(BasicValueEnum::get_type).collect_vec();
             let tuple_ty = ctx.ctx.struct_type(&element_ty, false);
@@ -698,7 +685,7 @@ pub fn gen_expr<'ctx, 'a, G: CodeGenerator>(
             // note that we would handle class methods directly in calls
             match generator.gen_expr(ctx, value).unwrap() {
                 ValueEnum::Static(v) => v.get_field(*attr, ctx).unwrap_or_else(|| {
-                    let v = v.to_basic_value_enum(ctx, generator);
+                    let v = v.to_basic_value_enum(ctx);
                     let index = ctx.get_attr_index(value.custom.unwrap(), *attr);
                     ValueEnum::Dynamic(ctx.build_gep_and_load(
                         v.into_pointer_value(),
@@ -719,7 +706,7 @@ pub fn gen_expr<'ctx, 'a, G: CodeGenerator>(
             let left = generator
                 .gen_expr(ctx, &values[0])
                 .unwrap()
-                .to_basic_value_enum(ctx, generator)
+                .to_basic_value_enum(ctx)
                 .into_int_value();
             let current = ctx.builder.get_insert_block().unwrap().get_parent().unwrap();
             let a_bb = ctx.ctx.append_basic_block(current, "a");
@@ -735,7 +722,7 @@ pub fn gen_expr<'ctx, 'a, G: CodeGenerator>(
                     let b = generator
                         .gen_expr(ctx, &values[1])
                         .unwrap()
-                        .to_basic_value_enum(ctx, generator)
+                        .to_basic_value_enum(ctx)
                         .into_int_value();
                     ctx.builder.build_unconditional_branch(cont_bb);
                     (a, b)
@@ -745,7 +732,7 @@ pub fn gen_expr<'ctx, 'a, G: CodeGenerator>(
                     let a = generator
                         .gen_expr(ctx, &values[1])
                         .unwrap()
-                        .to_basic_value_enum(ctx, generator)
+                        .to_basic_value_enum(ctx)
                         .into_int_value();
                     ctx.builder.build_unconditional_branch(cont_bb);
                     ctx.builder.position_at_end(b_bb);
@@ -762,8 +749,8 @@ pub fn gen_expr<'ctx, 'a, G: CodeGenerator>(
         ExprKind::BinOp { op, left, right } => {
             let ty1 = ctx.unifier.get_representative(left.custom.unwrap());
             let ty2 = ctx.unifier.get_representative(right.custom.unwrap());
-            let left = generator.gen_expr(ctx, left).unwrap().to_basic_value_enum(ctx, generator);
-            let right = generator.gen_expr(ctx, right).unwrap().to_basic_value_enum(ctx, generator);
+            let left = generator.gen_expr(ctx, left).unwrap().to_basic_value_enum(ctx);
+            let right = generator.gen_expr(ctx, right).unwrap().to_basic_value_enum(ctx);
 
             // we can directly compare the types, because we've got their representatives
             // which would be unchanged until further unification, which we would never do
@@ -779,7 +766,7 @@ pub fn gen_expr<'ctx, 'a, G: CodeGenerator>(
         }
         ExprKind::UnaryOp { op, operand } => {
             let ty = ctx.unifier.get_representative(operand.custom.unwrap());
-            let val = generator.gen_expr(ctx, operand).unwrap().to_basic_value_enum(ctx, generator);
+            let val = generator.gen_expr(ctx, operand).unwrap().to_basic_value_enum(ctx);
             if ty == ctx.primitives.bool {
                 let val = val.into_int_value();
                 match op {
@@ -836,14 +823,8 @@ pub fn gen_expr<'ctx, 'a, G: CodeGenerator>(
                                 BasicValueEnum::IntValue(lhs),
                                 BasicValueEnum::IntValue(rhs),
                             ) = (
-                                generator
-                                    .gen_expr(ctx, lhs)
-                                    .unwrap()
-                                    .to_basic_value_enum(ctx, generator),
-                                generator
-                                    .gen_expr(ctx, rhs)
-                                    .unwrap()
-                                    .to_basic_value_enum(ctx, generator),
+                                generator.gen_expr(ctx, lhs).unwrap().to_basic_value_enum(ctx),
+                                generator.gen_expr(ctx, rhs).unwrap().to_basic_value_enum(ctx),
                             ) {
                                 (lhs, rhs)
                             } else {
@@ -864,14 +845,8 @@ pub fn gen_expr<'ctx, 'a, G: CodeGenerator>(
                                 BasicValueEnum::FloatValue(lhs),
                                 BasicValueEnum::FloatValue(rhs),
                             ) = (
-                                generator
-                                    .gen_expr(ctx, lhs)
-                                    .unwrap()
-                                    .to_basic_value_enum(ctx, generator),
-                                generator
-                                    .gen_expr(ctx, rhs)
-                                    .unwrap()
-                                    .to_basic_value_enum(ctx, generator),
+                                generator.gen_expr(ctx, lhs).unwrap().to_basic_value_enum(ctx),
+                                generator.gen_expr(ctx, rhs).unwrap().to_basic_value_enum(ctx),
                             ) {
                                 (lhs, rhs)
                             } else {
@@ -896,21 +871,18 @@ pub fn gen_expr<'ctx, 'a, G: CodeGenerator>(
                 .into() // as there should be at least 1 element, it should never be none
         }
         ExprKind::IfExp { test, body, orelse } => {
-            let test = generator
-                .gen_expr(ctx, test)
-                .unwrap()
-                .to_basic_value_enum(ctx, generator)
-                .into_int_value();
+            let test =
+                generator.gen_expr(ctx, test).unwrap().to_basic_value_enum(ctx).into_int_value();
             let current = ctx.builder.get_insert_block().unwrap().get_parent().unwrap();
             let then_bb = ctx.ctx.append_basic_block(current, "then");
             let else_bb = ctx.ctx.append_basic_block(current, "else");
             let cont_bb = ctx.ctx.append_basic_block(current, "cont");
             ctx.builder.build_conditional_branch(test, then_bb, else_bb);
             ctx.builder.position_at_end(then_bb);
-            let a = generator.gen_expr(ctx, body).unwrap().to_basic_value_enum(ctx, generator);
+            let a = generator.gen_expr(ctx, body).unwrap().to_basic_value_enum(ctx);
             ctx.builder.build_unconditional_branch(cont_bb);
             ctx.builder.position_at_end(else_bb);
-            let b = generator.gen_expr(ctx, orelse).unwrap().to_basic_value_enum(ctx, generator);
+            let b = generator.gen_expr(ctx, orelse).unwrap().to_basic_value_enum(ctx);
             ctx.builder.build_unconditional_branch(cont_bb);
             ctx.builder.position_at_end(cont_bb);
             let phi = ctx.builder.build_phi(a.get_type(), "ifexpr");
@@ -992,27 +964,27 @@ pub fn gen_expr<'ctx, 'a, G: CodeGenerator>(
                     let v = generator
                         .gen_expr(ctx, value)
                         .unwrap()
-                        .to_basic_value_enum(ctx, generator)
+                        .to_basic_value_enum(ctx)
                         .into_pointer_value();
                     let index = generator
                         .gen_expr(ctx, slice)
                         .unwrap()
-                        .to_basic_value_enum(ctx, generator)
+                        .to_basic_value_enum(ctx)
                         .into_int_value();
-                    let zero = int32.const_zero();
-                    let arr_ptr = ctx.build_gep_and_load(v, &[zero, zero]);
+                    let arr_ptr =
+                        ctx.build_gep_and_load(v, &[int32.const_zero(), int32.const_int(1, false)]);
                     ctx.build_gep_and_load(arr_ptr.into_pointer_value(), &[index])
                 }
             } else {
                 let v = generator
                     .gen_expr(ctx, value)
                     .unwrap()
-                    .to_basic_value_enum(ctx, generator)
+                    .to_basic_value_enum(ctx)
                     .into_pointer_value();
                 let index = generator
                     .gen_expr(ctx, slice)
                     .unwrap()
-                    .to_basic_value_enum(ctx, generator)
+                    .to_basic_value_enum(ctx)
                     .into_int_value();
                 ctx.build_gep_and_load(v, &[int32.const_zero(), index])
             }

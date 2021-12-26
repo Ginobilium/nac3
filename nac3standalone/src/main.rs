@@ -295,7 +295,7 @@ fn main() {
         // println!("IR:\n{}", module.print_to_string().to_str().unwrap());
     })));
     let threads = (0..threads)
-        .map(|i| Box::new(DefaultCodeGenerator::new(format!("module{}", i), 64)))
+        .map(|i| Box::new(DefaultCodeGenerator::new(format!("module{}", i))))
         .collect();
     let (registry, handles) = WorkerRegistry::create_workers(threads, top_level, f);
     registry.add_task(task);

@@ -2,10 +2,10 @@ use std::collections::HashMap;
 use std::fmt::Debug;
 use std::{cell::RefCell, sync::Arc};
 
-use crate::{codegen::CodeGenerator, typecheck::{
+use crate::typecheck::{
     type_inferencer::PrimitiveStore,
     typedef::{Type, Unifier},
-}};
+};
 use crate::{
     codegen::CodeGenContext,
     toplevel::{DefinitionId, TopLevelDef},
@@ -31,7 +31,6 @@ pub trait StaticValue {
     fn to_basic_value_enum<'ctx, 'a>(
         &self,
         ctx: &mut CodeGenContext<'ctx, 'a>,
-        generator: &mut dyn CodeGenerator
     ) -> BasicValueEnum<'ctx>;
 
     fn get_field<'ctx, 'a>(
@@ -75,10 +74,9 @@ impl<'ctx> ValueEnum<'ctx> {
     pub fn to_basic_value_enum<'a>(
         self,
         ctx: &mut CodeGenContext<'ctx, 'a>,
-        generator: &mut dyn CodeGenerator,
     ) -> BasicValueEnum<'ctx> {
         match self {
-            ValueEnum::Static(v) => v.to_basic_value_enum(ctx, generator),
+            ValueEnum::Static(v) => v.to_basic_value_enum(ctx),
             ValueEnum::Dynamic(v) => v,
         }
     }

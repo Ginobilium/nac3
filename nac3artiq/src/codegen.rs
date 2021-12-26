@@ -1,19 +1,18 @@
 use nac3core::{
     codegen::{expr::gen_call, stmt::gen_with, CodeGenContext, CodeGenerator},
-    symbol_resolver::ValueEnum,
     toplevel::DefinitionId,
     typecheck::typedef::{FunSignature, Type},
+    symbol_resolver::ValueEnum,
 };
 
 use nac3parser::ast::{Expr, ExprKind, Located, Stmt, StmtKind, StrRef};
 
-use inkwell::{context::Context, types::IntType, values::BasicValueEnum};
+use inkwell::values::BasicValueEnum;
 
 use crate::timeline::TimeFns;
 
 pub struct ArtiqCodeGenerator<'a> {
     name: String,
-    size_t: u32,
     name_counter: u32,
     start: Option<Expr<Option<Type>>>,
     end: Option<Expr<Option<Type>>>,
@@ -21,11 +20,9 @@ pub struct ArtiqCodeGenerator<'a> {
 }
 
 impl<'a> ArtiqCodeGenerator<'a> {
-    pub fn new(name: String, size_t: u32, timeline: &'a (dyn TimeFns + Sync)) -> ArtiqCodeGenerator<'a> {
-        assert!(size_t == 32 || size_t == 64);
+    pub fn new(name: String, timeline: &'a (dyn TimeFns + Sync)) -> ArtiqCodeGenerator<'a> {
         ArtiqCodeGenerator {
             name,
-            size_t,
             name_counter: 0,
             start: None,
             end: None,
@@ -39,14 +36,6 @@ impl<'b> CodeGenerator for ArtiqCodeGenerator<'b> {
         &self.name
     }
 
-    fn get_size_type<'ctx>(&self, ctx: &'ctx Context) -> IntType<'ctx> {
-        if self.size_t == 32 {
-            ctx.i32_type()
-        } else {
-            ctx.i64_type()
-        }
-    }
-
     fn gen_call<'ctx, 'a>(
         &mut self,
         ctx: &mut CodeGenContext<'ctx, 'a>,
@@ -56,7 +45,7 @@ impl<'b> CodeGenerator for ArtiqCodeGenerator<'b> {
     ) -> Option<BasicValueEnum<'ctx>> {
         let result = gen_call(self, ctx, obj, fun, params);
         if let Some(end) = self.end.clone() {
-            let old_end = self.gen_expr(ctx, &end).unwrap().to_basic_value_enum(ctx, self);
+            let old_end = self.gen_expr(ctx, &end).unwrap().to_basic_value_enum(ctx);
             let now = self.timeline.emit_now_mu(ctx);
             let smax = ctx.module.get_function("llvm.smax.i64").unwrap_or_else(|| {
                 let i64 = ctx.ctx.i64_type();
@@ -76,7 +65,7 @@ impl<'b> CodeGenerator for ArtiqCodeGenerator<'b> {
             ctx.builder.build_store(end_store, max);
         }
         if let Some(start) = self.start.clone() {
-            let start_val = self.gen_expr(ctx, &start).unwrap().to_basic_value_enum(ctx, self);
+            let start_val = self.gen_expr(ctx, &start).unwrap().to_basic_value_enum(ctx);
             self.timeline.emit_at_mu(ctx, start_val);
         }
         result
@@ -108,9 +97,7 @@ impl<'b> CodeGenerator for ArtiqCodeGenerator<'b> {
                         let old_start = self.start.take();
                         let old_end = self.end.take();
                         let now = if let Some(old_start) = &old_start {
-                            self.gen_expr(ctx, old_start)
-                                .unwrap()
-                                .to_basic_value_enum(ctx, self)
+                            self.gen_expr(ctx, old_start).unwrap().to_basic_value_enum(ctx)
                         } else {
                             self.timeline.emit_now_mu(ctx)
                         };
@@ -159,10 +146,7 @@ impl<'b> CodeGenerator for ArtiqCodeGenerator<'b> {
                         }
                         // set duration
                         let end_expr = self.end.take().unwrap();
-                        let end_val = self
-                            .gen_expr(ctx, &end_expr)
-                            .unwrap()
-                            .to_basic_value_enum(ctx, self);
+                        let end_val = self.gen_expr(ctx, &end_expr).unwrap().to_basic_value_enum(ctx);
 
                         // inside an sequential block
                         if old_start.is_none() {
@@ -170,19 +154,15 @@ impl<'b> CodeGenerator for ArtiqCodeGenerator<'b> {
                         }
                         // inside a parallel block, should update the outer max now_mu
                         if let Some(old_end) = &old_end {
-                            let outer_end_val = self
-                                .gen_expr(ctx, old_end)
-                                .unwrap()
-                                .to_basic_value_enum(ctx, self);
-                            let smax =
-                                ctx.module.get_function("llvm.smax.i64").unwrap_or_else(|| {
-                                    let i64 = ctx.ctx.i64_type();
-                                    ctx.module.add_function(
-                                        "llvm.smax.i64",
-                                        i64.fn_type(&[i64.into(), i64.into()], false),
-                                        None,
-                                    )
-                                });
+                            let outer_end_val = self.gen_expr(ctx, old_end).unwrap().to_basic_value_enum(ctx);
+                            let smax = ctx.module.get_function("llvm.smax.i64").unwrap_or_else(|| {
+                                let i64 = ctx.ctx.i64_type();
+                                ctx.module.add_function(
+                                    "llvm.smax.i64",
+                                    i64.fn_type(&[i64.into(), i64.into()], false),
+                                    None,
+                                )
+                            });
                             let max = ctx
                                 .builder
                                 .build_call(smax, &[end_val.into(), outer_end_val.into()], "smax")

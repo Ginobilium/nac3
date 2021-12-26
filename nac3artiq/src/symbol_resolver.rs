@@ -1,6 +1,6 @@
 use inkwell::{types::BasicType, values::BasicValueEnum, AddressSpace};
 use nac3core::{
-    codegen::{CodeGenContext, CodeGenerator},
+    codegen::CodeGenContext,
     location::Location,
     symbol_resolver::{StaticValue, SymbolResolver, SymbolValue, ValueEnum},
     toplevel::{DefinitionId, TopLevelDef},
@@ -72,7 +72,6 @@ impl StaticValue for PythonValue {
     fn to_basic_value_enum<'ctx, 'a>(
         &self,
         ctx: &mut CodeGenContext<'ctx, 'a>,
-        generator: &mut dyn CodeGenerator,
     ) -> BasicValueEnum<'ctx> {
         if let Some(val) = self.resolver.id_to_primitive.read().get(&self.id) {
             return match val {
@@ -90,7 +89,7 @@ impl StaticValue for PythonValue {
 
         Python::with_gil(|py| -> PyResult<BasicValueEnum<'ctx>> {
             self.resolver
-                .get_obj_value(py, self.value.as_ref(py), ctx, generator)
+                .get_obj_value(py, self.value.as_ref(py), ctx)
                 .map(Option::unwrap)
         })
         .unwrap()
@@ -541,7 +540,6 @@ impl InnerResolver {
         py: Python,
         obj: &PyAny,
         ctx: &mut CodeGenContext<'ctx, 'a>,
-        generator: &mut dyn CodeGenerator,
     ) -> PyResult<Option<BasicValueEnum<'ctx>>> {
         let ty_id: u64 = self
             .helper
@@ -597,9 +595,11 @@ impl InnerResolver {
                 .unwrap()
             };
             let ty = ctx.get_llvm_type(ty);
-            let size_t = generator.get_size_type(ctx.ctx);
             let arr_ty = ctx.ctx.struct_type(
-                &[ty.ptr_type(AddressSpace::Generic).into(), size_t.into()],
+                &[
+                    ctx.ctx.i32_type().into(),
+                    ty.ptr_type(AddressSpace::Generic).into(),
+                ],
                 false,
             );
 
@@ -618,7 +618,7 @@ impl InnerResolver {
             let arr: Result<Option<Vec<_>>, _> = (0..len)
                 .map(|i| {
                     obj.get_item(i)
-                        .and_then(|elem| self.get_obj_value(py, elem, ctx, generator))
+                        .and_then(|elem| self.get_obj_value(py, elem, ctx))
                 })
                 .collect();
             let arr = arr?.unwrap();
@@ -665,11 +665,11 @@ impl InnerResolver {
             arr_global.set_initializer(&arr);
 
             let val = arr_ty.const_named_struct(&[
+                ctx.ctx.i32_type().const_int(len as u64, false).into(),
                 arr_global
                     .as_pointer_value()
                     .const_cast(ty.ptr_type(AddressSpace::Generic))
                     .into(),
-                size_t.const_int(len as u64, false).into(),
             ]);
 
             let global = ctx
@@ -716,7 +716,7 @@ impl InnerResolver {
 
             let val: Result<Option<Vec<_>>, _> = elements
                 .iter()
-                .map(|elem| self.get_obj_value(py, elem, ctx, generator))
+                .map(|elem| self.get_obj_value(py, elem, ctx))
                 .collect();
             let val = val?.unwrap();
             let val = ctx.ctx.const_struct(&val, false);
@@ -763,7 +763,7 @@ impl InnerResolver {
                 let values: Result<Option<Vec<_>>, _> = fields
                     .iter()
                     .map(|(name, _, _)| {
-                        self.get_obj_value(py, obj.getattr(&name.to_string())?, ctx, generator)
+                        self.get_obj_value(py, obj.getattr(&name.to_string())?, ctx)
                     })
                     .collect();
                 let values = values?;

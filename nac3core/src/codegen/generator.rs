@@ -4,18 +4,12 @@ use crate::{
     toplevel::{DefinitionId, TopLevelDef},
     typecheck::typedef::{FunSignature, Type},
 };
-use inkwell::{
-    context::Context,
-    types::{BasicTypeEnum, IntType},
-    values::{BasicValueEnum, PointerValue},
-};
+use inkwell::values::{BasicValueEnum, PointerValue};
 use nac3parser::ast::{Expr, Stmt, StrRef};
 
 pub trait CodeGenerator {
     /// Return the module name for the code generator.
     fn get_name(&self) -> &str;
-
-    fn get_size_type<'ctx>(&self, ctx: &'ctx Context) -> IntType<'ctx>;
 
     /// Generate function call and returns the function return value.
     /// - obj: Optional object for method call.
@@ -28,10 +22,7 @@ pub trait CodeGenerator {
         obj: Option<(Type, ValueEnum<'ctx>)>,
         fun: (&FunSignature, DefinitionId),
         params: Vec<(Option<StrRef>, ValueEnum<'ctx>)>,
-    ) -> Option<BasicValueEnum<'ctx>>
-    where
-        Self: Sized,
-    {
+    ) -> Option<BasicValueEnum<'ctx>> {
         gen_call(self, ctx, obj, fun, params)
     }
 
@@ -45,10 +36,7 @@ pub trait CodeGenerator {
         signature: &FunSignature,
         def: &TopLevelDef,
         params: Vec<(Option<StrRef>, ValueEnum<'ctx>)>,
-    ) -> BasicValueEnum<'ctx>
-    where
-        Self: Sized,
-    {
+    ) -> BasicValueEnum<'ctx> {
         gen_constructor(self, ctx, signature, def, params)
     }
 
@@ -74,10 +62,7 @@ pub trait CodeGenerator {
         &mut self,
         ctx: &mut CodeGenContext<'ctx, 'a>,
         expr: &Expr<Option<Type>>,
-    ) -> Option<ValueEnum<'ctx>>
-    where
-        Self: Sized,
-    {
+    ) -> Option<ValueEnum<'ctx>> {
         gen_expr(self, ctx, expr)
     }
 
@@ -86,7 +71,7 @@ pub trait CodeGenerator {
     fn gen_var_alloc<'ctx, 'a>(
         &mut self,
         ctx: &mut CodeGenContext<'ctx, 'a>,
-        ty: BasicTypeEnum<'ctx>,
+        ty: Type,
     ) -> PointerValue<'ctx> {
         gen_var(ctx, ty)
     }
@@ -96,10 +81,7 @@ pub trait CodeGenerator {
         &mut self,
         ctx: &mut CodeGenContext<'ctx, 'a>,
         pattern: &Expr<Option<Type>>,
-    ) -> PointerValue<'ctx>
-    where
-        Self: Sized,
-    {
+    ) -> PointerValue<'ctx> {
         gen_store_target(self, ctx, pattern)
     }
 
@@ -109,9 +91,7 @@ pub trait CodeGenerator {
         ctx: &mut CodeGenContext<'ctx, 'a>,
         target: &Expr<Option<Type>>,
         value: ValueEnum<'ctx>,
-    ) where
-        Self: Sized,
-    {
+    ) {
         gen_assign(self, ctx, target, value)
     }
 
@@ -121,10 +101,7 @@ pub trait CodeGenerator {
         &mut self,
         ctx: &mut CodeGenContext<'ctx, 'a>,
         stmt: &Stmt<Option<Type>>,
-    ) -> bool
-    where
-        Self: Sized,
-    {
+    ) -> bool {
         gen_while(self, ctx, stmt);
         false
     }
@@ -135,10 +112,7 @@ pub trait CodeGenerator {
         &mut self,
         ctx: &mut CodeGenContext<'ctx, 'a>,
         stmt: &Stmt<Option<Type>>,
-    ) -> bool
-    where
-        Self: Sized,
-    {
+    ) -> bool {
         gen_for(self, ctx, stmt);
         false
     }
@@ -149,10 +123,7 @@ pub trait CodeGenerator {
         &mut self,
         ctx: &mut CodeGenContext<'ctx, 'a>,
         stmt: &Stmt<Option<Type>>,
-    ) -> bool
-    where
-        Self: Sized,
-    {
+    ) -> bool {
         gen_if(self, ctx, stmt)
     }
 
@@ -160,10 +131,7 @@ pub trait CodeGenerator {
         &mut self,
         ctx: &mut CodeGenContext<'ctx, 'a>,
         stmt: &Stmt<Option<Type>>,
-    ) -> bool
-    where
-        Self: Sized,
-    {
+    ) -> bool {
         gen_with(self, ctx, stmt)
     }
 
@@ -173,38 +141,23 @@ pub trait CodeGenerator {
         &mut self,
         ctx: &mut CodeGenContext<'ctx, 'a>,
         stmt: &Stmt<Option<Type>>,
-    ) -> bool
-    where
-        Self: Sized,
-    {
+    ) -> bool {
         gen_stmt(self, ctx, stmt)
     }
 }
 
 pub struct DefaultCodeGenerator {
     name: String,
-    size_t: u32,
 }
 
 impl DefaultCodeGenerator {
-    pub fn new(name: String, size_t: u32) -> DefaultCodeGenerator {
-        assert!(size_t == 32 || size_t == 64);
-        DefaultCodeGenerator { name, size_t }
+    pub fn new(name: String) -> DefaultCodeGenerator {
+        DefaultCodeGenerator { name }
     }
 }
 
 impl CodeGenerator for DefaultCodeGenerator {
     fn get_name(&self) -> &str {
         &self.name
-    }
-
-    fn get_size_type<'ctx>(&self, ctx: &'ctx Context) -> IntType<'ctx> {
-        // it should be unsigned, but we don't really need unsigned and this could save us from
-        // having to do a bit cast...
-        if self.size_t == 32 {
-            ctx.i32_type()
-        } else {
-            ctx.i64_type()
-        }
     }
 }
