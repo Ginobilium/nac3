@@ -66,6 +66,67 @@
               '';
           }
         );
+
+        # LLVM PGO support
+        llvm-nac3-instrumented = pkgs.callPackage "${self}/llvm" {
+          stdenv = pkgs.llvmPackages_13.stdenv;
+          extraCmakeFlags = [ "-DLLVM_BUILD_INSTRUMENTED=IR" ];
+        };
+        nac3artiq-instrumented = pkgs.python3Packages.toPythonModule (
+          pkgs.rustPlatform.buildRustPackage {
+            name = "nac3artiq-instrumented";
+            src = self;
+            cargoLock = { lockFile = ./Cargo.lock; };
+            nativeBuildInputs = [ pkgs.python3 llvm-nac3-instrumented ];
+            buildInputs = [ pkgs.python3 llvm-nac3-instrumented ];
+            cargoBuildFlags = [ "--package" "nac3artiq" "--features" "init-llvm-profile" ];
+            doCheck = false;
+            configurePhase =
+              ''
+              export CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C link-arg=-L${pkgs.llvmPackages_13.compiler-rt}/lib/linux -C link-arg=-lclang_rt.profile-x86_64"
+              '';
+            installPhase =
+              ''
+              TARGET_DIR=$out/${pkgs.python3Packages.python.sitePackages}
+              mkdir -p $TARGET_DIR
+              cp target/x86_64-unknown-linux-gnu/release/libnac3artiq.so $TARGET_DIR/nac3artiq.so
+              '';
+          }
+        );
+        nac3artiq-profile = pkgs.stdenvNoCC.mkDerivation {
+          name = "nac3artiq-profile";
+          src = self;
+          buildInputs = [ (pkgs.python3.withPackages(ps: [ ps.numpy nac3artiq-instrumented ])) pkgs.lld_13 pkgs.llvmPackages_13.libllvm ];
+          phases = [ "buildPhase" "installPhase" ];
+          # TODO: get more representative code.
+          buildPhase = "python $src/nac3artiq/demo/demo.py";
+          installPhase =
+            ''
+            mkdir $out
+            llvm-profdata merge -o $out/llvm.profdata /build/llvm/build/profiles/*
+            '';
+        };
+        llvm-nac3-pgo = pkgs.callPackage "${self}/llvm" {
+          stdenv = pkgs.llvmPackages_13.stdenv;
+          extraCmakeFlags = [ "-DLLVM_PROFDATA_FILE=${nac3artiq-profile}/llvm.profdata" ];
+        };
+        nac3artiq-pgo = pkgs.python3Packages.toPythonModule (
+          pkgs.rustPlatform.buildRustPackage {
+            name = "nac3artiq-pgo";
+            src = self;
+            cargoLock = { lockFile = ./Cargo.lock; };
+            nativeBuildInputs = [ pkgs.python3 llvm-nac3-pgo ];
+            buildInputs = [ pkgs.python3 llvm-nac3-pgo ];
+            cargoBuildFlags = [ "--package" "nac3artiq" ];
+            cargoTestFlags = [ "--package" "nac3ast" "--package" "nac3parser" "--package" "nac3core" "--package" "nac3artiq" ];
+            installPhase =
+              ''
+              TARGET_DIR=$out/${pkgs.python3Packages.python.sitePackages}
+              mkdir -p $TARGET_DIR
+              cp target/x86_64-unknown-linux-gnu/release/libnac3artiq.so $TARGET_DIR/nac3artiq.so
+              '';
+          }
+        );
       };
 
       packages.x86_64-w64-mingw32 = rec {

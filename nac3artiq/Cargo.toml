@@ -19,3 +19,6 @@ nac3core = { path = "../nac3core" }
 version = "0.1.0-beta.4"
 default-features = false
 features = ["llvm13-0", "target-x86", "target-arm", "target-riscv", "no-libffi-linking"]
+
+[features]
+init-llvm-profile = []

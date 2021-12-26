@@ -12,6 +12,7 @@
 , debugVersion ? false
 , enableManpages ? false
 , enableSharedLibraries ? false
+, extraCmakeFlags ? []
 }:
 
 let
@@ -149,7 +150,7 @@ in stdenv.mkDerivation (rec {
         ];
       in "-DCROSS_TOOLCHAIN_FLAGS_NATIVE:list=${lib.concatStringsSep ";" nativeToolchainFlags}"
     )
-  ];
+  ] ++ extraCmakeFlags;
 
   postBuild = ''
     rm -fR $out
