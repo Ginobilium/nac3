@@ -596,7 +596,7 @@ impl InnerResolver {
                 )?
                 .unwrap()
             };
-            let ty = ctx.get_llvm_type(generator, ty);
+            let ty = ctx.get_llvm_type(ty);
             let size_t = generator.get_size_type(ctx.ctx);
             let arr_ty = ctx.ctx.struct_type(
                 &[ty.ptr_type(AddressSpace::Generic).into(), size_t.into()],
@@ -696,7 +696,7 @@ impl InnerResolver {
                         &ctx.top_level.definitions.read(),
                         &ctx.primitives,
                     )
-                    .map(|ty| ty.map(|ty| ctx.get_llvm_type(generator, ty)))
+                    .map(|ty| ty.map(|ty| ctx.get_llvm_type(ty)))
                 })
                 .collect();
             let types = types?.unwrap();
@@ -737,7 +737,7 @@ impl InnerResolver {
                 .get_obj_type(py, obj, &mut ctx.unifier, &top_level_defs, &ctx.primitives)?
                 .unwrap();
             let ty = ctx
-                .get_llvm_type(generator, ty)
+                .get_llvm_type(ty)
                 .into_pointer_type()
                 .get_element_type()
                 .into_struct_type()
