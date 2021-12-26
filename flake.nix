@@ -53,9 +53,7 @@
           pkgs.rustPlatform.buildRustPackage {
             name = "nac3artiq";
             src = self;
-            cargoLock = {
-              lockFile = ./Cargo.lock;
-            };
+            cargoLock = { lockFile = ./Cargo.lock; };
             nativeBuildInputs = [ pkgs.python3 llvm-nac3 ];
             buildInputs = [ pkgs.python3 llvm-nac3 ];
             cargoBuildFlags = [ "--package" "nac3artiq" ];
@@ -76,9 +74,7 @@
           pkgs-mingw.rustPlatform.buildRustPackage {
             name = "nac3artiq";
             src = self;
-            cargoLock = {
-              lockFile = ./Cargo.lock;
-            };
+            cargoLock = { lockFile = ./Cargo.lock; };
             nativeBuildInputs = [ pkgs.zip ];
             buildInputs = [ pkgs-mingw.zlib ];
             configurePhase =
