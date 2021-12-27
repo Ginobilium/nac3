@@ -9,6 +9,9 @@ expression: parse_ast
         location: Location {
             row: 1,
             column: 1,
+            file: FileName(
+                "unknown",
+            ),
         },
         custom: (),
         node: Expr {
@@ -16,6 +19,9 @@ expression: parse_ast
                 location: Location {
                     row: 1,
                     column: 6,
+                    file: FileName(
+                        "unknown",
+                    ),
                 },
                 custom: (),
                 node: Call {
@@ -23,6 +29,9 @@ expression: parse_ast
                         location: Location {
                             row: 1,
                             column: 1,
+                            file: FileName(
+                                "unknown",
+                            ),
                         },
                         custom: (),
                         node: Name {
@@ -35,6 +44,9 @@ expression: parse_ast
                             location: Location {
                                 row: 1,
                                 column: 8,
+                                file: FileName(
+                                    "unknown",
+                                ),
                             },
                             custom: (),
                             node: Constant {
@@ -48,6 +60,9 @@ expression: parse_ast
                             location: Location {
                                 row: 1,
                                 column: 22,
+                                file: FileName(
+                                    "unknown",
+                                ),
                             },
                             custom: (),
                             node: Constant {

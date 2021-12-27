@@ -1,5 +1,6 @@
 ---
 source: nac3parser/src/parser.rs
+assertion_line: 125
 expression: parse_ast
 
 ---
@@ -8,6 +9,9 @@ expression: parse_ast
         location: Location {
             row: 1,
             column: 1,
+            file: FileName(
+                "unknown",
+            ),
         },
         custom: (),
         node: Expr {
@@ -15,6 +19,9 @@ expression: parse_ast
                 location: Location {
                     row: 1,
                     column: 1,
+                    file: FileName(
+                        "unknown",
+                    ),
                 },
                 custom: (),
                 node: Lambda {
@@ -25,6 +32,9 @@ expression: parse_ast
                                 location: Location {
                                     row: 1,
                                     column: 8,
+                                    file: FileName(
+                                        "unknown",
+                                    ),
                                 },
                                 custom: (),
                                 node: ArgData {
@@ -37,6 +47,9 @@ expression: parse_ast
                                 location: Location {
                                     row: 1,
                                     column: 11,
+                                    file: FileName(
+                                        "unknown",
+                                    ),
                                 },
                                 custom: (),
                                 node: ArgData {
@@ -56,6 +69,9 @@ expression: parse_ast
                         location: Location {
                             row: 1,
                             column: 16,
+                            file: FileName(
+                                "unknown",
+                            ),
                         },
                         custom: (),
                         node: BinOp {
@@ -63,6 +79,9 @@ expression: parse_ast
                                 location: Location {
                                     row: 1,
                                     column: 14,
+                                    file: FileName(
+                                        "unknown",
+                                    ),
                                 },
                                 custom: (),
                                 node: Name {
@@ -75,6 +94,9 @@ expression: parse_ast
                                 location: Location {
                                     row: 1,
                                     column: 18,
+                                    file: FileName(
+                                        "unknown",
+                                    ),
                                 },
                                 custom: (),
                                 node: Name {

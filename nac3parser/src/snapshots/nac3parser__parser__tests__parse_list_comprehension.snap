@@ -1,11 +1,16 @@
 ---
-source: parser/src/parser.rs
+source: nac3parser/src/parser.rs
+assertion_line: 157
 expression: parse_ast
+
 ---
 Located {
     location: Location {
         row: 1,
         column: 1,
+        file: FileName(
+            "unknown",
+        ),
     },
     custom: (),
     node: ListComp {
@@ -13,6 +18,9 @@ Located {
             location: Location {
                 row: 1,
                 column: 2,
+                file: FileName(
+                    "unknown",
+                ),
             },
             custom: (),
             node: Name {
@@ -26,6 +34,9 @@ Located {
                     location: Location {
                         row: 1,
                         column: 8,
+                        file: FileName(
+                            "unknown",
+                        ),
                     },
                     custom: (),
                     node: Name {
@@ -37,6 +48,9 @@ Located {
                     location: Location {
                         row: 1,
                         column: 13,
+                        file: FileName(
+                            "unknown",
+                        ),
                     },
                     custom: (),
                     node: Name {

@@ -8,6 +8,9 @@ Located {
     location: Location {
         row: 0,
         column: 0,
+        file: FileName(
+            "unknown",
+        ),
     },
     custom: (),
     node: FormattedValue {
@@ -15,6 +18,9 @@ Located {
             location: Location {
                 row: 1,
                 column: 5,
+                file: FileName(
+                    "unknown",
+                ),
             },
             custom: (),
             node: Compare {
@@ -22,6 +28,9 @@ Located {
                     location: Location {
                         row: 1,
                         column: 2,
+                        file: FileName(
+                            "unknown",
+                        ),
                     },
                     custom: (),
                     node: Constant {
@@ -41,6 +50,9 @@ Located {
                         location: Location {
                             row: 1,
                             column: 8,
+                            file: FileName(
+                                "unknown",
+                            ),
                         },
                         custom: (),
                         node: Constant {

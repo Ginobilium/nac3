@@ -1,7 +1,7 @@
 ---
 source: nac3parser/src/parser.rs
 assertion_line: 199
-expression: parse_program(&source).unwrap()
+expression: "parse_program(&source, Default::default()).unwrap()"
 
 ---
 [
@@ -9,6 +9,9 @@ expression: parse_program(&source).unwrap()
         location: Location {
             row: 1,
             column: 1,
+            file: FileName(
+                "unknown",
+            ),
         },
         custom: (),
         node: While {
@@ -16,6 +19,9 @@ expression: parse_program(&source).unwrap()
                 location: Location {
                     row: 4,
                     column: 7,
+                    file: FileName(
+                        "unknown",
+                    ),
                 },
                 custom: (),
                 node: Name {
@@ -28,6 +34,9 @@ expression: parse_program(&source).unwrap()
                     location: Location {
                         row: 6,
                         column: 5,
+                        file: FileName(
+                            "unknown",
+                        ),
                     },
                     custom: (),
                     node: Assign {
@@ -36,6 +45,9 @@ expression: parse_program(&source).unwrap()
                                 location: Location {
                                     row: 6,
                                     column: 5,
+                                    file: FileName(
+                                        "unknown",
+                                    ),
                                 },
                                 custom: (),
                                 node: Name {
@@ -48,6 +60,9 @@ expression: parse_program(&source).unwrap()
                             location: Location {
                                 row: 6,
                                 column: 9,
+                                file: FileName(
+                                    "unknown",
+                                ),
                             },
                             custom: (),
                             node: Constant {

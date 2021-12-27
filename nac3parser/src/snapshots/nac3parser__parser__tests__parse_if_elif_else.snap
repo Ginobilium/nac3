@@ -9,6 +9,9 @@ expression: parse_ast
         location: Location {
             row: 1,
             column: 1,
+            file: FileName(
+                "unknown",
+            ),
         },
         custom: (),
         node: If {
@@ -16,6 +19,9 @@ expression: parse_ast
                 location: Location {
                     row: 1,
                     column: 4,
+                    file: FileName(
+                        "unknown",
+                    ),
                 },
                 custom: (),
                 node: Constant {
@@ -32,6 +38,9 @@ expression: parse_ast
                     location: Location {
                         row: 1,
                         column: 7,
+                        file: FileName(
+                            "unknown",
+                        ),
                     },
                     custom: (),
                     node: Expr {
@@ -39,6 +48,9 @@ expression: parse_ast
                             location: Location {
                                 row: 1,
                                 column: 7,
+                                file: FileName(
+                                    "unknown",
+                                ),
                             },
                             custom: (),
                             node: Constant {
@@ -59,6 +71,9 @@ expression: parse_ast
                     location: Location {
                         row: 2,
                         column: 1,
+                        file: FileName(
+                            "unknown",
+                        ),
                     },
                     custom: (),
                     node: If {
@@ -66,6 +81,9 @@ expression: parse_ast
                             location: Location {
                                 row: 2,
                                 column: 6,
+                                file: FileName(
+                                    "unknown",
+                                ),
                             },
                             custom: (),
                             node: Constant {
@@ -82,6 +100,9 @@ expression: parse_ast
                                 location: Location {
                                     row: 2,
                                     column: 9,
+                                    file: FileName(
+                                        "unknown",
+                                    ),
                                 },
                                 custom: (),
                                 node: Expr {
@@ -89,6 +110,9 @@ expression: parse_ast
                                         location: Location {
                                             row: 2,
                                             column: 9,
+                                            file: FileName(
+                                                "unknown",
+                                            ),
                                         },
                                         custom: (),
                                         node: Constant {
@@ -109,6 +133,9 @@ expression: parse_ast
                                 location: Location {
                                     row: 3,
                                     column: 7,
+                                    file: FileName(
+                                        "unknown",
+                                    ),
                                 },
                                 custom: (),
                                 node: Expr {
@@ -116,6 +143,9 @@ expression: parse_ast
                                         location: Location {
                                             row: 3,
                                             column: 7,
+                                            file: FileName(
+                                                "unknown",
+                                            ),
                                         },
                                         custom: (),
                                         node: Constant {

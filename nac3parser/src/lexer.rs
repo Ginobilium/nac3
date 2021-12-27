@@ -1339,7 +1339,7 @@ mod tests {
     const UNIX_EOL: &str = "\n";
 
     pub fn lex_source(source: &str) -> Vec<Tok> {
-        let lexer = make_tokenizer(source);
+        let lexer = make_tokenizer(source, Default::default());
         lexer.map(|x| x.unwrap().1).collect()
     }
 

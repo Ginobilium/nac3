@@ -1,7 +1,7 @@
 ---
 source: nac3parser/src/parser.rs
 assertion_line: 186
-expression: parse_program(&source).unwrap()
+expression: "parse_program(&source, Default::default()).unwrap()"
 
 ---
 [
@@ -9,6 +9,9 @@ expression: parse_program(&source).unwrap()
         location: Location {
             row: 1,
             column: 1,
+            file: FileName(
+                "unknown",
+            ),
         },
         custom: (),
         node: AnnAssign {
@@ -16,6 +19,9 @@ expression: parse_program(&source).unwrap()
                 location: Location {
                     row: 1,
                     column: 1,
+                    file: FileName(
+                        "unknown",
+                    ),
                 },
                 custom: (),
                 node: Name {
@@ -27,6 +33,9 @@ expression: parse_program(&source).unwrap()
                 location: Location {
                     row: 1,
                     column: 4,
+                    file: FileName(
+                        "unknown",
+                    ),
                 },
                 custom: (),
                 node: Name {
@@ -45,6 +54,9 @@ expression: parse_program(&source).unwrap()
         location: Location {
             row: 2,
             column: 1,
+            file: FileName(
+                "unknown",
+            ),
         },
         custom: (),
         node: For {
@@ -52,6 +64,9 @@ expression: parse_program(&source).unwrap()
                 location: Location {
                     row: 3,
                     column: 5,
+                    file: FileName(
+                        "unknown",
+                    ),
                 },
                 custom: (),
                 node: Name {
@@ -63,6 +78,9 @@ expression: parse_program(&source).unwrap()
                 location: Location {
                     row: 3,
                     column: 11,
+                    file: FileName(
+                        "unknown",
+                    ),
                 },
                 custom: (),
                 node: Tuple {
@@ -71,6 +89,9 @@ expression: parse_program(&source).unwrap()
                             location: Location {
                                 row: 3,
                                 column: 11,
+                                file: FileName(
+                                    "unknown",
+                                ),
                             },
                             custom: (),
                             node: Constant {
@@ -86,6 +107,9 @@ expression: parse_program(&source).unwrap()
                             location: Location {
                                 row: 3,
                                 column: 15,
+                                file: FileName(
+                                    "unknown",
+                                ),
                             },
                             custom: (),
                             node: Constant {
@@ -104,6 +128,9 @@ expression: parse_program(&source).unwrap()
                     location: Location {
                         row: 4,
                         column: 5,
+                        file: FileName(
+                            "unknown",
+                        ),
                     },
                     custom: (),
                     node: AnnAssign {
@@ -111,6 +138,9 @@ expression: parse_program(&source).unwrap()
                             location: Location {
                                 row: 4,
                                 column: 5,
+                                file: FileName(
+                                    "unknown",
+                                ),
                             },
                             custom: (),
                             node: Name {
@@ -122,6 +152,9 @@ expression: parse_program(&source).unwrap()
                             location: Location {
                                 row: 4,
                                 column: 8,
+                                file: FileName(
+                                    "unknown",
+                                ),
                             },
                             custom: (),
                             node: Name {
@@ -147,6 +180,9 @@ expression: parse_program(&source).unwrap()
         location: Location {
             row: 5,
             column: 1,
+            file: FileName(
+                "unknown",
+            ),
         },
         custom: (),
         node: While {
@@ -154,6 +190,9 @@ expression: parse_program(&source).unwrap()
                 location: Location {
                     row: 7,
                     column: 9,
+                    file: FileName(
+                        "unknown",
+                    ),
                 },
                 custom: (),
                 node: Compare {
@@ -161,6 +200,9 @@ expression: parse_program(&source).unwrap()
                         location: Location {
                             row: 7,
                             column: 7,
+                            file: FileName(
+                                "unknown",
+                            ),
                         },
                         custom: (),
                         node: Name {
@@ -176,6 +218,9 @@ expression: parse_program(&source).unwrap()
                             location: Location {
                                 row: 7,
                                 column: 11,
+                                file: FileName(
+                                    "unknown",
+                                ),
                             },
                             custom: (),
                             node: Constant {
@@ -195,6 +240,9 @@ expression: parse_program(&source).unwrap()
                     location: Location {
                         row: 9,
                         column: 5,
+                        file: FileName(
+                            "unknown",
+                        ),
                     },
                     custom: (),
                     node: Pass {
@@ -207,6 +255,9 @@ expression: parse_program(&source).unwrap()
                     location: Location {
                         row: 12,
                         column: 5,
+                        file: FileName(
+                            "unknown",
+                        ),
                     },
                     custom: (),
                     node: Expr {
@@ -214,6 +265,9 @@ expression: parse_program(&source).unwrap()
                             location: Location {
                                 row: 12,
                                 column: 7,
+                                file: FileName(
+                                    "unknown",
+                                ),
                             },
                             custom: (),
                             node: BinOp {
@@ -221,6 +275,9 @@ expression: parse_program(&source).unwrap()
                                     location: Location {
                                         row: 12,
                                         column: 5,
+                                        file: FileName(
+                                            "unknown",
+                                        ),
                                     },
                                     custom: (),
                                     node: Constant {
@@ -237,6 +294,9 @@ expression: parse_program(&source).unwrap()
                                     location: Location {
                                         row: 12,
                                         column: 9,
+                                        file: FileName(
+                                            "unknown",
+                                        ),
                                     },
                                     custom: (),
                                     node: Constant {
@@ -261,6 +321,9 @@ expression: parse_program(&source).unwrap()
                     location: Location {
                         row: 13,
                         column: 5,
+                        file: FileName(
+                            "unknown",
+                        ),
                     },
                     custom: (),
                     node: If {
@@ -268,6 +331,9 @@ expression: parse_program(&source).unwrap()
                             location: Location {
                                 row: 15,
                                 column: 8,
+                                file: FileName(
+                                    "unknown",
+                                ),
                             },
                             custom: (),
                             node: Constant {
@@ -284,6 +350,9 @@ expression: parse_program(&source).unwrap()
                                 location: Location {
                                     row: 16,
                                     column: 9,
+                                    file: FileName(
+                                        "unknown",
+                                    ),
                                 },
                                 custom: (),
                                 node: Expr {
@@ -291,6 +360,9 @@ expression: parse_program(&source).unwrap()
                                         location: Location {
                                             row: 16,
                                             column: 9,
+                                            file: FileName(
+                                                "unknown",
+                                            ),
                                         },
                                         custom: (),
                                         node: Constant {

@@ -9,6 +9,9 @@ expression: parse_ast
         location: Location {
             row: 1,
             column: 1,
+            file: FileName(
+                "unknown",
+            ),
         },
         custom: (),
         node: Expr {
@@ -16,6 +19,9 @@ expression: parse_ast
                 location: Location {
                     row: 1,
                     column: 8,
+                    file: FileName(
+                        "unknown",
+                    ),
                 },
                 custom: (),
                 node: Call {
@@ -23,6 +29,9 @@ expression: parse_ast
                         location: Location {
                             row: 1,
                             column: 1,
+                            file: FileName(
+                                "unknown",
+                            ),
                         },
                         custom: (),
                         node: Name {
@@ -35,6 +44,9 @@ expression: parse_ast
                             location: Location {
                                 row: 1,
                                 column: 10,
+                                file: FileName(
+                                    "unknown",
+                                ),
                             },
                             custom: (),
                             node: Constant {
@@ -50,6 +62,9 @@ expression: parse_ast
                             location: Location {
                                 row: 1,
                                 column: 23,
+                                file: FileName(
+                                    "unknown",
+                                ),
                             },
                             custom: (),
                             node: KeywordData {
@@ -60,6 +75,9 @@ expression: parse_ast
                                     location: Location {
                                         row: 1,
                                         column: 31,
+                                        file: FileName(
+                                            "unknown",
+                                        ),
                                     },
                                     custom: (),
                                     node: Constant {

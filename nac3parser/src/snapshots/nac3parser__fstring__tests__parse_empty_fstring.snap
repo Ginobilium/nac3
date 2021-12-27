@@ -1,11 +1,16 @@
 ---
-source: parser/src/fstring.rs
+source: nac3parser/src/fstring.rs
+assertion_line: 319
 expression: "parse_fstring(\"\").unwrap()"
+
 ---
 Located {
     location: Location {
         row: 0,
         column: 0,
+        file: FileName(
+            "unknown",
+        ),
     },
     custom: (),
     node: Constant {

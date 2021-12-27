@@ -74,7 +74,7 @@ fn test_primitives() {
         d = a if c == 1 else 0
         return d
         "};
-    let statements = parse_program(source).unwrap();
+    let statements = parse_program(source, Default::default()).unwrap();
 
     let composer: TopLevelComposer = Default::default();
     let mut unifier = composer.unifier.clone();
@@ -193,12 +193,12 @@ fn test_simple_call() {
         a = foo(a)
         return a * 2
         "};
-    let statements_1 = parse_program(source_1).unwrap();
+    let statements_1 = parse_program(source_1, Default::default()).unwrap();
 
     let source_2 = indoc! { "
         return a + 1
         "};
-    let statements_2 = parse_program(source_2).unwrap();
+    let statements_2 = parse_program(source_2, Default::default()).unwrap();
 
     let composer: TopLevelComposer = Default::default();
     let mut unifier = composer.unifier.clone();

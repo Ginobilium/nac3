@@ -8,6 +8,9 @@ Located {
     location: Location {
         row: 1,
         column: 1,
+        file: FileName(
+            "unknown",
+        ),
     },
     custom: (),
     node: ListComp {
@@ -15,6 +18,9 @@ Located {
             location: Location {
                 row: 1,
                 column: 2,
+                file: FileName(
+                    "unknown",
+                ),
             },
             custom: (),
             node: Name {
@@ -28,6 +34,9 @@ Located {
                     location: Location {
                         row: 1,
                         column: 8,
+                        file: FileName(
+                            "unknown",
+                        ),
                     },
                     custom: (),
                     node: Tuple {
@@ -36,6 +45,9 @@ Located {
                                 location: Location {
                                     row: 1,
                                     column: 8,
+                                    file: FileName(
+                                        "unknown",
+                                    ),
                                 },
                                 custom: (),
                                 node: Name {
@@ -47,6 +59,9 @@ Located {
                                 location: Location {
                                     row: 1,
                                     column: 11,
+                                    file: FileName(
+                                        "unknown",
+                                    ),
                                 },
                                 custom: (),
                                 node: Name {
@@ -62,6 +77,9 @@ Located {
                     location: Location {
                         row: 1,
                         column: 17,
+                        file: FileName(
+                            "unknown",
+                        ),
                     },
                     custom: (),
                     node: Name {
@@ -77,6 +95,9 @@ Located {
                     location: Location {
                         row: 1,
                         column: 23,
+                        file: FileName(
+                            "unknown",
+                        ),
                     },
                     custom: (),
                     node: Name {
@@ -88,6 +109,9 @@ Located {
                     location: Location {
                         row: 1,
                         column: 28,
+                        file: FileName(
+                            "unknown",
+                        ),
                     },
                     custom: (),
                     node: Name {
@@ -100,6 +124,9 @@ Located {
                         location: Location {
                             row: 1,
                             column: 35,
+                            file: FileName(
+                                "unknown",
+                            ),
                         },
                         custom: (),
                         node: Compare {
@@ -107,6 +134,9 @@ Located {
                                 location: Location {
                                     row: 1,
                                     column: 33,
+                                    file: FileName(
+                                        "unknown",
+                                    ),
                                 },
                                 custom: (),
                                 node: Name {
@@ -122,6 +152,9 @@ Located {
                                     location: Location {
                                         row: 1,
                                         column: 37,
+                                        file: FileName(
+                                            "unknown",
+                                        ),
                                     },
                                     custom: (),
                                     node: Constant {
@@ -140,6 +173,9 @@ Located {
                         location: Location {
                             row: 1,
                             column: 44,
+                            file: FileName(
+                                "unknown",
+                            ),
                         },
                         custom: (),
                         node: Compare {
@@ -147,6 +183,9 @@ Located {
                                 location: Location {
                                     row: 1,
                                     column: 42,
+                                    file: FileName(
+                                        "unknown",
+                                    ),
                                 },
                                 custom: (),
                                 node: Name {
@@ -162,6 +201,9 @@ Located {
                                     location: Location {
                                         row: 1,
                                         column: 46,
+                                        file: FileName(
+                                            "unknown",
+                                        ),
                                     },
                                     custom: (),
                                     node: Constant {

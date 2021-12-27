@@ -103,7 +103,7 @@ fn test_simple_register(source: Vec<&str>) {
     let mut composer: TopLevelComposer = Default::default();
 
     for s in source {
-        let ast = parse_program(s).unwrap();
+        let ast = parse_program(s, Default::default()).unwrap();
         let ast = ast[0].clone();
 
         composer.register_top_level(ast, None, "".into()).unwrap();
@@ -149,7 +149,7 @@ fn test_simple_function_analyze(source: Vec<&str>, tys: Vec<&str>, names: Vec<&s
         Arc::new(Resolver(internal_resolver.clone())) as Arc<dyn SymbolResolver + Send + Sync>;
 
     for s in source {
-        let ast = parse_program(s).unwrap();
+        let ast = parse_program(s, Default::default()).unwrap();
         let ast = ast[0].clone();
 
         let (id, def_id, ty) =
@@ -333,7 +333,7 @@ fn test_simple_function_analyze(source: Vec<&str>, tys: Vec<&str>, names: Vec<&s
                     pass
         "}
     ],
-    vec!["application of type vars to generic class is not currently supported (at line 4 column 24)"];
+    vec!["application of type vars to generic class is not currently supported (at unknown: line 4 column 24)"];
     "err no type var in generic app"
 )]
 #[test_case(
@@ -389,7 +389,7 @@ fn test_simple_function_analyze(source: Vec<&str>, tys: Vec<&str>, names: Vec<&s
             def __init__():
                 pass
     "}],
-    vec!["__init__ method must have a `self` parameter (at line 2 column 5)"];
+    vec!["__init__ method must have a `self` parameter (at unknown: line 2 column 5)"];
     "err no self_1"
 )]
 #[test_case(
@@ -411,7 +411,7 @@ fn test_simple_function_analyze(source: Vec<&str>, tys: Vec<&str>, names: Vec<&s
         "}
 
     ],
-    vec!["a class definition can only have at most one base class declaration and one generic declaration (at line 1 column 24)"];
+    vec!["a class definition can only have at most one base class declaration and one generic declaration (at unknown: line 1 column 24)"];
     "err multiple inheritance"
 )]
 #[test_case(
@@ -479,7 +479,7 @@ fn test_simple_function_analyze(source: Vec<&str>, tys: Vec<&str>, names: Vec<&s
                     pass
         "}
     ],
-    vec!["duplicate definition of class `A` ( at line 1 column 1)"];
+    vec!["duplicate definition of class `A` (at unknown: line 1 column 1)"];
     "class same name"
 )]
 fn test_analyze(source: Vec<&str>, res: Vec<&str>) {
@@ -499,7 +499,7 @@ fn test_analyze(source: Vec<&str>, res: Vec<&str>) {
         Arc::new(Resolver(internal_resolver.clone())) as Arc<dyn SymbolResolver + Send + Sync>;
 
     for s in source {
-        let ast = parse_program(s).unwrap();
+        let ast = parse_program(s, Default::default()).unwrap();
         let ast = ast[0].clone();
 
         let (id, def_id, ty) = {
@@ -683,7 +683,7 @@ fn test_inference(source: Vec<&str>, res: Vec<&str>) {
         Arc::new(Resolver(internal_resolver.clone())) as Arc<dyn SymbolResolver + Send + Sync>;
 
     for s in source {
-        let ast = parse_program(s).unwrap();
+        let ast = parse_program(s, Default::default()).unwrap();
         let ast = ast[0].clone();
 
         let (id, def_id, ty) = {

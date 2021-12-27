@@ -461,7 +461,7 @@ fn test_basic(source: &str, mapping: HashMap<&str, &str>, virtuals: &[(&str, &st
     defined_identifiers.insert("virtual".into());
     let mut inferencer = env.get_inferencer();
     inferencer.defined_identifiers = defined_identifiers.clone();
-    let statements = parse_program(source).unwrap();
+    let statements = parse_program(source, Default::default()).unwrap();
     let statements = statements
         .into_iter()
         .map(|v| inferencer.fold_stmt(v))
@@ -603,7 +603,7 @@ fn test_primitive_magic_methods(source: &str, mapping: HashMap<&str, &str>) {
     defined_identifiers.insert("virtual".into());
     let mut inferencer = env.get_inferencer();
     inferencer.defined_identifiers = defined_identifiers.clone();
-    let statements = parse_program(source).unwrap();
+    let statements = parse_program(source, Default::default()).unwrap();
     let statements = statements
         .into_iter()
         .map(|v| inferencer.fold_stmt(v))

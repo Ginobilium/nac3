@@ -1,11 +1,16 @@
 ---
-source: parser/src/fstring.rs
+source: nac3parser/src/fstring.rs
+assertion_line: 389
 expression: parse_ast
+
 ---
 Located {
     location: Location {
         row: 0,
         column: 0,
+        file: FileName(
+            "unknown",
+        ),
     },
     custom: (),
     node: JoinedStr {
@@ -14,6 +19,9 @@ Located {
                 location: Location {
                     row: 0,
                     column: 0,
+                    file: FileName(
+                        "unknown",
+                    ),
                 },
                 custom: (),
                 node: Constant {
@@ -27,6 +35,9 @@ Located {
                 location: Location {
                     row: 0,
                     column: 0,
+                    file: FileName(
+                        "unknown",
+                    ),
                 },
                 custom: (),
                 node: Constant {
@@ -40,6 +51,9 @@ Located {
                 location: Location {
                     row: 0,
                     column: 0,
+                    file: FileName(
+                        "unknown",
+                    ),
                 },
                 custom: (),
                 node: FormattedValue {
@@ -47,6 +61,9 @@ Located {
                         location: Location {
                             row: 1,
                             column: 2,
+                            file: FileName(
+                                "unknown",
+                            ),
                         },
                         custom: (),
                         node: Name {
