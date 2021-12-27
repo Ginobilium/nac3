@@ -7,7 +7,7 @@
 
 use std::iter;
 
-use crate::ast;
+use crate::ast::{self, FileName};
 use crate::error::ParseError;
 use crate::lexer;
 pub use crate::mode::Mode;
@@ -20,8 +20,8 @@ use crate::python;
  */
 
 /// Parse a full python program, containing usually multiple lines.
-pub fn parse_program(source: &str) -> Result<ast::Suite, ParseError> {
-    parse(source, Mode::Module).map(|top| match top {
+pub fn parse_program(source: &str, file: FileName) -> Result<ast::Suite, ParseError> {
+    parse(source, Mode::Module, file).map(|top| match top {
         ast::Mod::Module { body, .. } => body,
         _ => unreachable!(),
     })
@@ -63,15 +63,15 @@ pub fn parse_program(source: &str) -> Result<ast::Suite, ParseError> {
 ///
 /// ```
 pub fn parse_expression(source: &str) -> Result<ast::Expr, ParseError> {
-    parse(source, Mode::Expression).map(|top| match top {
+    parse(source, Mode::Expression, Default::default()).map(|top| match top {
         ast::Mod::Expression { body } => *body,
         _ => unreachable!(),
     })
 }
 
 // Parse a given source code
-pub fn parse(source: &str, mode: Mode) -> Result<ast::Mod, ParseError> {
-    let lxr = lexer::make_tokenizer(source);
+pub fn parse(source: &str, mode: Mode, file: FileName) -> Result<ast::Mod, ParseError> {
+    let lxr = lexer::make_tokenizer(source, file);
     let marker_token = (Default::default(), mode.to_marker(), Default::default());
     let tokenizer = iter::once(Ok(marker_token)).chain(lxr);
 

@@ -97,10 +97,10 @@ impl Nac3 {
             ))
         })?;
 
-        let source = fs::read_to_string(source_file).map_err(|e| {
+        let source = fs::read_to_string(&source_file).map_err(|e| {
             exceptions::PyIOError::new_err(format!("failed to read input file: {}", e))
         })?;
-        let parser_result = parser::parse_program(&source)
+        let parser_result = parser::parse_program(&source, source_file.into())
             .map_err(|e| exceptions::PySyntaxError::new_err(format!("parse error: {}", e)))?;
 
         for mut stmt in parser_result.into_iter() {
@@ -476,7 +476,7 @@ impl Nac3 {
                 arg_names.join(", ")
             )
         };
-        let mut synthesized = parse_program(&synthesized).unwrap();
+        let mut synthesized = parse_program(&synthesized, Default::default()).unwrap();
         let resolver = Arc::new(Resolver(Arc::new(InnerResolver {
             id_to_type: self.builtins_ty.clone().into(),
             id_to_def: self.builtins_def.clone().into(),

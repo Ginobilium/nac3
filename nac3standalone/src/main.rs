@@ -35,7 +35,7 @@ fn main() {
 
     Target::initialize_all(&InitializationConfig::default());
 
-    let program = match fs::read_to_string(demo_name + ".py") {
+    let program = match fs::read_to_string(demo_name.clone() + ".py") {
         Ok(program) => program,
         Err(err) => {
             println!("Cannot open input file: {}", err);
@@ -64,7 +64,7 @@ fn main() {
         setup_time.duration_since(start).unwrap().as_millis()
     );
 
-    let parser_result = parser::parse_program(&program).unwrap();
+    let parser_result = parser::parse_program(&program, format!("{}.py", demo_name).into()).unwrap();
     let parse_time = SystemTime::now();
     println!(
         "parse time: {}ms",

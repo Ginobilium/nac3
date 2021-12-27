@@ -163,9 +163,8 @@ impl TopLevelComposer {
             ast::StmtKind::ClassDef { name: class_name, body, .. } => {
                 if self.keyword_list.contains(class_name) {
                     return Err(format!(
-                        "cannot use keyword `{}` as a class name ({} at {})",
+                        "cannot use keyword `{}` as a class name (at {})",
                         class_name,
-                        mod_path,
                         ast.location
                     ));
                 }
@@ -175,9 +174,8 @@ impl TopLevelComposer {
                     n
                 }) {
                     return Err(format!(
-                        "duplicate definition of class `{}` ({} at {})",
+                        "duplicate definition of class `{}` (at {})",
                         class_name,
-                        mod_path,
                         ast.location
                     ));
                 }
@@ -223,9 +221,8 @@ impl TopLevelComposer {
                         }
                         if self.keyword_list.contains(method_name) {
                             return Err(format!(
-                                "cannot use keyword `{}` as a method name ({} at {})",
+                                "cannot use keyword `{}` as a method name (at {})",
                                 method_name,
-                                mod_path,
                                 b.location
                             ));
                         }
@@ -242,9 +239,8 @@ impl TopLevelComposer {
                         };
                         if !defined_names.insert(global_class_method_name.clone()) {
                             return Err(format!(
-                                "class method `{}` defined twice ({} at {})",
+                                "class method `{}` defined twice (at {})",
                                 &global_class_method_name[mod_path.len()..],
-                                mod_path,
                                 b.location
                             ));
                         }
@@ -309,9 +305,8 @@ impl TopLevelComposer {
                 };
                 if !defined_names.insert(global_fun_name.clone()) {
                     return Err(format!(
-                        "top level function `{}` defined twice ({} at {})",
+                        "top level function `{}` defined twice (at {})",
                         &global_fun_name[mod_path.len()..],
-                        mod_path,
                         ast.location
                     ));
                 }
@@ -340,8 +335,7 @@ impl TopLevelComposer {
             }
 
             _ => Err(format!(
-                "registrations of constructs other than top level classes/functions are not supported ({} at {})",
-                mod_path,
+                "registrations of constructs other than top level classes/functions are not supported (at {})",
                 ast.location
             )),
         }
@@ -794,7 +788,7 @@ impl TopLevelComposer {
                                                 &type_annotation,
                                                 primitives_store,
                                                 unifier
-                                            ).map_err(|err| format!("{} at {}", err, x.location))?;
+                                            ).map_err(|err| format!("{} (at {})", err, x.location))?;
                                             v
                                         })
                                     }
@@ -865,7 +859,7 @@ impl TopLevelComposer {
                     ));
                     unifier
                         .unify(*dummy_ty, function_ty)
-                        .map_err(|old| format!("{} at {}", old, function_ast.location))?;
+                        .map_err(|old| format!("{} (at {})", old, function_ast.location))?;
                 } else {
                     unreachable!("must be both function");
                 }
@@ -1028,7 +1022,7 @@ impl TopLevelComposer {
                                             Some({
                                                 let v = Self::parse_parameter_default_value(default, class_resolver)?;
                                                 Self::check_default_param_type(&v, &type_ann, primitives, unifier)
-                                                    .map_err(|err| format!("{} at {}", err, x.location))?;
+                                                    .map_err(|err| format!("{} (at {})", err, x.location))?;
                                                 v
                                             })
                                         }
@@ -1351,7 +1345,7 @@ impl TopLevelComposer {
                 ));
                 self.unifier
                     .unify(constructor.unwrap(), contor_type)
-                    .map_err(|old| format!("{} at {}", old, ast.as_ref().unwrap().location))?;
+                    .map_err(|old| format!("{} (at {})", old, ast.as_ref().unwrap().location))?;
 
                 // class field instantiation check
                 if let (Some(init_id), false) = (init_id, fields.is_empty()) {
@@ -1568,7 +1562,7 @@ impl TopLevelComposer {
                                 &mut |id| format!("tvar{}", id),
                             );
                             return Err(format!(
-                                "expected return type of `{}` in function `{}` at {}",
+                                "expected return type of `{}` in function `{}` (at {})",
                                 ret_str,
                                 name,
                                 ast.as_ref().unwrap().location

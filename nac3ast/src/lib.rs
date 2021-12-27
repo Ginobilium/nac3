@@ -9,6 +9,6 @@ mod impls;
 mod location;
 
 pub use ast_gen::*;
-pub use location::Location;
+pub use location::{Location, FileName};
 
 pub type Suite<U = ()> = Vec<Stmt<U>>;

@@ -3,7 +3,7 @@
 //! This means source code is translated into separate tokens.
 
 pub use super::token::Tok;
-use crate::ast::Location;
+use crate::ast::{Location, FileName};
 use crate::error::{LexicalError, LexicalErrorType};
 use std::char;
 use std::cmp::Ordering;
@@ -111,8 +111,8 @@ pub type Spanned = (Location, Tok, Location);
 pub type LexResult = Result<Spanned, LexicalError>;
 
 #[inline]
-pub fn make_tokenizer(source: &str) -> impl Iterator<Item = LexResult> + '_ {
-    make_tokenizer_located(source, Location::new(0, 0))
+pub fn make_tokenizer(source: &str, file: FileName) -> impl Iterator<Item = LexResult> + '_ {
+    make_tokenizer_located(source, Location::new(0, 0, file))
 }
 
 pub fn make_tokenizer_located(

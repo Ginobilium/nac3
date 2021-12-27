@@ -1,17 +1,32 @@
 //! Datatypes to support source location information.
-
+use crate::ast_gen::StrRef;
 use std::fmt;
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FileName(StrRef);
+impl Default for FileName {
+    fn default() -> Self {
+        FileName("unknown".into())
+    }
+}
+
+impl From<String> for FileName {
+    fn from(s: String) -> Self {
+        FileName(s.into())
+    }
+}
 
 /// A location somewhere in the sourcecode.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Location {
     row: usize,
     column: usize,
+    file: FileName
 }
 
 impl fmt::Display for Location {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "line {} column {}", self.row, self.column)
+        write!(f, "{}: line {} column {}", self.file.0, self.row, self.column)
     }
 }
 
@@ -47,8 +62,8 @@ impl Location {
 }
 
 impl Location {
-    pub fn new(row: usize, column: usize) -> Self {
-        Location { row, column }
+    pub fn new(row: usize, column: usize, file: FileName) -> Self {
+        Location { row, column, file }
     }
 
     pub fn row(&self) -> usize {
