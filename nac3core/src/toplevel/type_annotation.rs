@@ -93,12 +93,13 @@ pub fn parse_ast_to_type_annotation_kinds<T>(
                 Ok(TypeAnnotation::TypeVar(ty))
             } else {
                 Err(format!(
-                    "not a type variable identifier at {}",
+                    "`{}` is not a valid type annotation (at {})",
+                    id,
                     expr.location
                 ))
             }
         } else {
-            Err(format!("name cannot be parsed as a type annotation at {}", expr.location))
+            Err(format!("`{}` is not a valid type annotation (at {})", id, expr.location))
         }
     };
 
@@ -244,11 +245,11 @@ pub fn parse_ast_to_type_annotation_kinds<T>(
             if let ast::ExprKind::Name { id, .. } = &value.node {
                 class_name_handle(id, slice, unifier, locked)
             } else {
-                Err(format!("unsupported expression type for class name at {}", value.location))
+                Err(format!("unsupported expression type for class name (at {})", value.location))
             }
         }
 
-        _ => Err(format!("unsupported expression for type annotation at {}", expr.location)),
+        _ => Err(format!("unsupported expression for type annotation (at {})", expr.location)),
     }
 }
 
