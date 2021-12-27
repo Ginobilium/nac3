@@ -488,7 +488,6 @@ pub fn allocate_list<'ctx, 'a, G: CodeGenerator>(
         let ptr_to_arr =
             ctx.builder.build_in_bounds_gep(arr_str_ptr, &[zero, i32_t.const_zero()], "ptr_to_arr");
         ctx.builder.build_store(ptr_to_arr, arr_ptr);
-        println!("arr_str_ptr: {:?}", arr_str_ptr);
         arr_str_ptr
     }
 }

@@ -68,7 +68,7 @@ pub fn gen_store_target<'ctx, 'a, G: CodeGenerator>(
                 .into_int_value();
             unsafe {
                 let arr_ptr = ctx
-                    .build_gep_and_load(v, &[i32_type.const_zero(), i32_type.const_int(1, false)])
+                    .build_gep_and_load(v, &[i32_type.const_zero(), i32_type.const_zero()])
                     .into_pointer_value();
                 ctx.builder.build_gep(arr_ptr, &[index], "loadarrgep")
             }
@@ -168,7 +168,6 @@ pub fn gen_for<'ctx, 'a, G: CodeGenerator>(
             );
             ctx.builder.position_at_end(body_bb);
         } else {
-            println!("{:?}", iter_val);
             let counter = generator.gen_var_alloc(ctx, size_t.into());
             // counter = -1
             ctx.builder.build_store(counter, size_t.const_int(u64::max_value(), true));

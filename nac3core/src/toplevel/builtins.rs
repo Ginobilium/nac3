@@ -589,7 +589,12 @@ pub fn get_builtins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
                         } else {
                             let int32 = ctx.ctx.i32_type();
                             let zero = int32.const_zero();
-                            Some(ctx.build_gep_and_load(arg.into_pointer_value(), &[zero, zero]))
+                            let len = ctx.build_gep_and_load(arg.into_pointer_value(), &[zero, int32.const_int(1, false)]).into_int_value();
+                            if len.get_type().get_bit_width() != 32 {
+                                Some(ctx.builder.build_int_truncate(len, int32, "len2i32").into())
+                            } else {
+                                Some(len.into())
+                            }
                         }
                     },
                 )))),
@@ -624,7 +629,7 @@ pub fn get_builtins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
 //     if diff > 0 and step > 0:
 //          return ((diff - 1) // step) + 1
 //     elif diff < 0 and step < 0:
-//          return ((diff + 1) // step) + 1 
+//          return ((diff + 1) // step) + 1
 //     else:
 //          return 0
 pub fn calculate_len_for_slice_range<'ctx, 'a>(
@@ -638,11 +643,11 @@ pub fn calculate_len_for_slice_range<'ctx, 'a>(
     let end = ctx.builder.build_int_s_extend(end, int32, "end");
     let step = ctx.builder.build_int_s_extend(step, int32, "step");
     let diff = ctx.builder.build_int_sub(end, start, "diff");
-    
+
     let diff_pos = ctx.builder.build_int_compare(SGT, diff, int32.const_zero(), "diffpos");
     let step_pos = ctx.builder.build_int_compare(SGT, step, int32.const_zero(), "steppos");
     let test_1 = ctx.builder.build_and(diff_pos, step_pos, "bothpos");
-    
+
     let current = ctx.builder.get_insert_block().unwrap().get_parent().unwrap();
     let then_bb = ctx.ctx.append_basic_block(current, "then");
     let else_bb = ctx.ctx.append_basic_block(current, "else");
@@ -651,7 +656,7 @@ pub fn calculate_len_for_slice_range<'ctx, 'a>(
     let cont_bb_2 = ctx.ctx.append_basic_block(current, "cont_2");
     let cont_bb = ctx.ctx.append_basic_block(current, "cont");
     ctx.builder.build_conditional_branch(test_1, then_bb, else_bb);
-    
+
     ctx.builder.position_at_end(then_bb);
     let length_pos = {
         let diff_pos_min_1 = ctx.builder.build_int_sub(diff, int32.const_int(1, false), "diffminone");
@@ -659,15 +664,15 @@ pub fn calculate_len_for_slice_range<'ctx, 'a>(
         ctx.builder.build_int_add(length_pos, int32.const_int(1, false), "add1")
     };
     ctx.builder.build_unconditional_branch(cont_bb);
-    
+
     ctx.builder.position_at_end(else_bb);
     let phi_1 = {
         let diff_neg = ctx.builder.build_int_compare(SLT, diff, int32.const_zero(), "diffneg");
         let step_neg = ctx.builder.build_int_compare(SLT, step, int32.const_zero(), "stepneg");
         let test_2 = ctx.builder.build_and(diff_neg, step_neg, "bothneg");
-        
+
         ctx.builder.build_conditional_branch(test_2, then_bb_2, else_bb_2);
-        
+
         ctx.builder.position_at_end(then_bb_2);
         let length_neg = {
             let diff_neg_add_1 = ctx.builder.build_int_add(diff, int32.const_int(1, false), "diffminone");
@@ -675,18 +680,18 @@ pub fn calculate_len_for_slice_range<'ctx, 'a>(
             ctx.builder.build_int_add(length_neg, int32.const_int(1, false), "add1")
         };
         ctx.builder.build_unconditional_branch(cont_bb_2);
-        
+
         ctx.builder.position_at_end(else_bb_2);
         let length_zero = int32.const_zero();
         ctx.builder.build_unconditional_branch(cont_bb_2);
-        
+
         ctx.builder.position_at_end(cont_bb_2);
         let phi_1 = ctx.builder.build_phi(int32, "lenphi1");
         phi_1.add_incoming(&[(&length_neg, then_bb_2), (&length_zero, else_bb_2)]);
         phi_1.as_basic_value().into_int_value()
     };
     ctx.builder.build_unconditional_branch(cont_bb);
-    
+
     ctx.builder.position_at_end(cont_bb);
     let phi = ctx.builder.build_phi(int32, "lenphi");
     phi.add_incoming(&[(&length_pos, then_bb), (&phi_1, cont_bb_2)]);
