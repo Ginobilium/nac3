@@ -39,7 +39,7 @@ impl SymbolResolver for Resolver {
     fn get_default_param_value(&self, _: &nac3parser::ast::Expr) -> Option<crate::symbol_resolver::SymbolValue> {
         unimplemented!()
     }
-    
+
     fn get_symbol_type(
         &self,
         _: &mut Unifier,
@@ -88,7 +88,7 @@ fn test_primitives() {
         class_names: Default::default(),
     }) as Arc<dyn SymbolResolver + Send + Sync>;
 
-    let threads = vec![DefaultCodeGenerator::new("test".into()).into()];
+    let threads = vec![DefaultCodeGenerator::new("test".into(), 32).into()];
     let signature = FunSignature {
         args: vec![
             FuncArg { name: "a".into(), ty: primitives.int32, default_value: None },
@@ -245,7 +245,7 @@ fn test_simple_call() {
         unreachable!()
     }
 
-    let threads = vec![DefaultCodeGenerator::new("test".into()).into()];
+    let threads = vec![DefaultCodeGenerator::new("test".into(), 32).into()];
     let mut function_data = FunctionData {
         resolver: resolver.clone(),
         bound_variables: Vec::new(),
