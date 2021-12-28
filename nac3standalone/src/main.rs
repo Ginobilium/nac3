@@ -25,7 +25,7 @@ mod basic_symbol_resolver;
 use basic_symbol_resolver::*;
 
 fn main() {
-    let demo_name = env::args().nth(1).unwrap();
+    let file_name = env::args().nth(1).unwrap() + ".py";
     let threads: u32 = env::args()
         .nth(2)
         .map(|s| str::parse(&s).unwrap())
@@ -35,7 +35,7 @@ fn main() {
 
     Target::initialize_all(&InitializationConfig::default());
 
-    let program = match fs::read_to_string(demo_name.clone() + ".py") {
+    let program = match fs::read_to_string(file_name.clone()) {
         Ok(program) => program,
         Err(err) => {
             println!("Cannot open input file: {}", err);
@@ -64,7 +64,7 @@ fn main() {
         setup_time.duration_since(start).unwrap().as_millis()
     );
 
-    let parser_result = parser::parse_program(&program, format!("{}.py", demo_name).into()).unwrap();
+    let parser_result = parser::parse_program(&program, file_name.into()).unwrap();
     let parse_time = SystemTime::now();
     println!(
         "parse time: {}ms",
