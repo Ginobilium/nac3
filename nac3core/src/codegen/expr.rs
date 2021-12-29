@@ -657,7 +657,15 @@ pub fn gen_expr<'ctx, 'a, G: CodeGenerator>(
                 .iter()
                 .map(|x| generator.gen_expr(ctx, x).unwrap().to_basic_value_enum(ctx, generator))
                 .collect_vec();
-            let ty = if elements.is_empty() { int32.into() } else { elements[0].get_type() };
+            let ty = if elements.is_empty() {
+                if let TypeEnum::TList { ty } = &*ctx.unifier.get_ty(expr.custom.unwrap()) {
+                    ctx.get_llvm_type(generator, *ty)
+                } else {
+                    unreachable!()
+                }
+            } else {
+                elements[0].get_type()
+            };
             let length = generator.get_size_type(ctx.ctx).const_int(elements.len() as u64, false);
             let arr_str_ptr = allocate_list(generator, ctx, ty, length);
             let arr_ptr = ctx.build_gep_and_load(arr_str_ptr, &[zero, zero]).into_pointer_value();
