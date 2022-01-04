@@ -66,6 +66,10 @@
               '';
           }
         );
+        python3-mimalloc = pkgs.python3 // rec {
+          withMimalloc = pkgs.python3.buildEnv.override({ makeWrapperArgs = [ "--set LD_PRELOAD ${pkgs.mimalloc}/lib/libmimalloc.so" ]; });
+          withPackages = f: let packages = f pkgs.python3.pkgs; in withMimalloc.override { extraLibs = packages; };
+        };
 
         # LLVM PGO support
         llvm-nac3-instrumented = pkgs.callPackage "${self}/llvm" {
@@ -96,7 +100,7 @@
         nac3artiq-profile = pkgs.stdenvNoCC.mkDerivation {
           name = "nac3artiq-profile";
           src = self;
-          buildInputs = [ (pkgs.python3.withPackages(ps: [ ps.numpy nac3artiq-instrumented ])) pkgs.lld_13 pkgs.llvmPackages_13.libllvm ];
+          buildInputs = [ (python3-mimalloc.withPackages(ps: [ ps.numpy nac3artiq-instrumented ])) pkgs.lld_13 pkgs.llvmPackages_13.libllvm ];
           phases = [ "buildPhase" "installPhase" ];
           # TODO: get more representative code.
           buildPhase = "python $src/nac3artiq/demo/demo.py";
@@ -179,7 +183,7 @@
           cargo-insta
           rustc
           clippy
-          (python3.withPackages(ps: [ ps.numpy ]))
+          (packages.x86_64-linux.python3-mimalloc.withPackages(ps: [ ps.numpy ]))
         ];
       };
 
