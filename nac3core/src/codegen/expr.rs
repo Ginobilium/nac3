@@ -3,7 +3,9 @@ use std::{collections::HashMap, convert::TryInto, iter::once};
 use crate::{
     codegen::{
         concrete_type::{ConcreteFuncArg, ConcreteTypeEnum, ConcreteTypeStore},
-        get_llvm_type, CodeGenContext, CodeGenTask,
+        get_llvm_type,
+        irrt::integer_power,
+        CodeGenContext, CodeGenTask,
     },
     symbol_resolver::{SymbolValue, ValueEnum},
     toplevel::{DefinitionId, TopLevelDef},
@@ -186,8 +188,8 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
             Operator::LShift => self.builder.build_left_shift(lhs, rhs, "lshift").into(),
             Operator::RShift => self.builder.build_right_shift(lhs, rhs, true, "rshift").into(),
             Operator::FloorDiv => self.builder.build_int_signed_div(lhs, rhs, "floordiv").into(),
+            Operator::Pow => integer_power(self, lhs, rhs).into(),
             // special implementation?
-            Operator::Pow => unimplemented!(),
             Operator::MatMult => unreachable!(),
         }
     }
@@ -205,6 +207,7 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
         } else {
             unreachable!()
         };
+        let float = self.ctx.f64_type();
         match op {
             Operator::Add => self.builder.build_float_add(lhs, rhs, "fadd").into(),
             Operator::Sub => self.builder.build_float_sub(lhs, rhs, "fsub").into(),
@@ -215,7 +218,6 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
                 let div = self.builder.build_float_div(lhs, rhs, "fdiv");
                 let floor_intrinsic =
                     self.module.get_function("llvm.floor.f64").unwrap_or_else(|| {
-                        let float = self.ctx.f64_type();
                         let fn_type = float.fn_type(&[float.into()], false);
                         self.module.add_function("llvm.floor.f64", fn_type, None)
                     });
@@ -224,6 +226,16 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
                     .try_as_basic_value()
                     .left()
                     .unwrap()
+            }
+            Operator::Pow => {
+                let pow_intrinsic = self.module.get_function("llvm.pow.f64").unwrap_or_else(|| {
+                    let fn_type = float.fn_type(&[float.into(), float.into()], false);
+                    self.module.add_function("llvm.pow.f64", fn_type, None)
+                });
+                self.builder
+                    .build_call(pow_intrinsic, &[lhs.into(), rhs.into()], "f_pow")
+                    .try_as_basic_value()
+                    .unwrap_left()
             }
             // special implementation?
             _ => unimplemented!(),
@@ -630,6 +642,47 @@ pub fn gen_comprehension<'ctx, 'a, G: CodeGenerator>(
     }
 }
 
+pub fn gen_binop_expr<'ctx, 'a, G: CodeGenerator>(
+    generator: &mut G,
+    ctx: &mut CodeGenContext<'ctx, 'a>,
+    left: &Expr<Option<Type>>,
+    op: &Operator,
+    right: &Expr<Option<Type>>,
+) -> ValueEnum<'ctx> {
+    let ty1 = ctx.unifier.get_representative(left.custom.unwrap());
+    let ty2 = ctx.unifier.get_representative(right.custom.unwrap());
+    let left = generator.gen_expr(ctx, left).unwrap().to_basic_value_enum(ctx, generator);
+    let right = generator.gen_expr(ctx, right).unwrap().to_basic_value_enum(ctx, generator);
+
+    // we can directly compare the types, because we've got their representatives
+    // which would be unchanged until further unification, which we would never do
+    // when doing code generation for function instances
+    if ty1 == ty2 && [ctx.primitives.int32, ctx.primitives.int64].contains(&ty1) {
+        ctx.gen_int_ops(op, left, right)
+    } else if ty1 == ty2 && ctx.primitives.float == ty1 {
+        ctx.gen_float_ops(op, left, right)
+    } else if ty1 == ctx.primitives.float && ty2 == ctx.primitives.int32 {
+        // Pow is the only operator that would pass typecheck between float and int
+        assert!(*op == Operator::Pow);
+        // TODO: throw exception when rhs is out of i16 bound
+        // since llvm intrinsic only support to i16 for f64
+        let i16_t = ctx.ctx.i16_type();
+        let pow_intr = ctx.module.get_function("llvm.powi.f64.i16").unwrap_or_else(|| {
+            let f64_t = ctx.ctx.f64_type();
+            let ty = f64_t.fn_type(&[f64_t.into(), i16_t.into()], false);
+            ctx.module.add_function("llvm.powi.f64.i16", ty, None)
+        });
+        let right = ctx.builder.build_int_truncate(right.into_int_value(), i16_t, "r_pow");
+        ctx.builder
+            .build_call(pow_intr, &[left.into(), right.into()], "f_pow_i")
+            .try_as_basic_value()
+            .unwrap_left()
+    } else {
+        unimplemented!()
+    }
+    .into()
+}
+
 pub fn gen_expr<'ctx, 'a, G: CodeGenerator>(
     generator: &mut G,
     ctx: &mut CodeGenContext<'ctx, 'a>,
@@ -766,24 +819,7 @@ pub fn gen_expr<'ctx, 'a, G: CodeGenerator>(
             phi.add_incoming(&[(&a, a_bb), (&b, b_bb)]);
             phi.as_basic_value().into()
         }
-        ExprKind::BinOp { op, left, right } => {
-            let ty1 = ctx.unifier.get_representative(left.custom.unwrap());
-            let ty2 = ctx.unifier.get_representative(right.custom.unwrap());
-            let left = generator.gen_expr(ctx, left).unwrap().to_basic_value_enum(ctx, generator);
-            let right = generator.gen_expr(ctx, right).unwrap().to_basic_value_enum(ctx, generator);
-
-            // we can directly compare the types, because we've got their representatives
-            // which would be unchanged until further unification, which we would never do
-            // when doing code generation for function instances
-            if ty1 == ty2 && [ctx.primitives.int32, ctx.primitives.int64].contains(&ty1) {
-                ctx.gen_int_ops(op, left, right)
-            } else if ty1 == ty2 && ctx.primitives.float == ty1 {
-                ctx.gen_float_ops(op, left, right)
-            } else {
-                unimplemented!()
-            }
-            .into()
-        }
+        ExprKind::BinOp { op, left, right } => gen_binop_expr(generator, ctx, left, op, right),
         ExprKind::UnaryOp { op, operand } => {
             let ty = ctx.unifier.get_representative(operand.custom.unwrap());
             let val = generator.gen_expr(ctx, operand).unwrap().to_basic_value_enum(ctx, generator);

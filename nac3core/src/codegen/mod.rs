@@ -31,6 +31,7 @@ pub mod concrete_type;
 pub mod expr;
 mod generator;
 pub mod stmt;
+pub mod irrt;
 
 #[cfg(test)]
 mod test;

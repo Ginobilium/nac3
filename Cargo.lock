@@ -513,6 +513,7 @@ dependencies = [
  "nac3parser",
  "parking_lot",
  "rayon",
+ "regex",
  "test-case",
 ]
 

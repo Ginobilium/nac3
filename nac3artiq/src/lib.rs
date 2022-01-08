@@ -21,6 +21,7 @@ use parking_lot::{Mutex, RwLock};
 
 use nac3core::{
     codegen::{concrete_type::ConcreteTypeStore, CodeGenTask, WithCall, WorkerRegistry},
+    codegen::irrt::load_irrt,
     symbol_resolver::SymbolResolver,
     toplevel::{composer::{TopLevelComposer, ComposerConfig}, DefinitionId, GenCall, TopLevelDef},
     typecheck::typedef::{FunSignature, FuncArg},
@@ -588,6 +589,8 @@ impl Nac3 {
             main.link_in_module(other)
                 .map_err(|err| exceptions::PyRuntimeError::new_err(err.to_string()))?;
         }
+        main.link_in_module(load_irrt(&context))
+            .map_err(|err| exceptions::PyRuntimeError::new_err(err.to_string()))?;
 
         let mut function_iter = main.get_first_function();
         while let Some(func) = function_iter {
