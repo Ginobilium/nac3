@@ -268,6 +268,7 @@ fn main() {
         let builder = PassManagerBuilder::create();
         builder.set_optimization_level(OptimizationLevel::Aggressive);
         let passes = PassManager::create(());
+        builder.set_inliner_with_threshold(255);
         builder.populate_module_pass_manager(&passes);
         passes.run_on(module);
 
