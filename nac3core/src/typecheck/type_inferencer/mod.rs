@@ -688,7 +688,7 @@ impl<'a> Inferencer<'a> {
                             location: args[0].location,
                             custom,
                             node: ExprKind::Constant {
-                                value: ast::Constant::Int(val.clone()),
+                                value: ast::Constant::Int(*val),
                                 kind: kind.clone(),
                             },
                         });

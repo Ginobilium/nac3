@@ -448,7 +448,8 @@ pub fn gen_call<'ctx, 'a, G: CodeGenerator>(
         if let Some(obj) = &obj {
             args.insert(0, FuncArg { name: "self".into(), ty: obj.0, default_value: None });
         }
-        let params = args.iter().map(|arg| ctx.get_llvm_type(generator, arg.ty).into()).collect_vec();
+        let params =
+            args.iter().map(|arg| ctx.get_llvm_type(generator, arg.ty).into()).collect_vec();
         let fun_ty = if ctx.unifier.unioned(fun.0.ret, ctx.primitives.none) {
             ctx.ctx.void_type().fn_type(&params, false)
         } else {

@@ -1,10 +1,7 @@
 use super::{
     super::symbol_resolver::ValueEnum, expr::destructure_range, CodeGenContext, CodeGenerator,
 };
-use crate::{
-    codegen::expr::gen_binop_expr,
-    typecheck::typedef::Type,
-};
+use crate::{codegen::expr::gen_binop_expr, typecheck::typedef::Type};
 use inkwell::{
     types::BasicTypeEnum,
     values::{BasicValue, BasicValueEnum, PointerValue},

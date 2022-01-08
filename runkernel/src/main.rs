@@ -1,5 +1,4 @@
 use std::env;
-use libloading;
 
 static mut NOW: i64 = 0;
 

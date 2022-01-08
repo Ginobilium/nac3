@@ -1,13 +1,10 @@
 use super::CodeGenContext;
 use inkwell::{
-    context::Context,
-    attributes::AttributeLoc,
-    memory_buffer::MemoryBuffer,
-    module::Module,
+    attributes::AttributeLoc, context::Context, memory_buffer::MemoryBuffer, module::Module,
     values::IntValue,
 };
 
-pub fn load_irrt<'ctx>(ctx: &'ctx Context) -> Module<'ctx> {
+pub fn load_irrt(ctx: &Context) -> Module {
     let bitcode_buf = MemoryBuffer::create_from_memory_range(
         include_bytes!(concat!(env!("OUT_DIR"), "/irrt.bc")),
         "irrt_bitcode_buffer",
@@ -19,7 +16,7 @@ pub fn load_irrt<'ctx>(ctx: &'ctx Context) -> Module<'ctx> {
         let function = irrt_mod.get_function(symbol).unwrap();
         function.add_attribute(AttributeLoc::Function, ctx.create_enum_attribute(1, 0));
     }
-    return irrt_mod;
+    irrt_mod
 }
 
 // repeated squaring method adapted from GNU Scientific Library:
