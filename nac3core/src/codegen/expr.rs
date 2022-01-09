@@ -4,7 +4,7 @@ use crate::{
     codegen::{
         concrete_type::{ConcreteFuncArg, ConcreteTypeEnum, ConcreteTypeStore},
         get_llvm_type,
-        irrt::integer_power,
+        irrt::*,
         CodeGenContext, CodeGenTask,
     },
     symbol_resolver::{SymbolValue, ValueEnum},
@@ -1028,31 +1028,59 @@ pub fn gen_expr<'ctx, 'a, G: CodeGenerator>(
             }
         }
         ExprKind::Subscript { value, slice, .. } => {
-            if let TypeEnum::TList { .. } = &*ctx.unifier.get_ty(value.custom.unwrap()) {
-                if let ExprKind::Slice { .. } = slice.node {
-                    unimplemented!()
+            let v = generator
+                .gen_expr(ctx, value)
+                .unwrap()
+                .to_basic_value_enum(ctx, generator)
+                .into_pointer_value();
+            if let TypeEnum::TList { ty } = &*ctx.unifier.get_ty(value.custom.unwrap()) {
+                let ty = ctx.get_llvm_type(generator, *ty);
+                let arr_ptr = ctx.build_gep_and_load(v, &[zero, zero]).into_pointer_value();
+                if let ExprKind::Slice { lower, upper, step } = &slice.node {
+                    let one = int32.const_int(1, false);
+                    let (start, end, step) =
+                        handle_slice_indices(lower, upper, step, ctx, generator, v);
+                    let length = calculate_len_for_slice_range(
+                        ctx,
+                        start,
+                        ctx.builder
+                            .build_select(
+                                ctx.builder.build_int_compare(
+                                    inkwell::IntPredicate::SLT,
+                                    step,
+                                    zero,
+                                    "is_neg",
+                                ),
+                                ctx.builder.build_int_sub(end, one, "e_min_one"),
+                                ctx.builder.build_int_add(end, one, "e_add_one"),
+                                "final_e",
+                            )
+                            .into_int_value(),
+                        step,
+                    );
+                    let res_array_ret = allocate_list(generator, ctx, ty, length);
+                    let res_ind =
+                        handle_slice_indices(&None, &None, &None, ctx, generator, res_array_ret);
+                    list_slice_assignment(
+                        ctx,
+                        generator.get_size_type(ctx.ctx),
+                        ty,
+                        res_array_ret,
+                        res_ind,
+                        v,
+                        (start, end, step),
+                    );
+                    res_array_ret.into()
                 } else {
                     // TODO: bound check
-                    let v = generator
-                        .gen_expr(ctx, value)
-                        .unwrap()
-                        .to_basic_value_enum(ctx, generator)
-                        .into_pointer_value();
                     let index = generator
                         .gen_expr(ctx, slice)
                         .unwrap()
                         .to_basic_value_enum(ctx, generator)
                         .into_int_value();
-                    let zero = int32.const_zero();
-                    let arr_ptr = ctx.build_gep_and_load(v, &[zero, zero]);
-                    ctx.build_gep_and_load(arr_ptr.into_pointer_value(), &[index])
+                    ctx.build_gep_and_load(arr_ptr, &[index])
                 }
             } else {
-                let v = generator
-                    .gen_expr(ctx, value)
-                    .unwrap()
-                    .to_basic_value_enum(ctx, generator)
-                    .into_pointer_value();
                 let index = generator
                     .gen_expr(ctx, slice)
                     .unwrap()

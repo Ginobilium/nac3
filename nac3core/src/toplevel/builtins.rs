@@ -1,7 +1,10 @@
-use std::cell::RefCell;
-use inkwell::{IntPredicate::{self, *}, FloatPredicate, values::IntValue};
-use crate::{symbol_resolver::SymbolValue, codegen::expr::destructure_range};
 use super::*;
+use crate::{
+    codegen::{expr::destructure_range, irrt::calculate_len_for_slice_range},
+    symbol_resolver::SymbolValue,
+};
+use inkwell::{FloatPredicate, IntPredicate};
+use std::cell::RefCell;
 
 type BuiltinInfo = (
     Vec<(Arc<RwLock<TopLevelDef>>, Option<Stmt>)>,
@@ -621,79 +624,4 @@ pub fn get_builtins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
             "len",
         ]
     )
-}
-
-// equivalent code:
-// def length(start, end, step != 0):
-//     diff = end - start
-//     if diff > 0 and step > 0:
-//          return ((diff - 1) // step) + 1
-//     elif diff < 0 and step < 0:
-//          return ((diff + 1) // step) + 1
-//     else:
-//          return 0
-pub fn calculate_len_for_slice_range<'ctx, 'a>(
-    ctx: &mut CodeGenContext<'ctx, 'a>,
-    start: IntValue<'ctx>,
-    end: IntValue<'ctx>,
-    step: IntValue<'ctx>,
-) -> IntValue<'ctx> {
-    let int32 = ctx.ctx.i32_type();
-    let start = ctx.builder.build_int_s_extend(start, int32, "start");
-    let end = ctx.builder.build_int_s_extend(end, int32, "end");
-    let step = ctx.builder.build_int_s_extend(step, int32, "step");
-    let diff = ctx.builder.build_int_sub(end, start, "diff");
-
-    let diff_pos = ctx.builder.build_int_compare(SGT, diff, int32.const_zero(), "diffpos");
-    let step_pos = ctx.builder.build_int_compare(SGT, step, int32.const_zero(), "steppos");
-    let test_1 = ctx.builder.build_and(diff_pos, step_pos, "bothpos");
-
-    let current = ctx.builder.get_insert_block().unwrap().get_parent().unwrap();
-    let then_bb = ctx.ctx.append_basic_block(current, "then");
-    let else_bb = ctx.ctx.append_basic_block(current, "else");
-    let then_bb_2 = ctx.ctx.append_basic_block(current, "then_2");
-    let else_bb_2 = ctx.ctx.append_basic_block(current, "else_2");
-    let cont_bb_2 = ctx.ctx.append_basic_block(current, "cont_2");
-    let cont_bb = ctx.ctx.append_basic_block(current, "cont");
-    ctx.builder.build_conditional_branch(test_1, then_bb, else_bb);
-
-    ctx.builder.position_at_end(then_bb);
-    let length_pos = {
-        let diff_pos_min_1 = ctx.builder.build_int_sub(diff, int32.const_int(1, false), "diffminone");
-        let length_pos = ctx.builder.build_int_signed_div(diff_pos_min_1, step, "div");
-        ctx.builder.build_int_add(length_pos, int32.const_int(1, false), "add1")
-    };
-    ctx.builder.build_unconditional_branch(cont_bb);
-
-    ctx.builder.position_at_end(else_bb);
-    let phi_1 = {
-        let diff_neg = ctx.builder.build_int_compare(SLT, diff, int32.const_zero(), "diffneg");
-        let step_neg = ctx.builder.build_int_compare(SLT, step, int32.const_zero(), "stepneg");
-        let test_2 = ctx.builder.build_and(diff_neg, step_neg, "bothneg");
-
-        ctx.builder.build_conditional_branch(test_2, then_bb_2, else_bb_2);
-
-        ctx.builder.position_at_end(then_bb_2);
-        let length_neg = {
-            let diff_neg_add_1 = ctx.builder.build_int_add(diff, int32.const_int(1, false), "diffminone");
-            let length_neg = ctx.builder.build_int_signed_div(diff_neg_add_1, step, "div");
-            ctx.builder.build_int_add(length_neg, int32.const_int(1, false), "add1")
-        };
-        ctx.builder.build_unconditional_branch(cont_bb_2);
-
-        ctx.builder.position_at_end(else_bb_2);
-        let length_zero = int32.const_zero();
-        ctx.builder.build_unconditional_branch(cont_bb_2);
-
-        ctx.builder.position_at_end(cont_bb_2);
-        let phi_1 = ctx.builder.build_phi(int32, "lenphi1");
-        phi_1.add_incoming(&[(&length_neg, then_bb_2), (&length_zero, else_bb_2)]);
-        phi_1.as_basic_value().into_int_value()
-    };
-    ctx.builder.build_unconditional_branch(cont_bb);
-
-    ctx.builder.position_at_end(cont_bb);
-    let phi = ctx.builder.build_phi(int32, "lenphi");
-    phi.add_incoming(&[(&length_pos, then_bb), (&phi_1, cont_bb_2)]);
-    phi.as_basic_value().into_int_value()
 }
