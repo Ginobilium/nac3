@@ -2,6 +2,7 @@ use regex::Regex;
 use std::{
     env,
     io::Write,
+    path::Path,
     process::{Command, Stdio},
 };
 
@@ -52,7 +53,7 @@ fn main() {
     let mut llvm_as = Command::new("llvm-as")
         .stdin(Stdio::piped())
         .arg("-o")
-        .arg(&format!("{}/irrt.bc", env::var("OUT_DIR").unwrap()))
+        .arg(Path::new(&env::var("OUT_DIR").unwrap()).join("irrt.bc"))
         .spawn()
         .unwrap();
     llvm_as.stdin.as_mut().unwrap().write_all(filtered_output.as_bytes()).unwrap();
