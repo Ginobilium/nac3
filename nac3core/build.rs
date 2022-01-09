@@ -6,10 +6,16 @@ use std::{
 };
 
 fn main() {
-    let out_dir = env::var("OUT_DIR").unwrap();
     const FILE: &str = "src/codegen/irrt/irrt.c";
     println!("cargo:rerun-if-changed={}", FILE);
+
+    /*
+     * HACK: Sadly, clang doesn't let us emit generic LLVM bitcode.
+     * Compiling for WASM32 and filtering the output with regex is the closest we can get.
+     */
+
     const FLAG: &[&str] = &[
+        "--target=wasm32",
         FILE,
         "-O3",
         "-emit-llvm",
@@ -46,7 +52,7 @@ fn main() {
     let mut llvm_as = Command::new("llvm-as")
         .stdin(Stdio::piped())
         .arg("-o")
-        .arg(&format!("{}/irrt.bc", out_dir))
+        .arg(&format!("{}/irrt.bc", env::var("OUT_DIR").unwrap()))
         .spawn()
         .unwrap();
     llvm_as.stdin.as_mut().unwrap().write_all(filtered_output.as_bytes()).unwrap();

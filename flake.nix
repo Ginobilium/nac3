@@ -177,7 +177,7 @@
         name = "nac3-dev-shell";
         buildInputs = with pkgs; [
           packages.x86_64-linux.llvm-nac3
-          clang_13
+          llvmPackages_13.clang-unwrapped  # for IRRT
           lld_13
           cargo
           cargo-insta
