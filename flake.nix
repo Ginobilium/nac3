@@ -54,7 +54,7 @@
             name = "nac3artiq";
             src = self;
             cargoLock = { lockFile = ./Cargo.lock; };
-            nativeBuildInputs = [ pkgs.python3 llvm-nac3 ];
+            nativeBuildInputs = [ pkgs.python3 pkgs.llvmPackages_13.clang-unwrapped llvm-nac3 ];
             buildInputs = [ pkgs.python3 llvm-nac3 ];
             cargoBuildFlags = [ "--package" "nac3artiq" ];
             cargoTestFlags = [ "--package" "nac3ast" "--package" "nac3parser" "--package" "nac3core" "--package" "nac3artiq" ];
@@ -81,7 +81,7 @@
             name = "nac3artiq-instrumented";
             src = self;
             cargoLock = { lockFile = ./Cargo.lock; };
-            nativeBuildInputs = [ pkgs.python3 llvm-nac3-instrumented ];
+            nativeBuildInputs = [ pkgs.python3 pkgs.llvmPackages_13.clang-unwrapped llvm-nac3-instrumented ];
             buildInputs = [ pkgs.python3 llvm-nac3-instrumented ];
             cargoBuildFlags = [ "--package" "nac3artiq" "--features" "init-llvm-profile" ];
             doCheck = false;
@@ -119,7 +119,7 @@
             name = "nac3artiq-pgo";
             src = self;
             cargoLock = { lockFile = ./Cargo.lock; };
-            nativeBuildInputs = [ pkgs.python3 llvm-nac3-pgo ];
+            nativeBuildInputs = [ pkgs.python3 pkgs.llvmPackages_13.clang-unwrapped llvm-nac3-pgo ];
             buildInputs = [ pkgs.python3 llvm-nac3-pgo ];
             cargoBuildFlags = [ "--package" "nac3artiq" ];
             cargoTestFlags = [ "--package" "nac3ast" "--package" "nac3parser" "--package" "nac3core" "--package" "nac3artiq" ];
@@ -140,7 +140,7 @@
             name = "nac3artiq";
             src = self;
             cargoLock = { lockFile = ./Cargo.lock; };
-            nativeBuildInputs = [ pkgs.zip ];
+            nativeBuildInputs = [ pkgs.llvmPackages_13.clang-unwrapped pkgs.llvmPackages_13.llvm pkgs.zip ];
             buildInputs = [ pkgs-mingw.zlib ];
             configurePhase =
               ''
@@ -154,7 +154,7 @@
               exec ${llvm-nac3.dev}/bin/llvm-config-native \$@ | ${pkgs.gnused}/bin/sed s/-lrt\ -ldl\ -lpthread\ -lm//
               EOF
               chmod +x llvm-cfg/llvm-config
-              export PATH=$PATH:`pwd`/llvm-cfg
+              export PATH=`pwd`/llvm-cfg:$PATH
 
               export CARGO_TARGET_X86_64_PC_WINDOWS_GNU_RUSTFLAGS="-C link-arg=-lz -C link-arg=-luuid -C link-arg=-lole32 -C link-arg=-lmcfgthread"
               '';
@@ -176,14 +176,18 @@
       devShell.x86_64-linux = pkgs.mkShell {
         name = "nac3-dev-shell";
         buildInputs = with pkgs; [
+          # build dependencies
           packages.x86_64-linux.llvm-nac3
-          llvmPackages_13.clang-unwrapped  # for IRRT
-          lld_13
+          llvmPackages_13.clang-unwrapped  # IRRT
           cargo
-          cargo-insta
           rustc
-          clippy
+          # runtime dependencies
+          lld_13
           (packages.x86_64-linux.python3-mimalloc.withPackages(ps: [ ps.numpy ]))
+          # development tools
+          cargo-insta
+          clippy
+          rustfmt
         ];
       };
 
