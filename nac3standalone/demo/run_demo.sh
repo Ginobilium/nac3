@@ -9,5 +9,5 @@ fi
 
 rm -f *.o
 ../../target/release/nac3standalone $1
-clang -Wall -O2 -o $1.elf demo.c module.o -lm
+rustc -o $1.elf demo.rs -Clink-arg=./module.o
 ./$1.elf
