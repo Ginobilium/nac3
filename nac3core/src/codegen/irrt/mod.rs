@@ -1,6 +1,9 @@
 use super::CodeGenContext;
 use inkwell::{
-    attributes::AttributeLoc, context::Context, memory_buffer::MemoryBuffer, module::Module,
+    attributes::{Attribute, AttributeLoc},
+    context::Context,
+    memory_buffer::MemoryBuffer,
+    module::Module,
     values::IntValue,
 };
 
@@ -11,10 +14,10 @@ pub fn load_irrt(ctx: &Context) -> Module {
     );
     let irrt_mod = Module::parse_bitcode_from_buffer(&bitcode_buf, ctx).unwrap();
     // add alwaysinline attributes to power function to help them get inlined
-    // alwaysinline enum = 1, see release/13.x/llvm/include/llvm/IR/Attributes.td
+    let inline_attr = Attribute::get_named_enum_kind_id("alwaysinline");
     for symbol in &["__nac3_irrt_int_exp_int32_t", "__nac3_irrt_int_exp_int64_t"] {
         let function = irrt_mod.get_function(symbol).unwrap();
-        function.add_attribute(AttributeLoc::Function, ctx.create_enum_attribute(1, 0));
+        function.add_attribute(AttributeLoc::Function, ctx.create_enum_attribute(inline_attr, 0));
     }
     irrt_mod
 }
