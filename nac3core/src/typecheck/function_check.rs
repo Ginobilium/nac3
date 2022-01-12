@@ -69,23 +69,21 @@ impl<'a> Inferencer<'a> {
             ExprKind::Name { id, .. } => {
                 self.should_have_value(expr)?;
                 if !defined_identifiers.contains(id) {
-                    if self
-                        .function_data
-                        .resolver
-                        .get_symbol_type(
-                            self.unifier,
-                            &self.top_level.definitions.read(),
-                            self.primitives,
-                            *id,
-                        )
-                        .is_some()
-                    {
-                        defined_identifiers.insert(*id);
-                    } else {
-                        return Err(format!(
-                            "unknown identifier {} (use before def?) at {}",
-                            id, expr.location
-                        ));
+                    match self.function_data.resolver.get_symbol_type(
+                        self.unifier,
+                        &self.top_level.definitions.read(),
+                        self.primitives,
+                        *id,
+                    ) {
+                        Ok(_) => {
+                            self.defined_identifiers.insert(*id);
+                        }
+                        Err(e) => {
+                            return Err(format!(
+                                "type error of identifier `{}` ({}) at {}",
+                                id, e, expr.location
+                            ));
+                        }
                     }
                 }
             }

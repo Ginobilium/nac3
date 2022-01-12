@@ -92,7 +92,7 @@ pub trait SymbolResolver {
         top_level_defs: &[Arc<RwLock<TopLevelDef>>],
         primitives: &PrimitiveStore,
         str: StrRef,
-    ) -> Option<Type>;
+    ) -> Result<Type, String>;
 
     // get the top-level definition of identifiers
     fn get_identifier_def(&self, str: StrRef) -> Option<DefinitionId>;
@@ -180,8 +180,7 @@ pub fn parse_type_annotation<T>(
             } else {
                 // it could be a type variable
                 let ty = resolver
-                    .get_symbol_type(unifier, top_level_defs, primitives, *id)
-                    .ok_or_else(|| "unknown type variable name".to_owned())?;
+                    .get_symbol_type(unifier, top_level_defs, primitives, *id)?;
                 if let TypeEnum::TVar { .. } = &*unifier.get_ty(ty) {
                     Ok(ty)
                 } else {

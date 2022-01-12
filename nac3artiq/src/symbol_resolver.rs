@@ -155,24 +155,30 @@ impl InnerResolver {
         unifier: &mut Unifier,
         defs: &[Arc<RwLock<TopLevelDef>>],
         primitives: &PrimitiveStore,
-    ) -> PyResult<Option<Type>> {
-        let first = self.get_obj_type(py, list.get_item(0)?, unifier, defs, primitives)?;
-        Ok((1..len).fold(first, |a, i| {
-            let b = list
+    ) -> PyResult<Result<Type, String>> {
+        let mut ty = match self.get_obj_type(py, list.get_item(0)?, unifier, defs, primitives)? {
+            Ok(t) => t,
+            Err(e) => return Ok(Err(format!(
+                "type error ({}) at element #0 of the list", e
+            ))),
+        };
+        for i in 1..len {
+            let b = match list
                 .get_item(i)
-                .map(|elem| self.get_obj_type(py, elem, unifier, defs, primitives));
-            a.and_then(|a| {
-                if let Ok(Ok(Some(ty))) = b {
-                    if unifier.unify(a, ty).is_ok() {
-                        Some(a)
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                }
-            })
-        }))
+                .map(|elem| self.get_obj_type(py, elem, unifier, defs, primitives))?? {
+                    Ok(t) => t,
+                    Err(e) => return Ok(Err(format!(
+                        "type error ({}) at element #{} of the list", e, i
+                    ))),
+                };
+            ty = match unifier.unify(ty, b) {
+                Ok(_) => ty,
+                Err(e) => return Ok(Err(format!(
+                    "inhomogeneous type ({}) at element #{} of the list", e, i
+                )))
+            };
+        }
+        Ok(Ok(ty))
     }
 
     // handle python objects that represent types themselves
@@ -311,7 +317,9 @@ impl InnerResolver {
                             Err(err) => return Ok(Err(err)),
                         };
                         if !unifier.is_concrete(ty.0, &[]) && !ty.1 {
-                            panic!("type list should take concrete parameters in type var ranges")
+                            return Ok(Err(
+                                "type list should take concrete parameters in typevar range".into()
+                            ));
                         }
                         Ok(Ok((unifier.add_ty(TypeEnum::TList { ty: ty.0 }), true)))
                     } else {
@@ -430,7 +438,7 @@ impl InnerResolver {
         unifier: &mut Unifier,
         defs: &[Arc<RwLock<TopLevelDef>>],
         primitives: &PrimitiveStore,
-    ) -> PyResult<Option<Type>> {
+    ) -> PyResult<Result<Type, String>> {
         let ty = self.helper.type_fn.call1(py, (obj,)).unwrap();
         let (extracted_ty, inst_check) = match self.get_pyty_obj_type(
             py,
@@ -457,7 +465,7 @@ impl InnerResolver {
             primitives,
         )? {
             Ok(s) => s,
-            Err(_) => return Ok(None),
+            Err(e) => return Ok(Err(e)),
         };
         return match (&*unifier.get_ty(extracted_ty), inst_check) {
             // do the instantiation for these three types
@@ -469,21 +477,22 @@ impl InnerResolver {
                         TypeEnum::TVar { meta: nac3core::typecheck::typedef::TypeVarMeta::Generic, range, .. }
                             if range.borrow().is_empty()
                     ));
-                    Ok(Some(extracted_ty))
+                    Ok(Ok(extracted_ty))
                 } else {
                     let actual_ty =
                         self.get_list_elem_type(py, obj, len, unifier, defs, primitives)?;
-                    if let Some(actual_ty) = actual_ty {
-                        unifier.unify(*ty, actual_ty).unwrap();
-                        Ok(Some(extracted_ty))
-                    } else {
-                        Ok(None)
+                    match actual_ty {
+                        Ok(t) => match unifier.unify(*ty, t) {
+                            Ok(_) => Ok(Ok(unifier.add_ty(TypeEnum::TList{ ty: *ty }))),
+                            Err(e) => Ok(Err(format!("type error ({}) for the list", e))),
+                        }
+                        Err(e) => Ok(Err(e)),
                     }
                 }
             }
             (TypeEnum::TTuple { .. }, false) => {
                 let elements: &PyTuple = obj.cast_as()?;
-                let types: Result<Option<Vec<_>>, _> = elements
+                let types: Result<Result<Vec<_>, _>, _> = elements
                     .iter()
                     .map(|elem| self.get_obj_type(py, elem, unifier, defs, primitives))
                     .collect();
@@ -510,29 +519,35 @@ impl InnerResolver {
                         continue;
                     } else {
                         let field_data = obj.getattr(&name)?;
-                        let ty = self
-                            .get_obj_type(py, field_data, unifier, defs, primitives)?
-                            .unwrap_or(primitives.none);
+                        let ty = match self
+                            .get_obj_type(py, field_data, unifier, defs, primitives)? {
+                                Ok(t) => t,
+                                Err(e) => return Ok(Err(format!(
+                                    "error when getting type of field `{}` ({})", name, e
+                                ))),
+                            };
                         let field_ty = unifier.subst(field.1 .0, &var_map).unwrap_or(field.1 .0);
-                        if unifier.unify(ty, field_ty).is_err() {
+                        if let Err(e) = unifier.unify(ty, field_ty) {
                             // field type mismatch
-                            return Ok(None);
+                            return Ok(Err(format!(
+                                "error when getting type of field `{}` ({})", name, e
+                            )));
                         }
                     }
                 }
                 for (_, ty) in var_map.iter() {
                     // must be concrete type
                     if !unifier.is_concrete(*ty, &[]) {
-                        return Ok(None);
+                        return Ok(Err("object is not of concrete type".into()));
                     }
                 }
-                return Ok(Some(
+                return Ok(Ok(
                     unifier
                         .subst(extracted_ty, &var_map)
                         .unwrap_or(extracted_ty),
                 ));
             }
-            _ => Ok(Some(extracted_ty)),
+            _ => Ok(Ok(extracted_ty)),
         };
     }
 
@@ -686,7 +701,7 @@ impl InnerResolver {
             }
 
             let elements: &PyTuple = obj.cast_as()?;
-            let types: Result<Option<Vec<_>>, _> = elements
+            let types: Result<Result<Vec<_>, _>, _> = elements
                 .iter()
                 .map(|elem| {
                     self.get_obj_type(
@@ -858,22 +873,25 @@ impl SymbolResolver for Resolver {
         defs: &[Arc<RwLock<TopLevelDef>>],
         primitives: &PrimitiveStore,
         str: StrRef,
-    ) -> Option<Type> {
-        {
+    ) -> Result<Type, String> {
+        match {
             let id_to_type = self.0.id_to_type.read();
             id_to_type.get(&str).cloned()
-        }
-        .or_else(|| {
-            let py_id = self.0.name_to_pyid.get(&str);
-            let result = py_id.and_then(|id| {
-                {
+        } {
+            Some(ty) => Ok(ty),
+            None => {
+                let id = match self.0.name_to_pyid.get(&str) {
+                    Some(id) => id,
+                    None => return Err(format!("cannot find symbol `{}`", str)),
+                };
+                let result = match {
                     let pyid_to_type = self.0.pyid_to_type.read();
                     pyid_to_type.get(id).copied()
-                }
-                .or_else(|| {
-                    let result = Python::with_gil(|py| -> PyResult<Option<Type>> {
+                } {
+                    Some(t) => Ok(t),
+                    None => Python::with_gil(|py| -> PyResult<Result<Type, String>> {
                         let obj: &PyAny = self.0.module.extract(py)?;
-                        let mut sym_ty = None;
+                        let mut sym_ty = Err(format!("cannot find symbol `{}`", str));
                         let members: &PyDict = obj.getattr("__dict__").unwrap().cast_as().unwrap();
                         for (key, val) in members.iter() {
                             let key: &str = key.extract()?;
@@ -882,20 +900,19 @@ impl SymbolResolver for Resolver {
                                 break;
                             }
                         }
+                        if let Ok(t) = sym_ty {
+                            self.0.pyid_to_type.write().insert(*id, t);
+                        }
                         Ok(sym_ty)
                     })
-                    .unwrap();
-                    if let Some(result) = result {
-                        self.0.pyid_to_type.write().insert(*id, result);
-                    }
-                    result
-                })
-            });
-            if let Some(result) = &result {
-                self.0.id_to_type.write().insert(str, *result);
+                    .unwrap(),
+                };
+                if let Ok(t) = &result {
+                    self.0.id_to_type.write().insert(str, *t);
+                }
+                result
             }
-            result
-        })
+        }
     }
 
     fn get_symbol_value<'ctx, 'a>(

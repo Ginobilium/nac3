@@ -181,7 +181,7 @@ impl<'a> fold::Fold<()> for Inferencer<'a> {
                                                 self.primitives,
                                                 id,
                                             )
-                                            .unwrap_or_else(|| {
+                                            .unwrap_or_else(|_| {
                                                 self.variable_mapping.insert(id, value_ty);
                                                 value_ty
                                             })
@@ -360,23 +360,21 @@ impl<'a> fold::Fold<()> for Inferencer<'a> {
                 Some(self.infer_constant(value, &expr.location)?),
             ast::ExprKind::Name { id, .. } => {
                 if !self.defined_identifiers.contains(id) {
-                    if self
-                        .function_data
-                        .resolver
-                        .get_symbol_type(
-                            self.unifier,
-                            &self.top_level.definitions.read(),
-                            self.primitives,
-                            *id,
-                        )
-                        .is_some()
-                    {
-                        self.defined_identifiers.insert(*id);
-                    } else {
-                        return report_error(
-                            &format!("unknown identifier {} (use before def?)", id),
-                            expr.location,
-                        );
+                    match self.function_data.resolver.get_symbol_type(
+                        self.unifier,
+                        &self.top_level.definitions.read(),
+                        self.primitives,
+                        *id,
+                    ) {
+                        Ok(_) => {
+                            self.defined_identifiers.insert(*id);
+                        }
+                        Err(e) => {
+                            return report_error(
+                                &format!("type error of identifier `{}` ({})", id, e),
+                                expr.location,
+                            );
+                        }
                     }
                 }
                 Some(self.infer_identifier(*id)?)
@@ -765,7 +763,7 @@ impl<'a> Inferencer<'a> {
                 .function_data
                 .resolver
                 .get_symbol_type(unifier, &self.top_level.definitions.read(), self.primitives, id)
-                .unwrap_or_else(|| {
+                .unwrap_or_else(|_| {
                     let ty = unifier.get_fresh_var().0;
                     variable_mapping.insert(id, ty);
                     ty
