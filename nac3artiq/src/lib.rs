@@ -10,6 +10,7 @@ use inkwell::{
     targets::*,
     OptimizationLevel,
 };
+use nac3core::typecheck::typedef::{Unifier, TypeEnum};
 use nac3parser::{
     ast::{self, Stmt, StrRef},
     parser::{self, parse_program},
@@ -174,6 +175,73 @@ impl Nac3 {
             }
         }
         Ok(())
+    }
+
+    fn report_modinit(
+        arg_names: &[String],
+        method_name: &str,
+        resolver: Arc<dyn SymbolResolver + Send + Sync>,
+        top_level_defs: &[Arc<RwLock<TopLevelDef>>],
+        unifier: &mut Unifier,
+        primitives: &PrimitiveStore,
+    ) -> Option<String> {
+        let base_ty =
+            match resolver.get_symbol_type(unifier, top_level_defs, primitives, "base".into()) {
+                Ok(ty) => ty,
+                Err(e) => return Some(format!("type error of object launching kernel: {}", e))
+            };
+        
+        let fun_ty = if method_name.is_empty() {
+            base_ty
+        } else if let TypeEnum::TObj { fields, .. } = &*unifier.get_ty(base_ty) {
+            match fields.borrow().get(&(*method_name).into()) {
+                Some(t) => t.0,
+                None => return Some(
+                    format!("object launching kernel does not have method `{}`", method_name)
+                )
+            }
+        } else {
+            return Some("cannot launch kernel by calling a non-callable".into())
+        };
+        
+        if let TypeEnum::TFunc(sig) = &*unifier.get_ty(fun_ty) {
+            let FunSignature { args, .. } = &*sig.borrow();
+            if arg_names.len() > args.len() {
+                return Some(format!(
+                    "launching kernel function with too many arguments (expect {}, found {})",
+                    args.len(),
+                    arg_names.len(),
+                ))
+            }
+            for (i, FuncArg { ty, default_value, name }) in args.iter().enumerate() {
+                let in_name = match arg_names.get(i) {
+                    Some(n) => n,
+                    None if default_value.is_none() => return Some(format!(
+                        "argument `{}` not provided when launching kernel function", name
+                    )),
+                    _ => break,
+                };
+                let in_ty = match resolver.get_symbol_type(
+                    unifier,
+                    top_level_defs,
+                    primitives,
+                    in_name.clone().into()
+                ) {
+                    Ok(t) => t,
+                    Err(e) => return Some(format!(
+                        "type error ({}) at parameter #{} when calling kernel function", e, i
+                    ))
+                };
+                if let Err(e) = unifier.unify(in_ty, *ty) {
+                    return Some(format!(
+                        "type error ({}) at parameter #{} when calling kernel function", e, i
+                    ));
+                }
+            }
+        } else {
+            return Some("cannot launch kernel by calling a non-callable".into())
+        }
+        None
     }
 }
 
@@ -477,7 +545,10 @@ impl Nac3 {
                 arg_names.join(", ")
             )
         };
-        let mut synthesized = parse_program(&synthesized, Default::default()).unwrap();
+        let mut synthesized = parse_program(
+            &synthesized,
+            "__nac3_synthesized_modinit__".to_string().into(),
+        ).unwrap();
         let resolver = Arc::new(Resolver(Arc::new(InnerResolver {
             id_to_type: self.builtins_ty.clone().into(),
             id_to_def: self.builtins_def.clone().into(),
@@ -516,9 +587,24 @@ impl Nac3 {
         );
         let signature = store.add_cty(signature);
 
-        composer.start_analysis(true).map_err(|e| exceptions::PyRuntimeError::new_err(format!(
-            "nac3 compilation failure: {}", e
-        )))?;
+        if let Err(e) = composer.start_analysis(true) {
+            // report error of __modinit__ separately
+            if !e.contains("__nac3_synthesized_modinit__") {
+                return Err(exceptions::PyRuntimeError::new_err(
+                    format!("nac3 compilation failure: {}", e)
+                ));
+            } else {
+                let msg = Self::report_modinit(
+                    &arg_names,
+                    method_name,
+                    resolver.clone(),
+                    &composer.extract_def_list(),
+                    &mut composer.unifier,
+                    &self.primitive
+                );
+                return Err(exceptions::PyRuntimeError::new_err(msg.unwrap()));
+            }
+        }
         let top_level = Arc::new(composer.make_top_level_context());
         let instance = {
             let defs = top_level.definitions.read();
