@@ -45,9 +45,13 @@ impl SymbolResolver for Resolver {
         _: &[Arc<RwLock<TopLevelDef>>],
         _: &PrimitiveStore,
         str: StrRef,
-    ) -> Option<Type> {
-        let ret = self.0.id_to_type.lock().get(&str).cloned();
-        ret
+    ) -> Result<Type, String> {
+        self.0
+            .id_to_type
+            .lock()
+            .get(&str)
+            .cloned()
+            .ok_or_else(|| format!("cannot find symbol `{}`", str))
     }
 
     fn get_symbol_value<'ctx, 'a>(
