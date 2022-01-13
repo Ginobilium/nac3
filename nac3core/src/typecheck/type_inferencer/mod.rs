@@ -96,10 +96,10 @@ impl<'a> fold::Fold<()> for Inferencer<'a> {
                     self.unify(target.custom.unwrap(), ty.custom.unwrap(), &node.location)?;
                     Some(ty)
                 } else {
-                    return Err(format!(
-                        "declaration without definition is not yet supported, at {}",
-                        node.location
-                    ));
+                    return report_error(
+                        "declaration without definition is not yet supported",
+                        node.location,
+                    );
                 };
                 let top_level_defs = self.top_level.definitions.read();
                 let annotation_type = self.function_data.resolver.parse_type_annotation(
@@ -356,7 +356,8 @@ impl<'a> fold::Fold<()> for Inferencer<'a> {
             _ => fold::fold_expr(self, node)?,
         };
         let custom = match &expr.node {
-            ast::ExprKind::Constant { value, .. } => Some(self.infer_constant(value)?),
+            ast::ExprKind::Constant { value, .. } =>
+                Some(self.infer_constant(value, &expr.location)?),
             ast::ExprKind::Name { id, .. } => {
                 if !self.defined_identifiers.contains(id) {
                     if self
@@ -372,10 +373,10 @@ impl<'a> fold::Fold<()> for Inferencer<'a> {
                     {
                         self.defined_identifiers.insert(*id);
                     } else {
-                        return Err(format!(
-                            "unknown identifier {} (use before def?) at {}",
-                            id, expr.location
-                        ));
+                        return report_error(
+                            &format!("unknown identifier {} (use before def?)", id),
+                            expr.location,
+                        );
                     }
                 }
                 Some(self.infer_identifier(*id)?)
@@ -403,7 +404,7 @@ impl<'a> fold::Fold<()> for Inferencer<'a> {
             | ast::ExprKind::Lambda { .. }
             | ast::ExprKind::Call { .. } => expr.custom, // already computed
             ast::ExprKind::Slice { .. } => None, // we don't need it for slice
-            _ => return Err("not supported yet".into()),
+            _ => return report_error("not supported", expr.location),
         };
         Ok(ast::Expr { custom, location: expr.location, node: expr.node })
     }
@@ -509,9 +510,9 @@ impl<'a> Inferencer<'a> {
             || !args.defaults.is_empty()
         {
             // actually I'm not sure whether programs violating this is a valid python program.
-            return Err(
-                "We only support positional or keyword arguments without defaults for lambdas."
-                    .to_string(),
+            return report_error(
+                "We only support positional or keyword arguments without defaults for lambdas",
+                if args.args.is_empty() { body.location } else { args.args[0].location },
             );
         }
 
@@ -567,8 +568,9 @@ impl<'a> Inferencer<'a> {
         mut generators: Vec<Comprehension>,
     ) -> Result<ast::Expr<Option<Type>>, String> {
         if generators.len() != 1 {
-            return Err(
-                "Only 1 generator statement for list comprehension is supported.".to_string()
+            return report_error(
+                "Only 1 generator statement for list comprehension is supported",
+                generators[0].target.location,
             );
         }
         let variable_mapping = self.variable_mapping.clone();
@@ -585,7 +587,7 @@ impl<'a> Inferencer<'a> {
         };
         let generator = generators.pop().unwrap();
         if generator.is_async {
-            return Err("Async iterator not supported.".to_string());
+            return report_error("Async iterator not supported", generator.target.location);
         }
         new_context.infer_pattern(&generator.target)?;
         let target = new_context.fold_expr(*generator.target)?;
@@ -643,8 +645,9 @@ impl<'a> Inferencer<'a> {
                 // handle special functions that cannot be typed in the usual way...
                 if id == "virtual".into() {
                     if args.is_empty() || args.len() > 2 || !keywords.is_empty() {
-                        return Err(
-                            "`virtual` can only accept 1/2 positional arguments.".to_string()
+                        return report_error(
+                            "`virtual` can only accept 1/2 positional arguments",
+                            func_location,
                         );
                     }
                     let arg0 = self.fold_expr(args.remove(0))?;
@@ -682,7 +685,7 @@ impl<'a> Inferencer<'a> {
                     {
                         let custom = Some(self.primitives.int64);
                         if val.is_none() {
-                            return Err("Integer out of bound".into());
+                            return report_error("Integer out of bound", args[0].location);
                         }
                         return Ok(Located {
                             location: args[0].location,
@@ -770,7 +773,7 @@ impl<'a> Inferencer<'a> {
         }
     }
 
-    fn infer_constant(&mut self, constant: &ast::Constant) -> InferenceResult {
+    fn infer_constant(&mut self, constant: &ast::Constant, loc: &Location) -> InferenceResult {
         match constant {
             ast::Constant::Bool(_) => Ok(self.primitives.bool),
             ast::Constant::Int(val) => {
@@ -781,19 +784,20 @@ impl<'a> Inferencer<'a> {
                         if int32.is_ok() {
                             Ok(self.primitives.int32)
                         } else {
-                            Err("Integer out of bound".into())
+                            report_error("Integer out of bound", *loc)
                         }
                     },
-                    None => Err("Integer out of bound".into())
+                    None => report_error("Integer out of bound", *loc)
                 }
             }
             ast::Constant::Float(_) => Ok(self.primitives.float),
             ast::Constant::Tuple(vals) => {
-                let ty: Result<Vec<_>, _> = vals.iter().map(|x| self.infer_constant(x)).collect();
+                let ty: Result<Vec<_>, _> =
+                    vals.iter().map(|x| self.infer_constant(x, loc)).collect();
                 Ok(self.unifier.add_ty(TypeEnum::TTuple { ty: ty? }))
             }
             ast::Constant::Str(_) => Ok(self.primitives.str),
-            _ => Err("not supported".into()),
+            _ => report_error("not supported", *loc),
         }
     }
 
