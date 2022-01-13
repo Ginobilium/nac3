@@ -13,7 +13,6 @@ pub fn load_irrt(ctx: &Context) -> Module {
         "irrt_bitcode_buffer",
     );
     let irrt_mod = Module::parse_bitcode_from_buffer(&bitcode_buf, ctx).unwrap();
-    // add alwaysinline attributes to power function to help them get inlined
     let inline_attr = Attribute::get_named_enum_kind_id("alwaysinline");
     for symbol in &["__nac3_irrt_int_exp_int32_t", "__nac3_irrt_int_exp_int64_t"] {
         let function = irrt_mod.get_function(symbol).unwrap();
