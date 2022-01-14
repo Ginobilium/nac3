@@ -80,7 +80,7 @@ impl<'a> Inferencer<'a> {
                         }
                         Err(e) => {
                             return Err(format!(
-                                "type error of identifier `{}` ({}) at {}",
+                                "type error at identifier `{}` ({}) at {}",
                                 id, e, expr.location
                             ));
                         }

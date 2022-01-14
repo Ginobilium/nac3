@@ -188,7 +188,7 @@ impl Nac3 {
         let base_ty =
             match resolver.get_symbol_type(unifier, top_level_defs, primitives, "base".into()) {
                 Ok(ty) => ty,
-                Err(e) => return Some(format!("type error of object launching kernel: {}", e))
+                Err(e) => return Some(format!("type error inside object launching kernel: {}", e))
             };
         
         let fun_ty = if method_name.is_empty() {

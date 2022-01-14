@@ -371,7 +371,7 @@ impl<'a> fold::Fold<()> for Inferencer<'a> {
                         }
                         Err(e) => {
                             return report_error(
-                                &format!("type error of identifier `{}` ({})", id, e),
+                                &format!("type error at identifier `{}` ({})", id, e),
                                 expr.location,
                             );
                         }
