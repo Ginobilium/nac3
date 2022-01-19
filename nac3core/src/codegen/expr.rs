@@ -98,7 +98,7 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
                         self.builder.build_store(p, val);
                     }
                 }
-                ptr.into()
+                self.builder.build_load(ptr, "tup_val")
             }
         }
     }
@@ -705,7 +705,19 @@ pub fn gen_expr<'ctx, 'a, G: CodeGenerator>(
             Some((_, Some(static_value), _)) => ValueEnum::Static(static_value.clone()),
             None => {
                 let resolver = ctx.resolver.clone();
-                resolver.get_symbol_value(*id, ctx).unwrap()
+                let val = resolver.get_symbol_value(*id, ctx).unwrap();
+                // if is tuple, need to deref it to handle tuple as value
+                if let (TypeEnum::TTuple { .. }, BasicValueEnum::PointerValue(ptr)) = (
+                    &*ctx.unifier.get_ty(expr.custom.unwrap()),
+                    resolver
+                        .get_symbol_value(*id, ctx)
+                        .unwrap()
+                        .to_basic_value_enum(ctx, generator),
+                ) {
+                    ctx.builder.build_load(ptr, "tup_val").into()
+                } else {
+                    val
+                }
             }
         },
         ExprKind::List { elts, .. } => {
@@ -757,7 +769,7 @@ pub fn gen_expr<'ctx, 'a, G: CodeGenerator>(
                     ctx.builder.build_store(ptr, v);
                 }
             }
-            tuple_ptr.into()
+            ctx.builder.build_load(tuple_ptr, "tup_val").into()
         }
         ExprKind::Attribute { value, attr, .. } => {
             // note that we would handle class methods directly in calls
@@ -1032,12 +1044,12 @@ pub fn gen_expr<'ctx, 'a, G: CodeGenerator>(
             }
         }
         ExprKind::Subscript { value, slice, .. } => {
-            let v = generator
-                .gen_expr(ctx, value)
-                .unwrap()
-                .to_basic_value_enum(ctx, generator)
-                .into_pointer_value();
             if let TypeEnum::TList { ty } = &*ctx.unifier.get_ty(value.custom.unwrap()) {
+                let v = generator
+                    .gen_expr(ctx, value)
+                    .unwrap()
+                    .to_basic_value_enum(ctx, generator)
+                    .into_pointer_value();
                 let ty = ctx.get_llvm_type(generator, *ty);
                 let arr_ptr = ctx.build_gep_and_load(v, &[zero, zero]).into_pointer_value();
                 if let ExprKind::Slice { lower, upper, step } = &slice.node {
@@ -1084,13 +1096,21 @@ pub fn gen_expr<'ctx, 'a, G: CodeGenerator>(
                         .into_int_value();
                     ctx.build_gep_and_load(arr_ptr, &[index])
                 }
-            } else {
-                let index = generator
-                    .gen_expr(ctx, slice)
+            } else if let TypeEnum::TTuple { .. } = &*ctx.unifier.get_ty(value.custom.unwrap()) {
+                let v = generator
+                    .gen_expr(ctx, value)
                     .unwrap()
                     .to_basic_value_enum(ctx, generator)
-                    .into_int_value();
-                ctx.build_gep_and_load(v, &[int32.const_zero(), index])
+                    .into_struct_value();
+                let index: u32 =
+                    if let ExprKind::Constant { value: ast::Constant::Int(v), .. } = &slice.node {
+                        v.unwrap().try_into().unwrap()
+                    } else {
+                        unreachable!("tuple subscript must be const int after type check");
+                    };
+                ctx.builder.build_extract_value(v, index, "tup_elem").unwrap()
+            } else {
+                unreachable!("should not be other subscriptable types after type check");
             }
         }
         .into(),

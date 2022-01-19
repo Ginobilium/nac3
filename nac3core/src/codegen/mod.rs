@@ -260,7 +260,7 @@ fn get_llvm_type<'ctx>(
                     .iter()
                     .map(|ty| get_llvm_type(ctx, generator, unifier, top_level, type_cache, *ty))
                     .collect_vec();
-                ctx.struct_type(&fields, false).ptr_type(AddressSpace::Generic).into()
+                ctx.struct_type(&fields, false).into()
             }
             TList { ty } => {
                 // a struct with an integer and a pointer to an array

@@ -13,6 +13,7 @@ use inkwell::{
     values::{BasicValue, BasicValueEnum, PointerValue},
 };
 use nac3parser::ast::{Expr, ExprKind, Stmt, StmtKind};
+use std::convert::TryFrom;
 
 pub fn gen_var<'ctx, 'a>(
     ctx: &mut CodeGenContext<'ctx, 'a>,
@@ -90,13 +91,12 @@ pub fn gen_assign<'ctx, 'a, G: CodeGenerator>(
     value: ValueEnum<'ctx>,
 ) {
     if let ExprKind::Tuple { elts, .. } = &target.node {
-        if let BasicValueEnum::PointerValue(ptr) = value.to_basic_value_enum(ctx, generator) {
-            let i32_type = ctx.ctx.i32_type();
+        if let BasicValueEnum::StructValue(v) = value.to_basic_value_enum(ctx, generator) {
             for (i, elt) in elts.iter().enumerate() {
-                let v = ctx.build_gep_and_load(
-                    ptr,
-                    &[i32_type.const_zero(), i32_type.const_int(i as u64, false)],
-                );
+                let v = ctx
+                    .builder
+                    .build_extract_value(v, u32::try_from(i).unwrap(), "struct_elem")
+                    .unwrap();
                 generator.gen_assign(ctx, elt, v.into());
             }
         } else {
