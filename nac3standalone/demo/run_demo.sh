@@ -7,7 +7,14 @@ if [ -z "$1" ]; then
     exit 1
 fi
 
+if [ -e ../../target/release/nac3standalone ]; then
+    nac3standalone=../../target/release/nac3standalone
+else
+    # used by Nix builds
+    nac3standalone=../../target/x86_64-unknown-linux-gnu/release/nac3standalone
+fi
+
 rm -f *.o
-../../target/release/nac3standalone $1
+$nac3standalone $1
 rustc -o demo demo.rs -Clink-arg=./module.o
 ./demo

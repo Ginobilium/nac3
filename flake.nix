@@ -52,17 +52,33 @@
         nac3artiq = pkgs.python3Packages.toPythonModule (
           pkgs.rustPlatform.buildRustPackage {
             name = "nac3artiq";
+            outputs = [ "out" "runkernel" "standalone" ];
             src = self;
             cargoLock = { lockFile = ./Cargo.lock; };
             nativeBuildInputs = [ pkgs.python3 pkgs.llvmPackages_13.clang-unwrapped llvm-nac3 ];
             buildInputs = [ pkgs.python3 llvm-nac3 ];
-            cargoBuildFlags = [ "--package" "nac3artiq" ];
-            cargoTestFlags = [ "--package" "nac3ast" "--package" "nac3parser" "--package" "nac3core" "--package" "nac3artiq" ];
+            checkInputs = [ (pkgs.python3.withPackages(ps: [ ps.numpy ])) ];
+            checkPhase =
+              ''
+              echo "Checking nac3standalone demos..."
+              pushd nac3standalone/demo
+              patchShebangs .
+              ./check_demos.sh
+              popd
+              echo "Running Cargo tests..."
+              cargoCheckHook
+              '';
             installPhase =
               ''
-              TARGET_DIR=$out/${pkgs.python3Packages.python.sitePackages}
-              mkdir -p $TARGET_DIR
-              cp target/x86_64-unknown-linux-gnu/release/libnac3artiq.so $TARGET_DIR/nac3artiq.so
+              PYTHON_SITEPACKAGES=$out/${pkgs.python3Packages.python.sitePackages}
+              mkdir -p $PYTHON_SITEPACKAGES
+              cp target/x86_64-unknown-linux-gnu/release/libnac3artiq.so $PYTHON_SITEPACKAGES/nac3artiq.so
+
+              mkdir -p $runkernel/bin
+              cp target/x86_64-unknown-linux-gnu/release/runkernel $runkernel/bin
+
+              mkdir -p $standalone/bin
+              cp target/x86_64-unknown-linux-gnu/release/nac3standalone $standalone/bin
               '';
           }
         );
