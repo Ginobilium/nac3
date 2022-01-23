@@ -3,7 +3,7 @@ use inkwell::{
     targets::*,
     OptimizationLevel, memory_buffer::MemoryBuffer,
 };
-use std::{borrow::Borrow, collections::HashMap, env, fs, path::Path, sync::Arc, time::SystemTime};
+use std::{borrow::Borrow, collections::HashMap, env, fs, path::Path, sync::Arc};
 use parking_lot::{RwLock, Mutex};
 
 use nac3parser::{ast::{Expr, ExprKind, StmtKind}, parser};
@@ -25,13 +25,11 @@ mod basic_symbol_resolver;
 use basic_symbol_resolver::*;
 
 fn main() {
-    let file_name = env::args().nth(1).unwrap() + ".py";
+    let file_name = env::args().nth(1).unwrap();
     let threads: u32 = env::args()
         .nth(2)
         .map(|s| str::parse(&s).unwrap())
         .unwrap_or(1);
-
-    let start = SystemTime::now();
 
     Target::initialize_all(&InitializationConfig::default());
 
@@ -58,18 +56,8 @@ fn main() {
     .into();
     let resolver =
         Arc::new(Resolver(internal_resolver.clone())) as Arc<dyn SymbolResolver + Send + Sync>;
-    let setup_time = SystemTime::now();
-    println!(
-        "setup time: {}ms",
-        setup_time.duration_since(start).unwrap().as_millis()
-    );
 
     let parser_result = parser::parse_program(&program, file_name.into()).unwrap();
-    let parse_time = SystemTime::now();
-    println!(
-        "parse time: {}ms",
-        parse_time.duration_since(setup_time).unwrap().as_millis()
-    );
 
     for stmt in parser_result.into_iter() {
         if let StmtKind::Assign { targets, value, .. } = &stmt.node {
@@ -222,14 +210,6 @@ fn main() {
     let signature = store.add_cty(signature);
 
     composer.start_analysis(true).unwrap();
-    let analysis_time = SystemTime::now();
-    println!(
-        "analysis time: {}ms",
-        analysis_time
-            .duration_since(parse_time)
-            .unwrap()
-            .as_millis()
-    );
 
     let top_level = Arc::new(composer.make_top_level_context());
 
@@ -329,17 +309,4 @@ fn main() {
             Path::new("module.o"),
         )
         .expect("couldn't write module to file");
-
-    let final_time = SystemTime::now();
-    println!(
-        "codegen time (including LLVM): {}ms",
-        final_time
-            .duration_since(analysis_time)
-            .unwrap()
-            .as_millis()
-    );
-    println!(
-        "total time: {}ms",
-        final_time.duration_since(start).unwrap().as_millis()
-    );
 }
