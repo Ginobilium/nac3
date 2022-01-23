@@ -19,9 +19,7 @@ def patch(module):
         name = fun.__name__
         if name == "output_asciiart":
             return output_asciiart
-        elif name == "output_int32":
-            return print
-        elif name == "output_int64":
+        elif name in {"output_int32", "output_int64", "output_int32_list"}:
             return print
         else:
             raise NotImplementedError

@@ -1,3 +1,24 @@
+mod cslice {  // copied from https://github.com/dherman/cslice
+    use std::marker::PhantomData;
+    use std::slice;
+
+    #[repr(C)]
+    #[derive(Clone, Copy)]
+    pub struct CSlice<'a, T> {
+        base: *const T,
+        len: usize,
+        marker: PhantomData<&'a ()>
+    }
+
+    impl<'a, T> AsRef<[T]> for CSlice<'a, T> {
+        fn as_ref(&self) -> &[T] {
+            unsafe {
+                slice::from_raw_parts(self.base, self.len)
+            }
+        }
+    }
+}
+
 #[no_mangle]
 pub extern "C" fn output_int32(x: i32) {
     println!("{}", x);
@@ -17,6 +38,21 @@ pub extern "C" fn output_asciiart(x: i32) {
         print!("{}", chars.chars().nth(x as usize).unwrap());
     }
 }
+
+#[no_mangle]
+pub extern "C" fn output_int32_list(x: &cslice::CSlice<i32>) {
+    print!("[");
+    let mut it = x.as_ref().iter().peekable();
+    while let Some(e) = it.next()  {
+        if it.peek().is_none() {
+            print!("{}", e);
+        } else {
+            print!("{}, ", e);
+        }
+    }
+    println!("]");
+}
+
 
 extern "C" {
     fn run() -> i32;
