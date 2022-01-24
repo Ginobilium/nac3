@@ -211,6 +211,16 @@
         inherit (packages.x86_64-linux) llvm-nac3 nac3artiq;
         llvm-nac3-mingw = packages.x86_64-w64-mingw32.llvm-nac3;
         nac3artiq-mingw = packages.x86_64-w64-mingw32.nac3artiq;
+        mcfgthreads = pkgs-mingw.stdenvNoCC.mkDerivation {
+          name = "mcfgthreads-hydra";
+          phases = [ "installPhase" ];
+          installPhase =
+            ''
+            mkdir -p $out $out/nix-support
+            ln -s ${pkgs-mingw.windows.mcfgthreads}/bin/mcfgthreads-12.dll $out/
+            echo file binary-dist $out/mcfgthreads-12.dll >> $out/nix-support/hydra-build-products
+            '';
+        };
       };
   };
 
