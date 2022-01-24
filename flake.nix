@@ -217,8 +217,8 @@
           installPhase =
             ''
             mkdir -p $out $out/nix-support
-            ln -s ${pkgs-mingw.windows.mcfgthreads}/bin/mcfgthreads-12.dll $out/
-            echo file binary-dist $out/mcfgthreads-12.dll >> $out/nix-support/hydra-build-products
+            ln -s ${pkgs-mingw.windows.mcfgthreads}/bin/mcfgthread-12.dll $out/
+            echo file binary-dist $out/mcfgthread-12.dll >> $out/nix-support/hydra-build-products
             '';
         };
       };
