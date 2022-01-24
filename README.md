@@ -12,7 +12,7 @@ NAC3 is packaged using the [Nix](https://nixos.org) Flakes system. Install Nix 2
 
 ## Try NAC3
 
-After setting up Nix as above, use ``nix shell github:m-labs/artiq/nac3`` to get a shell with the NAC3 version of ARTIQ. See the ``examples`` directory in ARTIQ (``nac3`` Git branch) for some samples of NAC3 kernel code.
+After setting up Nix as above, use ``nix shell git+https://github.com/m-labs/artiq.git?ref=nac3`` to get a shell with the NAC3 version of ARTIQ. See the ``examples`` directory in ARTIQ (``nac3`` Git branch) for some samples of NAC3 kernel code.
 
 ## For developers
 
