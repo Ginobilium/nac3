@@ -520,11 +520,11 @@ pub fn gen_comprehension<'ctx, 'a, G: CodeGenerator>(
         let iter_val = generator.gen_expr(ctx, iter).unwrap().to_basic_value_enum(ctx, generator);
         let int32 = ctx.ctx.i32_type();
         let size_t = generator.get_size_type(ctx.ctx);
-        let zero = size_t.const_zero();
+        let zero_size_t = size_t.const_zero();
+        let zero_32 = int32.const_zero();
 
         let index = generator.gen_var_alloc(ctx, size_t.into());
-        // counter = -1
-        ctx.builder.build_store(index, size_t.const_zero());
+        ctx.builder.build_store(index, zero_size_t);
 
         let elem_ty = ctx.get_llvm_type(generator, elt.custom.unwrap());
         let is_range = ctx.unifier.unioned(iter.custom.unwrap(), ctx.primitives.range);
@@ -542,34 +542,36 @@ pub fn gen_comprehension<'ctx, 'a, G: CodeGenerator>(
             let length = ctx.builder.build_int_add(length, int32.const_int(1, false), "add1");
             // in case length is non-positive
             let is_valid =
-                ctx.builder.build_int_compare(inkwell::IntPredicate::SGT, length, zero, "check");
+                ctx.builder.build_int_compare(inkwell::IntPredicate::SGT, length, zero_32, "check");
             let normal = ctx.ctx.append_basic_block(current, "normal_list");
             let empty = ctx.ctx.append_basic_block(current, "empty_list");
             let list_init = ctx.ctx.append_basic_block(current, "list_init");
             ctx.builder.build_conditional_branch(is_valid, normal, empty);
             // normal: allocate a list
             ctx.builder.position_at_end(normal);
-            let list_a = allocate_list(generator, ctx, elem_ty, length);
+            let list_a = allocate_list(
+                generator,
+                ctx,
+                elem_ty,
+                ctx.builder.build_int_z_extend_or_bit_cast(length, size_t, "z_ext_len"),
+            );
             ctx.builder.build_unconditional_branch(list_init);
             ctx.builder.position_at_end(empty);
-            let list_b = allocate_list(generator, ctx, elem_ty, zero);
+            let list_b = allocate_list(generator, ctx, elem_ty, zero_size_t);
             ctx.builder.build_unconditional_branch(list_init);
             ctx.builder.position_at_end(list_init);
             let phi = ctx.builder.build_phi(list_a.get_type(), "phi");
             phi.add_incoming(&[(&list_a, normal), (&list_b, empty)]);
             list = phi.as_basic_value().into_pointer_value();
-            list_content = ctx.build_gep_and_load(list, &[zero, zero]).into_pointer_value();
+            list_content =
+                ctx.build_gep_and_load(list, &[zero_size_t, zero_32]).into_pointer_value();
 
             let i = generator.gen_store_target(ctx, target);
             ctx.builder.build_store(i, ctx.builder.build_int_sub(start, step, "start_init"));
             ctx.builder.build_unconditional_branch(test_bb);
             ctx.builder.position_at_end(test_bb);
-            let sign = ctx.builder.build_int_compare(
-                inkwell::IntPredicate::SGT,
-                step,
-                int32.const_zero(),
-                "sign",
-            );
+            let sign =
+                ctx.builder.build_int_compare(inkwell::IntPredicate::SGT, step, zero_32, "sign");
             // add and test
             let tmp = ctx.builder.build_int_add(
                 ctx.builder.build_load(i, "i").into_int_value(),
@@ -577,7 +579,7 @@ pub fn gen_comprehension<'ctx, 'a, G: CodeGenerator>(
                 "start_loop",
             );
             ctx.builder.build_store(i, tmp);
-            // // if step > 0, continue when i < end
+            // if step > 0, continue when i < end
             let cmp1 = ctx.builder.build_int_compare(inkwell::IntPredicate::SLT, tmp, end, "cmp1");
             // if step < 0, continue when i > end
             let cmp2 = ctx.builder.build_int_compare(inkwell::IntPredicate::SGT, tmp, end, "cmp2");
@@ -593,14 +595,15 @@ pub fn gen_comprehension<'ctx, 'a, G: CodeGenerator>(
             let length = ctx
                 .build_gep_and_load(
                     iter_val.into_pointer_value(),
-                    &[zero, int32.const_int(1, false)],
+                    &[zero_size_t, int32.const_int(1, false)],
                 )
                 .into_int_value();
             list = allocate_list(generator, ctx, elem_ty, length);
-            list_content = ctx.build_gep_and_load(list, &[zero, zero]).into_pointer_value();
+            list_content =
+                ctx.build_gep_and_load(list, &[zero_size_t, zero_32]).into_pointer_value();
             let counter = generator.gen_var_alloc(ctx, size_t.into());
             // counter = -1
-            ctx.builder.build_store(counter, ctx.ctx.i32_type().const_int(u64::max_value(), true));
+            ctx.builder.build_store(counter, size_t.const_int(u64::max_value(), true));
             ctx.builder.build_unconditional_branch(test_bb);
             ctx.builder.position_at_end(test_bb);
             let tmp = ctx.builder.build_load(counter, "i").into_int_value();
@@ -610,7 +613,7 @@ pub fn gen_comprehension<'ctx, 'a, G: CodeGenerator>(
             ctx.builder.build_conditional_branch(cmp, body_bb, cont_bb);
             ctx.builder.position_at_end(body_bb);
             let arr_ptr = ctx
-                .build_gep_and_load(iter_val.into_pointer_value(), &[zero, zero])
+                .build_gep_and_load(iter_val.into_pointer_value(), &[zero_size_t, zero_32])
                 .into_pointer_value();
             let val = ctx.build_gep_and_load(arr_ptr, &[tmp]);
             generator.gen_assign(ctx, target, val.into());
@@ -634,8 +637,9 @@ pub fn gen_comprehension<'ctx, 'a, G: CodeGenerator>(
             .build_store(index, ctx.builder.build_int_add(i, size_t.const_int(1, false), "inc"));
         ctx.builder.build_unconditional_branch(test_bb);
         ctx.builder.position_at_end(cont_bb);
-        let len_ptr =
-            unsafe { ctx.builder.build_gep(list, &[zero, int32.const_int(1, false)], "length") };
+        let len_ptr = unsafe {
+            ctx.builder.build_gep(list, &[zero_size_t, int32.const_int(1, false)], "length")
+        };
         ctx.builder.build_store(len_ptr, ctx.builder.build_load(index, "index"));
         list.into()
     } else {
