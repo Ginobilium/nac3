@@ -1,0 +1,14 @@
+---
+source: nac3core/src/toplevel/test.rs
+assertion_line: 541
+expression: res_vec
+
+---
+[
+    "Class {\nname: \"Generic_A\",\nancestors: [\"{class: Generic_A, params: [\\\"var6\\\"]}\", \"{class: B, params: []}\"],\nfields: [\"aa\", \"a\"],\nmethods: [(\"__init__\", \"fn[[], none]\"), (\"foo\", \"fn[[b=var5], none]\"), (\"fun\", \"fn[[a=int32], var6]\")],\ntype_vars: [\"var6\"]\n}\n",
+    "Function {\nname: \"Generic_A.__init__\",\nsig: \"fn[[], none]\",\nvar_id: [6]\n}\n",
+    "Function {\nname: \"Generic_A.fun\",\nsig: \"fn[[a=int32], var6]\",\nvar_id: [6]\n}\n",
+    "Class {\nname: \"B\",\nancestors: [\"{class: B, params: []}\"],\nfields: [\"aa\"],\nmethods: [(\"__init__\", \"fn[[], none]\"), (\"foo\", \"fn[[b=var5], none]\")],\ntype_vars: []\n}\n",
+    "Function {\nname: \"B.__init__\",\nsig: \"fn[[], none]\",\nvar_id: []\n}\n",
+    "Function {\nname: \"B.foo\",\nsig: \"fn[[b=var5], none]\",\nvar_id: []\n}\n",
+]

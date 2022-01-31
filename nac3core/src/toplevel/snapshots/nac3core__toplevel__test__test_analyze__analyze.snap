@@ -1,0 +1,9 @@
+---
+source: nac3core/src/toplevel/test.rs
+assertion_line: 541
+expression: res_vec
+
+---
+[
+    "Class {\nname: \"A\",\nancestors: [\"{class: A, params: []}\"],\nfields: [],\nmethods: [],\ntype_vars: []\n}\n",
+]
