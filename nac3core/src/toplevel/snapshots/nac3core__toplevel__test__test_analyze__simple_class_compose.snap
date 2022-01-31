@@ -1,5 +1,6 @@
 ---
 source: nac3core/src/toplevel/test.rs
+assertion_line: 541
 expression: res_vec
 
 ---

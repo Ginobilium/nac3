@@ -19,7 +19,7 @@ features = ["llvm13-0", "target-x86", "target-arm", "target-riscv", "no-libffi-l
 [dev-dependencies]
 test-case = "1.2.0"
 indoc = "1.0"
-insta = "1.5"
+insta = "=1.11.0"
 
 [build-dependencies]
 regex = "1"
