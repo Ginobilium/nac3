@@ -161,12 +161,12 @@
             configurePhase =
               ''
               # Link libstdc++ statically. As usual with cargo, this is an adventure.
-              cp --no-preserve=mode,ownership -R $CARGO_HOME/cargo-vendor-dir/llvm-sys-130.0.1/ llvm-sys-130.0.1
-              substituteInPlace llvm-sys-130.0.1/build.rs --replace "cargo:rustc-link-lib=dylib=" "cargo:rustc-link-lib=static="
-              substituteInPlace llvm-sys-130.0.1/build.rs --replace "fn main() {" "fn main() { println!(\"cargo:rustc-link-search=native=${pkgs-mingw.stdenv.cc.cc}/x86_64-w64-mingw32/lib\");"
+              cp --no-preserve=mode,ownership -R $CARGO_HOME/cargo-vendor-dir/llvm-sys-130.0.2/ llvm-sys-130.0.2
+              substituteInPlace llvm-sys-130.0.2/build.rs --replace "cargo:rustc-link-lib=dylib=" "cargo:rustc-link-lib=static="
+              substituteInPlace llvm-sys-130.0.2/build.rs --replace "fn main() {" "fn main() { println!(\"cargo:rustc-link-search=native=${pkgs-mingw.stdenv.cc.cc}/x86_64-w64-mingw32/lib\");"
               chmod 755 $CARGO_HOME/cargo-vendor-dir
-              rm $CARGO_HOME/cargo-vendor-dir/llvm-sys-130.0.1
-              mv llvm-sys-130.0.1 $CARGO_HOME/cargo-vendor-dir/llvm-sys-130.0.1
+              rm $CARGO_HOME/cargo-vendor-dir/llvm-sys-130.0.2
+              mv llvm-sys-130.0.2 $CARGO_HOME/cargo-vendor-dir/llvm-sys-130.0.2
 
               export PYO3_CONFIG_FILE=${pyo3-mingw-config}
 
