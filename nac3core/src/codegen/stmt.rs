@@ -90,65 +90,64 @@ pub fn gen_assign<'ctx, 'a, G: CodeGenerator>(
     target: &Expr<Option<Type>>,
     value: ValueEnum<'ctx>,
 ) {
-    if let ExprKind::Tuple { elts, .. } = &target.node {
-        if let BasicValueEnum::StructValue(v) = value.to_basic_value_enum(ctx, generator) {
-            for (i, elt) in elts.iter().enumerate() {
-                let v = ctx
-                    .builder
-                    .build_extract_value(v, u32::try_from(i).unwrap(), "struct_elem")
-                    .unwrap();
-                generator.gen_assign(ctx, elt, v.into());
+    match &target.node {
+        ExprKind::Tuple { elts, .. } => {
+            if let BasicValueEnum::StructValue(v) = value.to_basic_value_enum(ctx, generator) {
+                for (i, elt) in elts.iter().enumerate() {
+                    let v = ctx
+                        .builder
+                        .build_extract_value(v, u32::try_from(i).unwrap(), "struct_elem")
+                        .unwrap();
+                    generator.gen_assign(ctx, elt, v.into());
+                }
+            } else {
+                unreachable!()
             }
-        } else {
-            unreachable!()
         }
-    } else {
-        match &target.node {
-            ExprKind::Subscript { value: ls, slice, .. }
-                if matches!(&slice.node, ExprKind::Slice { .. }) =>
-            {
-                if let ExprKind::Slice { lower, upper, step } = &slice.node {
-                    let ls = generator
-                        .gen_expr(ctx, ls)
-                        .unwrap()
-                        .to_basic_value_enum(ctx, generator)
-                        .into_pointer_value();
-                    let (start, end, step) =
-                        handle_slice_indices(lower, upper, step, ctx, generator, ls);
-                    let value = value.to_basic_value_enum(ctx, generator).into_pointer_value();
-                    let ty = if let TypeEnum::TList { ty } =
-                        &*ctx.unifier.get_ty(target.custom.unwrap())
-                    {
-                        ctx.get_llvm_type(generator, *ty)
-                    } else {
-                        unreachable!()
-                    };
-                    let src_ind = handle_slice_indices(&None, &None, &None, ctx, generator, value);
-                    list_slice_assignment(
-                        ctx,
-                        generator.get_size_type(ctx.ctx),
-                        ty,
-                        ls,
-                        (start, end, step),
-                        value,
-                        src_ind,
-                    )
+        ExprKind::Subscript { value: ls, slice, .. }
+            if matches!(&slice.node, ExprKind::Slice { .. }) =>
+        {
+            if let ExprKind::Slice { lower, upper, step } = &slice.node {
+                let ls = generator
+                    .gen_expr(ctx, ls)
+                    .unwrap()
+                    .to_basic_value_enum(ctx, generator)
+                    .into_pointer_value();
+                let (start, end, step) =
+                    handle_slice_indices(lower, upper, step, ctx, generator, ls);
+                let value = value.to_basic_value_enum(ctx, generator).into_pointer_value();
+                let ty = if let TypeEnum::TList { ty } =
+                    &*ctx.unifier.get_ty(target.custom.unwrap())
+                {
+                    ctx.get_llvm_type(generator, *ty)
                 } else {
                     unreachable!()
+                };
+                let src_ind = handle_slice_indices(&None, &None, &None, ctx, generator, value);
+                list_slice_assignment(
+                    ctx,
+                    generator.get_size_type(ctx.ctx),
+                    ty,
+                    ls,
+                    (start, end, step),
+                    value,
+                    src_ind,
+                )
+            } else {
+                unreachable!()
+            }
+        }
+        _ => {
+            let ptr = generator.gen_store_target(ctx, target);
+            if let ExprKind::Name { id, .. } = &target.node {
+                let (_, static_value, counter) = ctx.var_assignment.get_mut(id).unwrap();
+                *counter += 1;
+                if let ValueEnum::Static(s) = &value {
+                    *static_value = Some(s.clone());
                 }
             }
-            _ => {
-                let ptr = generator.gen_store_target(ctx, target);
-                if let ExprKind::Name { id, .. } = &target.node {
-                    let (_, static_value, counter) = ctx.var_assignment.get_mut(id).unwrap();
-                    *counter += 1;
-                    if let ValueEnum::Static(s) = &value {
-                        *static_value = Some(s.clone());
-                    }
-                }
-                let val = value.to_basic_value_enum(ctx, generator);
-                ctx.builder.build_store(ptr, val);
-            }
+            let val = value.to_basic_value_enum(ctx, generator);
+            ctx.builder.build_store(ptr, val);
         }
     }
 }
