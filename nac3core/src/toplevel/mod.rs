@@ -11,20 +11,21 @@ use super::codegen::CodeGenContext;
 use super::typecheck::type_inferencer::PrimitiveStore;
 use super::typecheck::typedef::{FunSignature, FuncArg, SharedUnifier, Type, TypeEnum, Unifier};
 use crate::{
-    symbol_resolver::SymbolResolver,
+    codegen::CodeGenerator,
+    symbol_resolver::{SymbolResolver, ValueEnum},
     typecheck::{type_inferencer::CodeLocation, typedef::CallId},
 };
-use itertools::{izip, Itertools};
-use parking_lot::RwLock;
-use nac3parser::ast::{self, Stmt, StrRef};
 use inkwell::values::BasicValueEnum;
+use itertools::{izip, Itertools};
+use nac3parser::ast::{self, Stmt, StrRef};
+use parking_lot::RwLock;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Hash, Debug)]
 pub struct DefinitionId(pub usize);
 
+pub mod builtins;
 pub mod composer;
 pub mod helper;
-pub mod builtins;
 pub mod type_annotation;
 use composer::*;
 use type_annotation::*;
@@ -34,9 +35,10 @@ mod test;
 type GenCallCallback = Box<
     dyn for<'ctx, 'a> Fn(
             &mut CodeGenContext<'ctx, 'a>,
-            Option<(Type, BasicValueEnum)>,
+            Option<(Type, ValueEnum<'ctx>)>,
             (&FunSignature, DefinitionId),
-            Vec<(Option<StrRef>, BasicValueEnum<'ctx>)>,
+            Vec<(Option<StrRef>, ValueEnum<'ctx>)>,
+            &mut dyn CodeGenerator,
         ) -> Option<BasicValueEnum<'ctx>>
         + Send
         + Sync,
@@ -54,11 +56,12 @@ impl GenCall {
     pub fn run<'ctx, 'a>(
         &self,
         ctx: &mut CodeGenContext<'ctx, 'a>,
-        obj: Option<(Type, BasicValueEnum<'ctx>)>,
+        obj: Option<(Type, ValueEnum<'ctx>)>,
         fun: (&FunSignature, DefinitionId),
-        args: Vec<(Option<StrRef>, BasicValueEnum<'ctx>)>,
+        args: Vec<(Option<StrRef>, ValueEnum<'ctx>)>,
+        generator: &mut dyn CodeGenerator,
     ) -> Option<BasicValueEnum<'ctx>> {
-        (self.fp)(ctx, obj, fun, args)
+        (self.fp)(ctx, obj, fun, args, generator)
     }
 }
 
@@ -120,7 +123,7 @@ pub enum TopLevelDef {
         // symbol resolver of the module defined the class
         resolver: Option<Arc<dyn SymbolResolver + Send + Sync>>,
         // custom codegen callback
-        codegen_callback: Option<Arc<GenCall>>
+        codegen_callback: Option<Arc<GenCall>>,
     },
 }
 

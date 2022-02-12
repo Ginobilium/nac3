@@ -371,13 +371,7 @@ pub fn gen_call<'ctx, 'a, G: CodeGenerator>(
                 ..
             } => {
                 if let Some(callback) = codegen_callback {
-                    // TODO: Change signature
-                    let obj = obj.map(|(t, v)| (t, v.to_basic_value_enum(ctx, generator)));
-                    let params = params
-                        .into_iter()
-                        .map(|(name, val)| (name, val.to_basic_value_enum(ctx, generator)))
-                        .collect();
-                    return callback.run(ctx, obj, fun, params);
+                    return callback.run(ctx, obj, fun, params, generator);
                 }
                 let old_key = ctx.get_subst_key(obj.as_ref().map(|a| a.0), fun.0, None);
                 let mut keys = fun.0.args.clone();
@@ -431,7 +425,7 @@ pub fn gen_call<'ctx, 'a, G: CodeGenerator>(
                 };
                 param_vals = real_params
                     .into_iter()
-                    .map(|p| p.to_basic_value_enum(ctx, generator).into())
+                    .map(|p| p.to_basic_value_enum(ctx, generator))
                     .collect_vec();
                 instance_to_symbol.get(&key).cloned()
             }
