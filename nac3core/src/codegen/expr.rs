@@ -3,6 +3,7 @@ use std::{collections::HashMap, convert::TryInto, iter::once};
 use crate::{
     codegen::{
         concrete_type::{ConcreteFuncArg, ConcreteTypeEnum, ConcreteTypeStore},
+        stmt::gen_raise,
         get_llvm_type,
         irrt::*,
         CodeGenContext, CodeGenTask,
@@ -283,6 +284,66 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
         self.gen_const(generator, &nac3parser::ast::Constant::Str(s.into()), self.primitives.str)
     }
 
+    pub fn raise_exn<G: CodeGenerator>(
+        &mut self,
+        generator: &mut G,
+        name: &str,
+        msg: BasicValueEnum<'ctx>,
+        params: [Option<IntValue<'ctx>>; 3],
+        loc: Location
+    ) {
+        let ty = self.get_llvm_type(generator, self.primitives.exception).into_pointer_type();
+        let zelf_ty: BasicTypeEnum = ty.get_element_type().into_struct_type().into();
+        let zelf = self.builder.build_alloca(zelf_ty, "alloca");
+        let int32 = self.ctx.i32_type();
+        let zero = int32.const_zero();
+        unsafe {
+            let id_ptr = self.builder.build_in_bounds_gep(zelf, &[zero, zero], "exn.id");
+            let id = self.resolver.get_string_id(name);
+            self.builder.build_store(id_ptr, int32.const_int(id as u64, false));
+            let ptr = self.builder.build_in_bounds_gep(
+                zelf, &[zero, int32.const_int(5, false)], "exn.msg");
+            self.builder.build_store(ptr, msg);
+            let i64_zero = self.ctx.i64_type().const_zero();
+            for (i, attr_ind) in [6, 7, 8].iter().enumerate() {
+                let ptr = self.builder.build_in_bounds_gep(
+                    zelf, &[zero, int32.const_int(*attr_ind, false)], "exn.param");
+                let val = params[i].map_or(i64_zero, |v| self.builder.build_int_s_extend(v, self.ctx.i64_type(), "sext"));
+                self.builder.build_store(ptr, val);
+            }
+        }
+        gen_raise(generator, self, Some(&zelf.into()), loc);
+    }
+
+    pub fn make_assert<G: CodeGenerator>(
+        &mut self,
+        generator: &mut G,
+        cond: IntValue<'ctx>,
+        err_name: &str,
+        err_msg: &str,
+        params: [Option<IntValue<'ctx>>; 3],
+        loc: Location
+    ) {
+        let i1 = self.ctx.bool_type();
+        let i1_true = i1.const_all_ones();
+        let expect_fun = self.module.get_function("llvm.expect.i1").unwrap_or_else(|| {
+            self.module.add_function("llvm.expect", i1.fn_type(&[i1.into(), i1.into()], false), None)
+        });
+        // we assume that the condition is most probably true, so the normal path is the most
+        // probable path
+        // even if this assumption is violated, it does not matter as exception unwinding is
+        // slow anyway...
+        let cond = self.builder.build_call(expect_fun, &[cond.into(), i1_true.into()], "expect")
+            .try_as_basic_value().left().unwrap().into_int_value();
+        let current_fun = self.builder.get_insert_block().unwrap().get_parent().unwrap();
+        let then_block = self.ctx.append_basic_block(current_fun, "succ");
+        let exn_block = self.ctx.append_basic_block(current_fun, "fail");
+        self.builder.build_conditional_branch(cond, then_block, exn_block);
+        self.builder.position_at_end(exn_block);
+        let err_msg = self.gen_string(generator, err_msg);
+        self.raise_exn(generator, err_name, err_msg, params, loc);
+        self.builder.position_at_end(then_block);
+    }
 }
 
 pub fn gen_constructor<'ctx, 'a, G: CodeGenerator>(
@@ -1125,12 +1186,23 @@ pub fn gen_expr<'ctx, 'a, G: CodeGenerator>(
                     );
                     res_array_ret.into()
                 } else {
-                    // TODO: bound check
-                    let index = generator
+                    let len = ctx.build_gep_and_load(v, &[zero, int32.const_int(1, false)])
+                        .into_int_value();
+                    let raw_index = generator
                         .gen_expr(ctx, slice)
                         .unwrap()
                         .to_basic_value_enum(ctx, generator)
                         .into_int_value();
+                    // handle negative index
+                    let is_negative = ctx.builder.build_int_compare(inkwell::IntPredicate::SLT, raw_index,
+                        generator.get_size_type(ctx.ctx).const_zero(), "is_neg");
+                    let adjusted = ctx.builder.build_int_add(raw_index, len, "adjusted");
+                    let index = ctx.builder.build_select(is_negative, adjusted, raw_index, "index").into_int_value();
+                    // unsigned less than is enough, because negative index after adjustment is
+                    // bigger than the length (for unsigned cmp)
+                    let bound_check = ctx.builder.build_int_compare(inkwell::IntPredicate::ULT, index, len, "inbound");
+                    ctx.make_assert(generator, bound_check, "0:IndexError", "index {0} out of bounds 0:{1}",
+                        [Some(raw_index), Some(len), None], expr.location);
                     ctx.build_gep_and_load(arr_ptr, &[index])
                 }
             } else if let TypeEnum::TTuple { .. } = &*ctx.unifier.get_ty(value.custom.unwrap()) {
