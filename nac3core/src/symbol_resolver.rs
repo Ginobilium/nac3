@@ -109,6 +109,7 @@ pub trait SymbolResolver {
 
     fn get_symbol_location(&self, str: StrRef) -> Option<Location>;
     fn get_default_param_value(&self, expr: &nac3parser::ast::Expr) -> Option<SymbolValue>;
+    fn get_string_id(&self, s: &str) -> i32;
     // handle function call etc.
 }
 
@@ -296,6 +297,25 @@ impl dyn SymbolResolver + Send + Sync {
         expr: &Expr<T>,
     ) -> Result<Type, String> {
         parse_type_annotation(self, top_level_defs, unifier, primitives, expr)
+    }
+
+    pub fn get_type_name(
+        &self,
+        top_level_defs: &[Arc<RwLock<TopLevelDef>>],
+        unifier: &mut Unifier,
+        ty: Type,
+    ) -> String {
+        unifier.stringify(
+            ty,
+            &mut |id| {
+                if let TopLevelDef::Class { name, .. } = &*top_level_defs[id].read() {
+                    name.to_string()
+                } else {
+                    unreachable!("expected class definition")
+                }
+            },
+            &mut |id| format!("var{}", id),
+        )
     }
 }
 

@@ -227,6 +227,20 @@ impl<'a> Inferencer<'a> {
                 self.check_block(body, &mut new_defined_identifiers)?;
                 Ok(false)
             }
+            StmtKind::Try { body, handlers, orelse, finalbody, .. } => {
+                self.check_block(body, &mut defined_identifiers.clone())?;
+                self.check_block(orelse, &mut defined_identifiers.clone())?;
+                for handler in handlers.iter() {
+                    let mut defined_identifiers = defined_identifiers.clone();
+                    let ast::ExcepthandlerKind::ExceptHandler { name, body, .. } = &handler.node;
+                    if let Some(name) = name {
+                        defined_identifiers.insert(*name);
+                    }
+                    self.check_block(body, &mut defined_identifiers)?;
+                }
+                self.check_block(finalbody, defined_identifiers)?;
+                Ok(false)
+            }
             StmtKind::Expr { value, .. } => {
                 self.check_expr(value, defined_identifiers)?;
                 Ok(false)

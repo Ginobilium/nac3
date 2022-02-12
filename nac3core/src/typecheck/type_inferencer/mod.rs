@@ -52,9 +52,10 @@ pub struct Inferencer<'a> {
     pub function_data: &'a mut FunctionData,
     pub unifier: &'a mut Unifier,
     pub primitives: &'a PrimitiveStore,
-    pub virtual_checks: &'a mut Vec<(Type, Type)>,
+    pub virtual_checks: &'a mut Vec<(Type, Type, Location)>,
     pub variable_mapping: HashMap<StrRef, Type>,
     pub calls: &'a mut HashMap<CodeLocation, CallId>,
+    pub in_handler: bool,
 }
 
 struct NaiveFolder();
@@ -121,6 +122,56 @@ impl<'a> fold::Fold<()> for Inferencer<'a> {
                         simple,
                         config_comment,
                     },
+                }
+            }
+            ast::StmtKind::Try { body, handlers, orelse, finalbody, config_comment } => {
+                let body = body.into_iter().map(|stmt| self.fold_stmt(stmt)).collect::<Result<Vec<_>, _>>()?;
+                let outer_in_handler = self.in_handler;
+                let mut exception_handlers = Vec::with_capacity(handlers.len());
+                self.in_handler = true;
+                {
+                    let top_level_defs = self.top_level.definitions.read();
+                    let mut naive_folder = NaiveFolder();
+                    for handler in handlers.into_iter() {
+                        let ast::ExcepthandlerKind::ExceptHandler { type_, name, body } = handler.node;
+                        let type_ = if let Some(type_) = type_ {
+                            let typ = self.function_data.resolver.parse_type_annotation(
+                                top_level_defs.as_slice(),
+                                self.unifier,
+                                self.primitives,
+                                &type_
+                            )?;
+                            self.virtual_checks.push((typ, self.primitives.exception, handler.location));
+                            if let Some(name) = name {
+                                if !self.defined_identifiers.contains(&name) {
+                                    self.defined_identifiers.insert(name);
+                                }
+                                if let Some(old_typ) = self.variable_mapping.insert(name, typ) {
+                                    self.unifier.unify(old_typ, typ)?;
+                                }
+                            }
+                            let mut type_ = naive_folder.fold_expr(*type_)?;
+                            type_.custom = Some(typ);
+                            Some(Box::new(type_))
+                        } else {
+                            None
+                        };
+                        let body = body.into_iter().map(|stmt| self.fold_stmt(stmt)).collect::<Result<Vec<_>, _>>()?;
+                        exception_handlers.push(Located {
+                            location: handler.location,
+                            node: ast::ExcepthandlerKind::ExceptHandler { type_, name, body },
+                            custom: None
+                        });
+                    }
+                }
+                self.in_handler = outer_in_handler;
+                let handlers = exception_handlers;
+                let orelse = orelse.into_iter().map(|stmt| self.fold_stmt(stmt)).collect::<Result<Vec<_>, _>>()?;
+                let finalbody = finalbody .into_iter().map(|stmt| self.fold_stmt(stmt)).collect::<Result<Vec<_>, _>>()?;
+                Located {
+                    location: node.location,
+                    node: ast::StmtKind::Try { body, handlers, orelse, finalbody, config_comment },
+                    custom: None
                 }
             }
             ast::StmtKind::For { target, iter, body, orelse, config_comment, type_comment } => {
@@ -229,7 +280,8 @@ impl<'a> fold::Fold<()> for Inferencer<'a> {
             _ => fold::fold_stmt(self, node)?,
         };
         match &stmt.node {
-            ast::StmtKind::For { .. } => {}
+            ast::StmtKind::For { .. } => {},
+            ast::StmtKind::Try { .. } => {},
             ast::StmtKind::If { test, .. } | ast::StmtKind::While { test, .. } => {
                 self.unify(test.custom.unwrap(), self.primitives.bool, &test.location)?;
             }
@@ -242,6 +294,16 @@ impl<'a> fold::Fold<()> for Inferencer<'a> {
             ast::StmtKind::Break { .. }
             | ast::StmtKind::Continue { .. }
             | ast::StmtKind::Pass { .. } => {}
+            ast::StmtKind::Raise { exc, cause, .. } => {
+                if let Some(cause) = cause {
+                    return report_error("raise ... from cause is not supported", cause.location);
+                }
+                if let Some(exc) = exc {
+                    self.virtual_checks.push((exc.custom.unwrap(), self.primitives.exception, exc.location));
+                } else if !self.in_handler {
+                    return report_error("cannot reraise outside exception handlers", stmt.location);
+                }
+            }
             ast::StmtKind::With { items, .. } => {
                 for item in items.iter() {
                     let ty = item.context_expr.custom.unwrap();
@@ -537,6 +599,8 @@ impl<'a> Inferencer<'a> {
             top_level: self.top_level,
             defined_identifiers,
             variable_mapping,
+            // lambda should not be considered in exception handler
+            in_handler: false,
         };
         let fun = FunSignature {
             args: fn_args
@@ -583,6 +647,8 @@ impl<'a> Inferencer<'a> {
             primitives: self.primitives,
             calls: self.calls,
             defined_identifiers,
+            // listcomp expr should not be considered as inside an exception handler...
+            in_handler: false
         };
         let generator = generators.pop().unwrap();
         if generator.is_async {
@@ -661,7 +727,7 @@ impl<'a> Inferencer<'a> {
                     } else {
                         self.unifier.get_fresh_var().0
                     };
-                    self.virtual_checks.push((arg0.custom.unwrap(), ty));
+                    self.virtual_checks.push((arg0.custom.unwrap(), ty, func_location));
                     let custom = Some(self.unifier.add_ty(TypeEnum::TVirtual { ty }));
                     return Ok(Located {
                         location,

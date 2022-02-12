@@ -394,6 +394,48 @@ pub fn gen_if<'ctx, 'a, G: CodeGenerator>(
     }
 }
 
+pub fn final_proxy<'ctx, 'a>(
+    ctx: &mut CodeGenContext<'ctx, 'a>,
+    target: BasicBlock<'ctx>,
+    block: BasicBlock<'ctx>,
+) {
+    let (final_state, final_targets, final_paths) = ctx.outer_final.as_mut().unwrap();
+    let prev = ctx.builder.get_insert_block().unwrap();
+    ctx.builder.position_at_end(block);
+    unsafe {
+        ctx.builder.build_store(*final_state, target.get_address().unwrap());
+    }
+    ctx.builder.position_at_end(prev);
+    final_targets.push(target);
+    final_paths.push(block);
+}
+
+pub fn get_builtins<'ctx, 'a, G: CodeGenerator>(
+    generator: &mut G,
+    ctx: &mut CodeGenContext<'ctx, 'a>,
+    symbol: &str,
+) -> FunctionValue<'ctx> {
+    ctx.module.get_function(symbol).unwrap_or_else(|| {
+        let ty = match symbol {
+            "__artiq_raise" => ctx.ctx.void_type().fn_type(
+                &[ctx.get_llvm_type(generator, ctx.primitives.exception).into()],
+                false,
+            ),
+            "__artiq_resume" => ctx.ctx.void_type().fn_type(&[], false),
+            "__artiq_end_catch" => ctx.ctx.void_type().fn_type(&[], false),
+            _ => unimplemented!(),
+        };
+        let fun = ctx.module.add_function(symbol, ty, None);
+        if symbol == "__artiq_raise" || symbol == "__artiq_resume" {
+            fun.add_attribute(
+                AttributeLoc::Function,
+                ctx.ctx.create_enum_attribute(Attribute::get_named_enum_kind_id("noreturn"), 1),
+            );
+        }
+        fun
+    })
+}
+
 pub fn exn_constructor<'ctx, 'a>(
     ctx: &mut CodeGenContext<'ctx, 'a>,
     obj: Option<(Type, ValueEnum<'ctx>)>,
@@ -459,6 +501,352 @@ pub fn exn_constructor<'ctx, 'a>(
     Some(zelf.into())
 }
 
+pub fn gen_raise<'ctx, 'a, G: CodeGenerator>(
+    generator: &mut G,
+    ctx: &mut CodeGenContext<'ctx, 'a>,
+    exception: Option<&BasicValueEnum<'ctx>>,
+    loc: Location,
+) {
+    if let Some(exception) = exception {
+        unsafe {
+            let int32 = ctx.ctx.i32_type();
+            let zero = int32.const_zero();
+            let exception = exception.into_pointer_value();
+            let file_ptr = ctx.builder.build_in_bounds_gep(exception, &[zero, int32.const_int(1, false)], "file_ptr");
+            let filename = ctx.gen_string(generator, loc.file.0);
+            ctx.builder.build_store(file_ptr, filename);
+            let row_ptr = ctx.builder.build_in_bounds_gep(exception, &[zero, int32.const_int(2, false)], "row_ptr");
+            ctx.builder.build_store(row_ptr, int32.const_int(loc.row as u64, false));
+            let col_ptr = ctx.builder.build_in_bounds_gep(exception, &[zero, int32.const_int(3, false)], "col_ptr");
+            ctx.builder.build_store(col_ptr, int32.const_int(loc.column as u64, false));
+
+            let current_fun = ctx.builder.get_insert_block().unwrap().get_parent().unwrap();
+            let fun_name = ctx.gen_string(generator, current_fun.get_name().to_str().unwrap());
+            let name_ptr = ctx.builder.build_in_bounds_gep(exception, &[zero, int32.const_int(4, false)], "name_ptr");
+            ctx.builder.build_store(name_ptr, fun_name);
+        }
+
+        let raise = get_builtins(generator, ctx, "__artiq_raise");
+        let exception = *exception;
+        ctx.build_call_or_invoke(raise, &[exception], "raise");
+    } else {
+        let resume = get_builtins(generator, ctx, "__artiq_resume");
+        ctx.build_call_or_invoke(resume, &[], "resume");
+    }
+    ctx.builder.build_unreachable();
+}
+
+pub fn gen_try<'ctx, 'a, G: CodeGenerator>(
+    generator: &mut G,
+    ctx: &mut CodeGenContext<'ctx, 'a>,
+    target: &Stmt<Option<Type>>,
+) {
+    if let StmtKind::Try { body, handlers, orelse, finalbody, .. } = &target.node {
+        // if we need to generate anything related to exception, we must have personality defined
+        let personality_symbol = ctx.top_level.personality_symbol.as_ref().unwrap();
+        let personality = ctx.module.get_function(personality_symbol).unwrap_or_else(|| {
+            let ty = ctx.ctx.i32_type().fn_type(&[], true);
+            ctx.module.add_function(personality_symbol, ty, None)
+        });
+        let exception_type = ctx.get_llvm_type(generator, ctx.primitives.exception);
+        let ptr_type = ctx.ctx.i8_type().ptr_type(inkwell::AddressSpace::Generic);
+        let current_block = ctx.builder.get_insert_block().unwrap();
+        let current_fun = current_block.get_parent().unwrap();
+        let landingpad = ctx.ctx.append_basic_block(current_fun, "try.landingpad");
+        let dispatcher = ctx.ctx.append_basic_block(current_fun, "try.dispatch");
+        let mut dispatcher_end = dispatcher;
+        ctx.builder.position_at_end(dispatcher);
+        let exn = ctx.builder.build_phi(exception_type, "exn");
+        ctx.builder.position_at_end(current_block);
+
+        let mut cleanup = None;
+        let mut old_loop_target = None;
+        let mut old_return = None;
+        let mut old_outer_final = None;
+        let has_cleanup = if !finalbody.is_empty() {
+            let final_state = generator.gen_var_alloc(ctx, ptr_type.into());
+            old_outer_final = ctx.outer_final.replace((final_state, Vec::new(), Vec::new()));
+            if let Some((continue_target, break_target)) = ctx.loop_target {
+                let break_proxy = ctx.ctx.append_basic_block(current_fun, "try.break");
+                let continue_proxy = ctx.ctx.append_basic_block(current_fun, "try.continue");
+                final_proxy(ctx, break_target, break_proxy);
+                final_proxy(ctx, continue_target, continue_proxy);
+                old_loop_target = ctx.loop_target.replace((continue_proxy, break_proxy));
+            }
+            let return_proxy = ctx.ctx.append_basic_block(current_fun, "try.return");
+            if let Some(return_target) = ctx.return_target {
+                final_proxy(ctx, return_target, return_proxy);
+            } else {
+                let return_target = ctx.ctx.append_basic_block(current_fun, "try.return_target");
+                ctx.builder.position_at_end(return_target);
+                let return_value = ctx.return_buffer.map(|v| ctx.builder.build_load(v, "$ret"));
+                ctx.builder.build_return(return_value.as_ref().map(|v| v as &dyn BasicValue));
+                ctx.builder.position_at_end(current_block);
+                final_proxy(ctx, return_target, return_proxy);
+            }
+            old_return = ctx.return_target.replace(return_proxy);
+            cleanup = Some(ctx.ctx.append_basic_block(current_fun, "try.cleanup"));
+            true
+        } else {
+            ctx.outer_final.is_some()
+        };
+
+        let mut clauses = Vec::new();
+        let mut found_catch_all = false;
+        for handler_node in handlers.iter() {
+            let ExcepthandlerKind::ExceptHandler { type_, .. } = &handler_node.node;
+            // none or Exception
+            if type_.is_none() || ctx.unifier.unioned(type_.as_ref().unwrap().custom.unwrap(), ctx.primitives.exception) {
+                clauses.push(None);
+                found_catch_all = true;
+                break;
+            } else {
+                let type_ = type_.as_ref().unwrap();
+                let exn_name = ctx.resolver.get_type_name(
+                    &ctx.top_level.definitions.read(),
+                    &mut ctx.unifier,
+                    type_.custom.unwrap(),
+                );
+                let exn_id = ctx.resolver.get_string_id(&format!("0:{}", exn_name));
+                let exn_id_global =
+                    ctx.module.add_global(ctx.ctx.i32_type(), None, &format!("exn.{}", exn_id));
+                exn_id_global.set_initializer(&ctx.ctx.i32_type().const_int(exn_id as u64, false));
+                clauses.push(Some(exn_id_global.as_pointer_value().as_basic_value_enum()));
+            }
+        }
+        let mut all_clauses = clauses.clone();
+        if let Some(old_clauses) = &ctx.outer_catch_clauses {
+            if !found_catch_all {
+                all_clauses.extend_from_slice(&old_clauses.0)
+            }
+        }
+        let old_clauses = ctx.outer_catch_clauses.replace((all_clauses, dispatcher, exn));
+        let old_unwind = ctx.unwind_target.replace(landingpad);
+        gen_block(generator, ctx, body.iter());
+        if ctx.builder.get_insert_block().unwrap().get_terminator().is_none() {
+            gen_block(generator, ctx, orelse.iter());
+        }
+        let body = ctx.builder.get_insert_block().unwrap();
+        // reset old_clauses and old_unwind
+        let (all_clauses, _, _) = ctx.outer_catch_clauses.take().unwrap();
+        ctx.outer_catch_clauses = old_clauses;
+        ctx.unwind_target = old_unwind;
+        ctx.return_target = old_return;
+        ctx.loop_target = old_loop_target;
+        old_loop_target = None;
+
+        let old_unwind = if !finalbody.is_empty() {
+            let final_landingpad = ctx.ctx.append_basic_block(current_fun, "try.catch.final");
+            ctx.builder.position_at_end(final_landingpad);
+            ctx.builder.build_landing_pad(
+                ctx.ctx.struct_type(&[ptr_type.into(), exception_type], false),
+                personality,
+                &[],
+                true,
+                "try.catch.final",
+            );
+            ctx.builder.build_unconditional_branch(cleanup.unwrap());
+            ctx.builder.position_at_end(body);
+            ctx.unwind_target.replace(final_landingpad)
+        } else {
+            None
+        };
+
+        // run end_catch before continue/break/return
+        let mut final_proxy_lambda =
+            |ctx: &mut CodeGenContext<'ctx, 'a>,
+             target: BasicBlock<'ctx>,
+             block: BasicBlock<'ctx>| final_proxy(ctx, target, block);
+        let mut redirect_lambda = |ctx: &mut CodeGenContext<'ctx, 'a>,
+                                   target: BasicBlock<'ctx>,
+                                   block: BasicBlock<'ctx>| {
+            ctx.builder.position_at_end(block);
+            ctx.builder.build_unconditional_branch(target);
+            ctx.builder.position_at_end(body);
+        };
+        let redirect = if ctx.outer_final.is_some() {
+            &mut final_proxy_lambda
+                as &mut dyn FnMut(&mut CodeGenContext<'ctx, 'a>, BasicBlock<'ctx>, BasicBlock<'ctx>)
+        } else {
+            &mut redirect_lambda
+                as &mut dyn FnMut(&mut CodeGenContext<'ctx, 'a>, BasicBlock<'ctx>, BasicBlock<'ctx>)
+        };
+        let resume = get_builtins(generator, ctx, "__artiq_resume");
+        let end_catch = get_builtins(generator, ctx, "__artiq_end_catch");
+        if let Some((continue_target, break_target)) = ctx.loop_target.take() {
+            let break_proxy = ctx.ctx.append_basic_block(current_fun, "try.break");
+            let continue_proxy = ctx.ctx.append_basic_block(current_fun, "try.continue");
+            ctx.builder.position_at_end(break_proxy);
+            ctx.builder.build_call(end_catch, &[], "end_catch");
+            ctx.builder.position_at_end(continue_proxy);
+            ctx.builder.build_call(end_catch, &[], "end_catch");
+            ctx.builder.position_at_end(body);
+            redirect(ctx, break_target, break_proxy);
+            redirect(ctx, continue_target, continue_proxy);
+            ctx.loop_target = Some((continue_proxy, break_proxy));
+            old_loop_target = Some((continue_target, break_target));
+        }
+        let return_proxy = ctx.ctx.append_basic_block(current_fun, "try.return");
+        ctx.builder.position_at_end(return_proxy);
+        ctx.builder.build_call(end_catch, &[], "end_catch");
+        let return_target = ctx.return_target.take().unwrap_or_else(|| {
+            let doreturn = ctx.ctx.append_basic_block(current_fun, "try.doreturn");
+            ctx.builder.position_at_end(doreturn);
+            let return_value = ctx.return_buffer.map(|v| ctx.builder.build_load(v, "$ret"));
+            ctx.builder.build_return(return_value.as_ref().map(|v| v as &dyn BasicValue));
+            doreturn
+        });
+        redirect(ctx, return_target, return_proxy);
+        ctx.return_target = Some(return_proxy);
+        old_return = Some(return_target);
+
+        let mut post_handlers = Vec::new();
+
+        let exnid = if !handlers.is_empty() {
+            ctx.builder.position_at_end(dispatcher);
+            unsafe {
+                let zero = ctx.ctx.i32_type().const_zero();
+                let exnid_ptr = ctx.builder.build_gep(
+                    exn.as_basic_value().into_pointer_value(),
+                    &[zero, zero],
+                    "exnidptr",
+                );
+                Some(ctx.builder.build_load(exnid_ptr, "exnid"))
+            }
+        } else {
+            None
+        };
+
+        for (handler_node, exn_type) in handlers.iter().zip(clauses.iter()) {
+            let ExcepthandlerKind::ExceptHandler { type_, name, body } = &handler_node.node;
+            let handler_bb = ctx.ctx.append_basic_block(current_fun, "try.handler");
+            ctx.builder.position_at_end(handler_bb);
+            if let Some(name) = name {
+                let exn_ty = ctx.get_llvm_type(generator, type_.as_ref().unwrap().custom.unwrap());
+                let exn_store = generator.gen_var_alloc(ctx, exn_ty);
+                ctx.var_assignment.insert(*name, (exn_store, None, 0));
+                ctx.builder.build_store(exn_store, exn.as_basic_value());
+            }
+            gen_block(generator, ctx, body.iter());
+            let current = ctx.builder.get_insert_block().unwrap();
+            // only need to call end catch if not terminated
+            // otherwise, we already handled in return/break/continue/raise
+            if current.get_terminator().is_none() {
+                ctx.builder.build_call(end_catch, &[], "end_catch");
+            }
+            post_handlers.push(current);
+            ctx.builder.position_at_end(dispatcher_end);
+            if let Some(exn_type) = exn_type {
+                let dispatcher_cont =
+                    ctx.ctx.append_basic_block(current_fun, "try.dispatcher_cont");
+                let actual_id = exnid.unwrap().into_int_value();
+                let expected_id = ctx
+                    .builder
+                    .build_load(exn_type.into_pointer_value(), "expected_id")
+                    .into_int_value();
+                let result = ctx.builder.build_int_compare(EQ, actual_id, expected_id, "exncheck");
+                ctx.builder.build_conditional_branch(result, handler_bb, dispatcher_cont);
+                dispatcher_end = dispatcher_cont;
+            } else {
+                ctx.builder.build_unconditional_branch(handler_bb);
+                break;
+            }
+        }
+
+        ctx.unwind_target = old_unwind;
+        ctx.loop_target = old_loop_target;
+        ctx.return_target = old_return;
+
+        ctx.builder.position_at_end(landingpad);
+        let clauses: Vec<_> = if finalbody.is_empty() { &all_clauses } else { &clauses }
+            .iter()
+            .map(|v| v.unwrap_or(ptr_type.const_zero().into()))
+            .collect();
+        let landingpad_value = ctx
+            .builder
+            .build_landing_pad(
+                ctx.ctx.struct_type(&[ptr_type.into(), exception_type], false),
+                personality,
+                &clauses,
+                has_cleanup,
+                "try.landingpad",
+            )
+            .into_struct_value();
+        let exn_val = ctx.builder.build_extract_value(landingpad_value, 1, "exn").unwrap();
+        ctx.builder.build_unconditional_branch(dispatcher);
+        exn.add_incoming(&[(&exn_val, landingpad)]);
+
+        if dispatcher_end.get_terminator().is_none() {
+            ctx.builder.position_at_end(dispatcher_end);
+            if let Some(cleanup) = cleanup {
+                ctx.builder.build_unconditional_branch(cleanup);
+            } else if let Some((_, outer_dispatcher, phi)) = ctx.outer_catch_clauses {
+                phi.add_incoming(&[(&exn_val, dispatcher_end)]);
+                ctx.builder.build_unconditional_branch(outer_dispatcher);
+            } else {
+                ctx.build_call_or_invoke(resume, &[], "resume");
+                ctx.builder.build_unreachable();
+            }
+        }
+
+        if finalbody.is_empty() {
+            let tail = ctx.ctx.append_basic_block(current_fun, "try.tail");
+            if body.get_terminator().is_none() {
+                ctx.builder.position_at_end(body);
+                ctx.builder.build_unconditional_branch(tail);
+            }
+            if matches!(cleanup, Some(cleanup) if cleanup.get_terminator().is_none()) {
+                ctx.builder.position_at_end(cleanup.unwrap());
+                ctx.builder.build_unconditional_branch(tail);
+            }
+            for post_handler in post_handlers {
+                if post_handler.get_terminator().is_none() {
+                    ctx.builder.position_at_end(post_handler);
+                    ctx.builder.build_unconditional_branch(tail);
+                }
+            }
+            ctx.builder.position_at_end(tail);
+        } else {
+            let final_branches = ctx.outer_final.take().unwrap();
+            ctx.outer_final = old_outer_final;
+
+            // exception path
+            let cleanup = cleanup.unwrap();
+            ctx.builder.position_at_end(cleanup);
+            gen_block(generator, ctx, finalbody.iter());
+            if !ctx.is_terminated() {
+                ctx.build_call_or_invoke(resume, &[], "resume");
+                ctx.builder.build_unreachable();
+            }
+
+            // normal path
+            let (final_state, mut final_targets, final_paths) = final_branches;
+            let tail = ctx.ctx.append_basic_block(current_fun, "try.tail");
+            final_targets.push(tail);
+            let finalizer = ctx.ctx.append_basic_block(current_fun, "try.finally");
+            ctx.builder.position_at_end(finalizer);
+            gen_block(generator, ctx, finalbody.iter());
+            if !ctx.is_terminated() {
+                let dest = ctx.builder.build_load(final_state, "final_dest");
+                ctx.builder.build_indirect_branch(dest, &final_targets);
+            }
+            for block in final_paths.iter() {
+                if block.get_terminator().is_none() {
+                    ctx.builder.position_at_end(*block);
+                    ctx.builder.build_unconditional_branch(finalizer);
+                }
+            }
+            for block in [body].iter().chain(post_handlers.iter()) {
+                if block.get_terminator().is_none() {
+                    ctx.builder.position_at_end(*block);
+                    unsafe {
+                        ctx.builder.build_store(final_state, tail.get_address().unwrap());
+                    }
+                    ctx.builder.build_unconditional_branch(finalizer);
+                }
+            }
+            ctx.builder.position_at_end(tail);
+        }
     } else {
         unreachable!()
     }
@@ -531,9 +919,15 @@ pub fn gen_stmt<'ctx, 'a, G: CodeGenerator>(
             let value = gen_binop_expr(generator, ctx, target, op, value);
             generator.gen_assign(ctx, target, value);
         }
+        StmtKind::Try { .. } => gen_try(generator, ctx, stmt),
+        StmtKind::Raise { exc, .. } => {
+            let exc = exc.as_ref().map(|exc| generator.gen_expr(ctx, exc).unwrap().to_basic_value_enum(ctx, generator));
+            gen_raise(generator, ctx, exc.as_ref(), stmt.location)
+        }
         _ => unimplemented!(),
     };
-    false
+}
+
 pub fn gen_block<'ctx, 'a, 'b, G: CodeGenerator, I: Iterator<Item = &'b Stmt<Option<Type>>>>(
     generator: &mut G,
     ctx: &mut CodeGenContext<'ctx, 'a>,

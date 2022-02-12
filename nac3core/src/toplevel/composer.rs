@@ -148,7 +148,7 @@ impl TopLevelComposer {
                 self.unifier.get_shared_unifier(),
                 self.primitives_ty,
             )])),
-            personality_symbol: None,
+            personality_symbol: Some("__artiq_personality".into()),
         }
     }
 
@@ -166,7 +166,7 @@ impl TopLevelComposer {
     ) -> Result<(StrRef, DefinitionId, Option<Type>), String> {
         let defined_names = &mut self.defined_names;
         match &ast.node {
-            ast::StmtKind::ClassDef { name: class_name, body, .. } => {
+            ast::StmtKind::ClassDef { name: class_name, bases, body, .. } => {
                 if self.keyword_list.contains(class_name) {
                     return Err(format!(
                         "cannot use keyword `{}` as a class name (at {})",
@@ -174,11 +174,12 @@ impl TopLevelComposer {
                         ast.location
                     ));
                 }
-                if !defined_names.insert({
-                    let mut n = mod_path.clone();
-                    n.push_str(&class_name.to_string());
-                    n
-                }) {
+                let fully_qualified_class_name = if mod_path.is_empty() {
+                    *class_name
+                } else {
+                    format!("{}.{}", &mod_path, class_name).into()
+                };
+                if !defined_names.insert(fully_qualified_class_name.into()) {
                     return Err(format!(
                         "duplicate definition of class `{}` (at {})",
                         class_name,
@@ -196,7 +197,7 @@ impl TopLevelComposer {
                     Arc::new(RwLock::new(Self::make_top_level_class_def(
                         class_def_id,
                         resolver.clone(),
-                        class_name,
+                        fully_qualified_class_name,
                         Some(constructor_ty),
                     ))),
                     None,
@@ -218,8 +219,13 @@ impl TopLevelComposer {
                 // we do not push anything to the def list, so we keep track of the index
                 // and then push in the correct order after the for loop
                 let mut class_method_index_offset = 0;
-                let mut contains_constructor = false;
                 let init_id = "__init__".into();
+                let exception_id = "Exception".into();
+                // TODO: Fix this hack. We will generate constructor for classes that inherit
+                // from Exception class (directly or indirectly), but this code cannot handle
+                // subclass of other exception classes.
+                let mut contains_constructor = bases
+                    .iter().any(|base| matches!(base.node, ast::ExprKind::Name { id, .. } if id == exception_id));
                 for b in body {
                     if let ast::StmtKind::FunctionDef { name: method_name, .. } = &b.node {
                         if method_name == &init_id {
@@ -232,21 +238,14 @@ impl TopLevelComposer {
                                 b.location
                             ));
                         }
-                        let global_class_method_name = {
-                            let mut n = mod_path.clone();
-                            n.push_str(
-                                Self::make_class_method_name(
-                                    class_name.into(),
-                                    &method_name.to_string(),
-                                )
-                                .as_str(),
-                            );
-                            n
-                        };
+                        let global_class_method_name = Self::make_class_method_name(
+                            fully_qualified_class_name.into(),
+                            &method_name.to_string(),
+                        );
                         if !defined_names.insert(global_class_method_name.clone()) {
                             return Err(format!(
                                 "class method `{}` defined twice (at {})",
-                                &global_class_method_name[mod_path.len()..],
+                                global_class_method_name,
                                 b.location
                             ));
                         }
@@ -304,15 +303,15 @@ impl TopLevelComposer {
                 // if self.keyword_list.contains(name) {
                 //     return Err("cannot use keyword as a top level function name".into());
                 // }
-                let global_fun_name = {
-                    let mut n = mod_path.clone();
-                    n.push_str(&name.to_string());
-                    n
+                let global_fun_name = if mod_path.is_empty() {
+                    name.to_string()
+                } else {
+                    format!("{}.{}", mod_path, name)
                 };
                 if !defined_names.insert(global_fun_name.clone()) {
                     return Err(format!(
                         "top level function `{}` defined twice (at {})",
-                        &global_fun_name[mod_path.len()..],
+                        global_fun_name,
                         ast.location
                     ));
                 }
@@ -1582,6 +1581,7 @@ impl TopLevelComposer {
                             primitives: &self.primitives_ty,
                             virtual_checks: &mut Vec::new(),
                             calls: &mut calls,
+                            in_handler: false
                         };
 
                         let fun_body =
@@ -1591,6 +1591,13 @@ impl TopLevelComposer {
                                 if !decorator_list.is_empty()
                                     && matches!(&decorator_list[0].node,
                                         ast::ExprKind::Name{ id, .. } if id == &"extern".into())
+                                {
+                                    instance_to_symbol.insert("".into(), simple_name.to_string());
+                                    continue;
+                                }
+                                if !decorator_list.is_empty()
+                                    && matches!(&decorator_list[0].node,
+                                        ast::ExprKind::Name{ id, .. } if id == &"rpc".into())
                                 {
                                     instance_to_symbol.insert("".into(), simple_name.to_string());
                                     continue;
@@ -1605,7 +1612,42 @@ impl TopLevelComposer {
 
                         let returned =
                             inferencer.check_block(fun_body.as_slice(), &mut identifiers)?;
-
+                        {
+                            // check virtuals
+                            let defs = ctx.definitions.read();
+                            for (subtype, base, loc) in inferencer.virtual_checks.iter() {
+                                let base_id = {
+                                    let base = inferencer.unifier.get_ty(*base);
+                                    if let TypeEnum::TObj { obj_id, .. } = &*base {
+                                        *obj_id
+                                    } else {
+                                        return Err(format!("Base type should be a class (at {})", loc))
+                                    }
+                                };
+                                let subtype_id = {
+                                    let ty = inferencer.unifier.get_ty(*subtype);
+                                    if let TypeEnum::TObj { obj_id, .. } = &*ty {
+                                        *obj_id
+                                    } else {
+                                        let base_repr = inferencer.unifier.default_stringify(*base);
+                                        let subtype_repr = inferencer.unifier.default_stringify(*subtype);
+                                        return Err(format!("Expected a subtype of {}, but got {} (at {})", base_repr, subtype_repr, loc))
+                                    }
+                                };
+                                let subtype_entry = defs[subtype_id.0].read();
+                                if let TopLevelDef::Class { ancestors, .. } = &*subtype_entry {
+                                    let m = ancestors.iter()
+                                        .find(|kind| matches!(kind, TypeAnnotation::CustomClass { id, .. } if *id == base_id));
+                                    if m.is_none() {
+                                        let base_repr = inferencer.unifier.default_stringify(*base);
+                                        let subtype_repr = inferencer.unifier.default_stringify(*subtype);
+                                        return Err(format!("Expected a subtype of {}, but got {} (at {})", base_repr, subtype_repr, loc))
+                                    }
+                                } else {
+                                    unreachable!();
+                                }
+                            }
+                        }
                         if !self.unifier.unioned(inst_ret, self.primitives_ty.none) && !returned {
                             let def_ast_list = &self.definition_ast_list;
                             let ret_str = self.unifier.stringify(

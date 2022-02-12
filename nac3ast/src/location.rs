@@ -3,7 +3,7 @@ use crate::ast_gen::StrRef;
 use std::fmt;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct FileName(StrRef);
+pub struct FileName(pub StrRef);
 impl Default for FileName {
     fn default() -> Self {
         FileName("unknown".into())
@@ -19,9 +19,9 @@ impl From<String> for FileName {
 /// A location somewhere in the sourcecode.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Location {
-    row: usize,
-    column: usize,
-    file: FileName
+    pub row: usize,
+    pub column: usize,
+    pub file: FileName
 }
 
 impl fmt::Display for Location {
