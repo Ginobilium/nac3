@@ -38,7 +38,7 @@ impl SymbolResolver for Resolver {
     fn get_default_param_value(&self, _: &nac3parser::ast::Expr) -> Option<crate::symbol_resolver::SymbolValue> {
         unimplemented!()
     }
-    
+
     fn get_symbol_type(
         &self,
         _: &mut Unifier,
@@ -68,6 +68,10 @@ impl SymbolResolver for Resolver {
 
     fn get_identifier_def(&self, id: StrRef) -> Option<DefinitionId> {
         self.0.id_to_def.lock().get(&id).cloned()
+    }
+
+    fn get_string_id(&self, _: &str) -> i32 {
+        unimplemented!()
     }
 }
 

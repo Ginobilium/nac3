@@ -22,7 +22,7 @@ impl SymbolResolver for Resolver {
     fn get_default_param_value(&self, _: &nac3parser::ast::Expr) -> Option<crate::symbol_resolver::SymbolValue> {
         unimplemented!()
     }
-    
+
     fn get_symbol_type(
         &self,
         _: &mut Unifier,
@@ -48,6 +48,10 @@ impl SymbolResolver for Resolver {
     fn get_identifier_def(&self, id: StrRef) -> Option<DefinitionId> {
         self.id_to_def.get(&id).cloned()
     }
+
+    fn get_string_id(&self, _: &str) -> i32 {
+        unimplemented!()
+    }
 }
 
 struct TestEnvironment {
@@ -56,7 +60,7 @@ struct TestEnvironment {
     pub primitives: PrimitiveStore,
     pub id_to_name: HashMap<usize, StrRef>,
     pub identifier_mapping: HashMap<StrRef, Type>,
-    pub virtual_checks: Vec<(Type, Type)>,
+    pub virtual_checks: Vec<(Type, Type, nac3parser::ast::Location)>,
     pub calls: HashMap<CodeLocation, CallId>,
     pub top_level: TopLevelContext,
 }
@@ -111,7 +115,12 @@ impl TestEnvironment {
             fields: HashMap::new().into(),
             params: HashMap::new().into(),
         });
-        let primitives = PrimitiveStore { int32, int64, float, bool, none, range, str };
+        let exception = unifier.add_ty(TypeEnum::TObj {
+            obj_id: DefinitionId(7),
+            fields: HashMap::new().into(),
+            params: HashMap::new().into(),
+        });
+        let primitives = PrimitiveStore { int32, int64, float, bool, none, range, str, exception };
         set_primitives_magic_methods(&primitives, &mut unifier);
 
         let id_to_name = [
@@ -122,6 +131,7 @@ impl TestEnvironment {
             (4, "none".into()),
             (5, "range".into()),
             (6, "str".into()),
+            (7, "exception".into()),
         ]
         .iter()
         .cloned()
@@ -206,9 +216,14 @@ impl TestEnvironment {
             fields: HashMap::new().into(),
             params: HashMap::new().into(),
         });
+        let exception = unifier.add_ty(TypeEnum::TObj {
+            obj_id: DefinitionId(7),
+            fields: HashMap::new().into(),
+            params: HashMap::new().into(),
+        });
         identifier_mapping.insert("None".into(), none);
         for (i, name) in
-            ["int32", "int64", "float", "bool", "none", "range", "str"].iter().enumerate()
+            ["int32", "int64", "float", "bool", "none", "range", "str", "Exception"].iter().enumerate()
         {
             top_level_defs.push(
                 RwLock::new(TopLevelDef::Class {
@@ -224,20 +239,21 @@ impl TestEnvironment {
                 .into(),
             );
         }
+        let defs = 7;
 
-        let primitives = PrimitiveStore { int32, int64, float, bool, none, range, str };
+        let primitives = PrimitiveStore { int32, int64, float, bool, none, range, str, exception };
 
         let (v0, id) = unifier.get_fresh_var();
 
         let foo_ty = unifier.add_ty(TypeEnum::TObj {
-            obj_id: DefinitionId(7),
+            obj_id: DefinitionId(defs + 1),
             fields: [("a".into(), (v0, true))].iter().cloned().collect::<HashMap<_, _>>().into(),
             params: [(id, v0)].iter().cloned().collect::<HashMap<_, _>>().into(),
         });
         top_level_defs.push(
             RwLock::new(TopLevelDef::Class {
                 name: "Foo".into(),
-                object_id: DefinitionId(7),
+                object_id: DefinitionId(defs + 1),
                 type_vars: vec![v0],
                 fields: [("a".into(), v0, true)].into(),
                 methods: Default::default(),
@@ -264,7 +280,7 @@ impl TestEnvironment {
             FunSignature { args: vec![], ret: int32, vars: Default::default() }.into(),
         ));
         let bar = unifier.add_ty(TypeEnum::TObj {
-            obj_id: DefinitionId(8),
+            obj_id: DefinitionId(defs + 2),
             fields: [("a".into(), (int32, true)), ("b".into(), (fun, true))]
                 .iter()
                 .cloned()
@@ -275,7 +291,7 @@ impl TestEnvironment {
         top_level_defs.push(
             RwLock::new(TopLevelDef::Class {
                 name: "Bar".into(),
-                object_id: DefinitionId(8),
+                object_id: DefinitionId(defs + 2),
                 type_vars: Default::default(),
                 fields: [("a".into(), int32, true), ("b".into(), fun, true)].into(),
                 methods: Default::default(),
@@ -293,7 +309,7 @@ impl TestEnvironment {
         );
 
         let bar2 = unifier.add_ty(TypeEnum::TObj {
-            obj_id: DefinitionId(9),
+            obj_id: DefinitionId(defs + 3),
             fields: [("a".into(), (bool, true)), ("b".into(), (fun, false))]
                 .iter()
                 .cloned()
@@ -304,7 +320,7 @@ impl TestEnvironment {
         top_level_defs.push(
             RwLock::new(TopLevelDef::Class {
                 name: "Bar2".into(),
-                object_id: DefinitionId(9),
+                object_id: DefinitionId(defs + 3),
                 type_vars: Default::default(),
                 fields: [("a".into(), bool, true), ("b".into(), fun, false)].into(),
                 methods: Default::default(),
@@ -323,19 +339,21 @@ impl TestEnvironment {
         let class_names = [("Bar".into(), bar), ("Bar2".into(), bar2)].iter().cloned().collect();
 
         let id_to_name = [
-            (0, "int32".into()),
-            (1, "int64".into()),
-            (2, "float".into()),
-            (3, "bool".into()),
-            (4, "none".into()),
-            (5, "range".into()),
-            (6, "str".into()),
-            (7, "Foo".into()),
-            (8, "Bar".into()),
-            (9, "Bar2".into()),
+            "int32".into(),
+            "int64".into(),
+            "float".into(),
+            "bool".into(),
+            "none".into(),
+            "range".into(),
+            "str".into(),
+            "exception".into(),
+            "Foo".into(),
+            "Bar".into(),
+            "Bar2".into(),
         ]
         .iter()
-        .cloned()
+        .enumerate()
+        .map(|(a, b)| (a, *b))
         .collect();
 
         let top_level = TopLevelContext {
@@ -347,9 +365,9 @@ impl TestEnvironment {
         let resolver = Arc::new(Resolver {
             id_to_type: identifier_mapping.clone(),
             id_to_def: [
-                ("Foo".into(), DefinitionId(7)),
-                ("Bar".into(), DefinitionId(8)),
-                ("Bar2".into(), DefinitionId(9)),
+                ("Foo".into(), DefinitionId(defs + 1)),
+                ("Bar".into(), DefinitionId(defs + 2)),
+                ("Bar2".into(), DefinitionId(defs + 3)),
             ]
             .iter()
             .cloned()
@@ -383,6 +401,7 @@ impl TestEnvironment {
             virtual_checks: &mut self.virtual_checks,
             calls: &mut self.calls,
             defined_identifiers: Default::default(),
+            in_handler: false
         }
     }
 }
@@ -488,7 +507,7 @@ fn test_basic(source: &str, mapping: HashMap<&str, &str>, virtuals: &[(&str, &st
         assert_eq!(format!("{}: {}", k, v), format!("{}: {}", k, name));
     }
     assert_eq!(inferencer.virtual_checks.len(), virtuals.len());
-    for ((a, b), (x, y)) in zip(inferencer.virtual_checks.iter(), virtuals) {
+    for ((a, b, _), (x, y)) in zip(inferencer.virtual_checks.iter(), virtuals) {
         let a = inferencer.unifier.stringify(
             *a,
             &mut |v| (*id_to_name.get(&v).unwrap()).into(),

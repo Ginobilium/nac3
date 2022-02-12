@@ -65,6 +65,10 @@ impl SymbolResolver for Resolver {
     fn get_identifier_def(&self, id: StrRef) -> Option<DefinitionId> {
         self.id_to_def.read().get(&id).cloned()
     }
+
+    fn get_string_id(&self, _: &str) -> i32 {
+        unimplemented!()
+    }
 }
 
 #[test]
@@ -120,6 +124,7 @@ fn test_primitives() {
         virtual_checks: &mut virtual_checks,
         calls: &mut calls,
         defined_identifiers: identifiers.clone(),
+        in_handler: false
     };
     inferencer.variable_mapping.insert("a".into(), inferencer.primitives.int32);
     inferencer.variable_mapping.insert("b".into(), inferencer.primitives.int32);
@@ -263,6 +268,7 @@ fn test_simple_call() {
         virtual_checks: &mut virtual_checks,
         calls: &mut calls,
         defined_identifiers: identifiers.clone(),
+        in_handler: false
     };
     inferencer.variable_mapping.insert("a".into(), inferencer.primitives.int32);
     inferencer.variable_mapping.insert("foo".into(), fun_ty);
