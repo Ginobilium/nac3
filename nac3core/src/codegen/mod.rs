@@ -14,7 +14,7 @@ use inkwell::{
     module::Module,
     passes::{PassManager, PassManagerBuilder},
     types::{BasicType, BasicTypeEnum},
-    values::{FunctionValue, PointerValue},
+    values::{BasicValueEnum, FunctionValue, PhiValue, PointerValue},
     AddressSpace, OptimizationLevel,
 };
 use itertools::Itertools;
@@ -60,11 +60,28 @@ pub struct CodeGenContext<'ctx, 'a> {
     pub primitives: PrimitiveStore,
     pub calls: Arc<HashMap<CodeLocation, CallId>>,
     pub registry: &'a WorkerRegistry,
+    // const string cache
+    pub const_strings: HashMap<String, BasicValueEnum<'ctx>>,
     // stores the alloca for variables
     pub init_bb: BasicBlock<'ctx>,
-    // where continue and break should go to respectively
     // the first one is the test_bb, and the second one is bb after the loop
-    pub loop_bb: Option<(BasicBlock<'ctx>, BasicBlock<'ctx>)>,
+    pub loop_target: Option<(BasicBlock<'ctx>, BasicBlock<'ctx>)>,
+    // unwind target bb
+    pub unwind_target: Option<BasicBlock<'ctx>>,
+    // return target bb, just emit ret if no such target
+    pub return_target: Option<BasicBlock<'ctx>>,
+    pub return_buffer: Option<PointerValue<'ctx>>,
+    // outer finally block function
+    pub outer_final: Option<(PointerValue<'ctx>, Vec<BasicBlock<'ctx>>, Vec<BasicBlock<'ctx>>)>,
+    // outer catch clauses
+    pub outer_catch_clauses:
+        Option<(Vec<Option<BasicValueEnum<'ctx>>>, BasicBlock<'ctx>, PhiValue<'ctx>)>,
+}
+
+impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
+    pub fn is_terminated(&self) -> bool {
+        self.builder.get_insert_block().unwrap().get_terminator().is_some()
+    }
 }
 
 type Fp = Box<dyn Fn(&Module) + Send + Sync>;
@@ -182,7 +199,7 @@ impl WorkerRegistry {
     fn worker_thread<G: CodeGenerator>(&self, generator: &mut G, f: Arc<WithCall>) {
         let context = Context::create();
         let mut builder = context.create_builder();
-        let mut module = context.create_module(generator.get_name());
+        let module = context.create_module(generator.get_name());
 
         let pass_builder = PassManagerBuilder::create();
         pass_builder.set_optimization_level(OptimizationLevel::Default);
@@ -190,10 +207,12 @@ impl WorkerRegistry {
         pass_builder.populate_function_pass_manager(&passes);
 
         while let Some(task) = self.receiver.recv().unwrap() {
-            let result = gen_func(&context, generator, self, builder, module, task);
+            let tmp_module = context.create_module("tmp");
+            let result = gen_func(&context, generator, self, builder, tmp_module, task);
             builder = result.0;
-            module = result.1;
             passes.run_on(&result.2);
+            module.link_in_module(result.1).unwrap();
+            // module = result.1;
             *self.task_count.lock() -= 1;
             self.wait_condvar.notify_all();
         }
@@ -235,20 +254,26 @@ fn get_llvm_type<'ctx>(
     // we assume the type cache should already contain primitive types,
     // and they should be passed by value instead of passing as pointer.
     type_cache.get(&unifier.get_representative(ty)).cloned().unwrap_or_else(|| {
-        let ty = unifier.get_ty(ty);
-        match &*ty {
+        let ty_enum = unifier.get_ty(ty);
+        let result = match &*ty_enum {
             TObj { obj_id, fields, .. } => {
+                // check to avoid treating primitives as classes
+                if obj_id.0 <= 7 {
+                    unreachable!();
+                }
                 // a struct with fields in the order of declaration
                 let top_level_defs = top_level.definitions.read();
                 let definition = top_level_defs.get(obj_id.0).unwrap();
-                let ty = if let TopLevelDef::Class { fields: fields_list, .. } = &*definition.read()
+                let ty = if let TopLevelDef::Class { name, fields: fields_list, .. } = &*definition.read()
                 {
+                    let struct_type = ctx.opaque_struct_type(&name.to_string());
                     let fields = fields.borrow();
                     let fields = fields_list
                         .iter()
                         .map(|f| get_llvm_type(ctx, generator, unifier, top_level, type_cache, fields[&f.0].0))
                         .collect_vec();
-                    ctx.struct_type(&fields, false).ptr_type(AddressSpace::Generic).into()
+                    struct_type.set_body(&fields, false);
+                    struct_type.ptr_type(AddressSpace::Generic).into()
                 } else {
                     unreachable!()
                 };
@@ -270,8 +295,10 @@ fn get_llvm_type<'ctx>(
                 ctx.struct_type(&fields, false).ptr_type(AddressSpace::Generic).into()
             }
             TVirtual { .. } => unimplemented!(),
-            _ => unreachable!("{}", ty.get_type_name()),
-        }
+            _ => unreachable!("{}", ty_enum.get_type_name()),
+        };
+        type_cache.insert(unifier.get_representative(ty), result);
+        result
     })
 }
 
@@ -415,6 +442,7 @@ pub fn gen_func<'ctx, G: CodeGenerator>(
         builder.build_store(alloca, param);
         var_assignment.insert(arg.name, (alloca, None, 0));
     }
+    let return_buffer = fn_type.get_return_type().map(|v| builder.build_alloca(v, "$ret"));
     let static_values = {
         let store = registry.static_value_store.lock();
         store.store[task.id].clone()
@@ -432,7 +460,13 @@ pub fn gen_func<'ctx, G: CodeGenerator>(
         resolver: task.resolver,
         top_level: top_level_ctx.as_ref(),
         calls: task.calls,
-        loop_bb: None,
+        loop_target: None,
+        return_target: None,
+        return_buffer,
+        unwind_target: None,
+        outer_final: None,
+        outer_catch_clauses: None,
+        const_strings: Default::default(),
         registry,
         var_assignment,
         type_cache,
@@ -444,15 +478,14 @@ pub fn gen_func<'ctx, G: CodeGenerator>(
         static_value_store,
     };
 
-    let mut returned = false;
     for stmt in task.body.iter() {
-        returned = generator.gen_stmt(&mut code_gen_context, stmt);
-        if returned {
+        generator.gen_stmt(&mut code_gen_context, stmt);
+        if code_gen_context.is_terminated() {
             break;
         }
     }
     // after static analysis, only void functions can have no return at the end.
-    if !returned {
+    if !code_gen_context.is_terminated() {
         code_gen_context.builder.build_return(None);
     }
 

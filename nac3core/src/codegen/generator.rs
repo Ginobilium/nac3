@@ -117,67 +117,45 @@ pub trait CodeGenerator {
 
     /// Generate code for a while expression.
     /// Return true if the while loop must early return
-    fn gen_while<'ctx, 'a>(
-        &mut self,
-        ctx: &mut CodeGenContext<'ctx, 'a>,
-        stmt: &Stmt<Option<Type>>,
-    ) -> bool
+    fn gen_while<'ctx, 'a>(&mut self, ctx: &mut CodeGenContext<'ctx, 'a>, stmt: &Stmt<Option<Type>>)
     where
         Self: Sized,
     {
         gen_while(self, ctx, stmt);
-        false
     }
 
     /// Generate code for a while expression.
     /// Return true if the while loop must early return
-    fn gen_for<'ctx, 'a>(
-        &mut self,
-        ctx: &mut CodeGenContext<'ctx, 'a>,
-        stmt: &Stmt<Option<Type>>,
-    ) -> bool
+    fn gen_for<'ctx, 'a>(&mut self, ctx: &mut CodeGenContext<'ctx, 'a>, stmt: &Stmt<Option<Type>>)
     where
         Self: Sized,
     {
         gen_for(self, ctx, stmt);
-        false
     }
 
     /// Generate code for an if expression.
     /// Return true if the statement must early return
-    fn gen_if<'ctx, 'a>(
-        &mut self,
-        ctx: &mut CodeGenContext<'ctx, 'a>,
-        stmt: &Stmt<Option<Type>>,
-    ) -> bool
+    fn gen_if<'ctx, 'a>(&mut self, ctx: &mut CodeGenContext<'ctx, 'a>, stmt: &Stmt<Option<Type>>)
     where
         Self: Sized,
     {
-        gen_if(self, ctx, stmt)
+        gen_if(self, ctx, stmt);
     }
 
-    fn gen_with<'ctx, 'a>(
-        &mut self,
-        ctx: &mut CodeGenContext<'ctx, 'a>,
-        stmt: &Stmt<Option<Type>>,
-    ) -> bool
+    fn gen_with<'ctx, 'a>(&mut self, ctx: &mut CodeGenContext<'ctx, 'a>, stmt: &Stmt<Option<Type>>)
     where
         Self: Sized,
     {
-        gen_with(self, ctx, stmt)
+        gen_with(self, ctx, stmt);
     }
 
     /// Generate code for a statement
     /// Return true if the statement must early return
-    fn gen_stmt<'ctx, 'a>(
-        &mut self,
-        ctx: &mut CodeGenContext<'ctx, 'a>,
-        stmt: &Stmt<Option<Type>>,
-    ) -> bool
+    fn gen_stmt<'ctx, 'a>(&mut self, ctx: &mut CodeGenContext<'ctx, 'a>, stmt: &Stmt<Option<Type>>)
     where
         Self: Sized,
     {
-        gen_stmt(self, ctx, stmt)
+        gen_stmt(self, ctx, stmt);
     }
 }
 

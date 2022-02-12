@@ -12,12 +12,12 @@ use crate::{
     typecheck::typedef::{FunSignature, FuncArg, Type, TypeEnum, Unifier},
 };
 use inkwell::{
-    types::{BasicType, BasicTypeEnum},
-    values::{BasicValueEnum, IntValue, PointerValue},
     AddressSpace,
+    types::{BasicType, BasicTypeEnum},
+    values::{BasicValueEnum, FunctionValue, IntValue, PointerValue}
 };
 use itertools::{chain, izip, zip, Itertools};
-use nac3parser::ast::{self, Boolop, Comprehension, Constant, Expr, ExprKind, Operator, StrRef};
+use nac3parser::ast::{self, Boolop, Comprehension, Constant, Expr, ExprKind, Location, Operator, StrRef};
 
 use super::CodeGenerator;
 
@@ -256,6 +256,25 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
             _ => unimplemented!(),
         }
     }
+
+    pub fn build_call_or_invoke(
+        &self,
+        fun: FunctionValue<'ctx>,
+        params: &[BasicValueEnum<'ctx>],
+        call_name: &str
+    ) -> Option<BasicValueEnum<'ctx>> {
+        if let Some(target) = self.unwind_target {
+            let current = self.builder.get_insert_block().unwrap().get_parent().unwrap();
+            let then_block = self.ctx.append_basic_block(current, &format!("after.{}", call_name));
+            let result = self.builder.build_invoke(fun, params, then_block, target, call_name).try_as_basic_value().left();
+            self.builder.position_at_end(then_block);
+            result
+        } else {
+            let param: Vec<_> = params.iter().map(|v| (*v).into()).collect();
+            self.builder.build_call(fun, &param, call_name).try_as_basic_value().left()
+        }
+    }
+
     pub fn gen_string<G: CodeGenerator, S: Into<String>>(
         &mut self,
         generator: &mut G,
@@ -404,7 +423,7 @@ pub fn gen_call<'ctx, 'a, G: CodeGenerator>(
                 }
                 // default value handling
                 for k in keys.into_iter() {
-                    mapping.insert(k.name, ctx.gen_symbol_val(&k.default_value.unwrap()).into());
+                    mapping.insert(k.name, ctx.gen_symbol_val(generator, &k.default_value.unwrap()).into());
                 }
                 // reorder the parameters
                 let mut real_params =
@@ -474,7 +493,8 @@ pub fn gen_call<'ctx, 'a, G: CodeGenerator>(
         };
         ctx.module.add_function(&symbol, fun_ty, None)
     });
-    ctx.builder.build_call(fun_val, &param_vals, "call").try_as_basic_value().left()
+
+    ctx.build_call_or_invoke(fun_val, &param_vals, "call")
 }
 
 pub fn destructure_range<'ctx, 'a>(
@@ -715,7 +735,7 @@ pub fn gen_expr<'ctx, 'a, G: CodeGenerator>(
     Some(match &expr.node {
         ExprKind::Constant { value, .. } => {
             let ty = expr.custom.unwrap();
-            ctx.gen_const(value, ty).into()
+            ctx.gen_const(generator, value, ty).into()
         }
         ExprKind::Name { id, .. } => match ctx.var_assignment.get(id) {
             Some((ptr, None, _)) => ctx.builder.build_load(*ptr, "load").into(),
