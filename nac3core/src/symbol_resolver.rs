@@ -32,10 +32,16 @@ pub enum SymbolValue {
 pub trait StaticValue {
     fn get_unique_identifier(&self) -> u64;
 
+    fn get_const_obj<'ctx, 'a>(
+        &self,
+        ctx: &mut CodeGenContext<'ctx, 'a>,
+        generator: &mut dyn CodeGenerator,
+    ) -> BasicValueEnum<'ctx>;
+
     fn to_basic_value_enum<'ctx, 'a>(
         &self,
         ctx: &mut CodeGenContext<'ctx, 'a>,
-        generator: &mut dyn CodeGenerator
+        generator: &mut dyn CodeGenerator,
     ) -> BasicValueEnum<'ctx>;
 
     fn get_field<'ctx, 'a>(

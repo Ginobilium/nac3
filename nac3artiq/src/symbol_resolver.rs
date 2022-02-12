@@ -42,6 +42,7 @@ pub struct InnerResolver {
     pub pyid_to_type: Arc<RwLock<HashMap<u64, Type>>>,
     pub primitive_ids: PrimitivePythonId,
     pub helper: PythonHelper,
+    pub string_store: Arc<RwLock<HashMap<String, i32>>>,
     // module specific
     pub name_to_pyid: HashMap<StrRef, u64>,
     pub module: PyObject,
@@ -56,17 +57,50 @@ pub struct PythonHelper {
     pub id_fn: PyObject,
     pub origin_ty_fn: PyObject,
     pub args_ty_fn: PyObject,
+    pub store_obj: PyObject,
+    pub store_str: PyObject,
 }
 
 struct PythonValue {
     id: u64,
     value: PyObject,
+    store_obj: PyObject,
     resolver: Arc<InnerResolver>,
 }
 
 impl StaticValue for PythonValue {
     fn get_unique_identifier(&self) -> u64 {
         self.id
+    }
+
+    fn get_const_obj<'ctx, 'a>(
+        &self,
+        ctx: &mut CodeGenContext<'ctx, 'a>,
+        _: &mut dyn CodeGenerator,
+    ) -> BasicValueEnum<'ctx> {
+        ctx.module
+            .get_global(self.id.to_string().as_str())
+            .map(|val| val.as_pointer_value().into())
+            .unwrap_or_else(|| {
+                Python::with_gil(|py| -> PyResult<BasicValueEnum<'ctx>> {
+                    let id: u32 = self.store_obj.call1(py, (self.value.clone(),))?.extract(py)?;
+                    let struct_type = ctx.ctx.struct_type(&[ctx.ctx.i32_type().into()], false);
+                    let global =
+                        ctx.module
+                            .add_global(struct_type, None, format!("{}_const", self.id).as_str());
+                    global.set_constant(true);
+                    global.set_initializer(&ctx.ctx.const_struct(
+                        &[ctx.ctx.i32_type().const_int(id as u64, false).into()],
+                        false,
+                    ));
+                    let global2 =
+                        ctx.module
+                            .add_global(struct_type.ptr_type(AddressSpace::Generic), None, format!("{}_const2", self.id).as_str());
+                    global2.set_initializer(&global.as_pointer_value());
+                    Ok(global2.as_pointer_value().into())
+                })
+                .unwrap()
+            })
     }
 
     fn to_basic_value_enum<'ctx, 'a>(
@@ -140,6 +174,7 @@ impl StaticValue for PythonValue {
             ValueEnum::Static(Arc::new(PythonValue {
                 id,
                 value: obj,
+                store_obj: self.store_obj.clone(),
                 resolver: self.resolver.clone(),
             }))
         })
@@ -208,7 +243,9 @@ impl InnerResolver {
             Ok(Ok((primitives.bool, true)))
         } else if ty_id == self.primitive_ids.float {
             Ok(Ok((primitives.float, true)))
-        } else if ty_id == self.primitive_ids.list {
+        } else if ty_id == self.primitive_ids.exception {
+            Ok(Ok((primitives.exception, true)))
+        }else if ty_id == self.primitive_ids.list {
             // do not handle type var param and concrete check here
             let var = unifier.get_fresh_var().0;
             let list = unifier.add_ty(TypeEnum::TList { ty: var });
@@ -755,9 +792,7 @@ impl InnerResolver {
                 .get_llvm_type(generator, ty)
                 .into_pointer_type()
                 .get_element_type()
-                .into_struct_type()
-                .as_basic_type_enum();
-
+                .into_struct_type();
             {
                 if self.global_value_ids.read().contains(&id) {
                     let global = ctx.module.get_global(&id_str).unwrap_or_else(|| {
@@ -783,7 +818,7 @@ impl InnerResolver {
                     .collect();
                 let values = values?;
                 if let Some(values) = values {
-                    let val = ctx.ctx.const_struct(&values, false);
+                    let val = ty.const_named_struct(&values);
                     let global = ctx
                         .module
                         .add_global(ty, Some(AddressSpace::Generic), &id_str);
@@ -948,6 +983,7 @@ impl SymbolResolver for Resolver {
             ValueEnum::Static(Arc::new(PythonValue {
                 id,
                 value: v,
+                store_obj: self.0.helper.store_obj.clone(),
                 resolver: self.0.clone(),
             }))
         })
@@ -970,5 +1006,18 @@ impl SymbolResolver for Resolver {
             }
             result
         })
+    }
+
+    fn get_string_id(&self, s: &str) -> i32 {
+        let mut string_store = self.0.string_store.write();
+        if let Some(id) = string_store.get(s) {
+            *id
+        } else {
+            let id = Python::with_gil(|py| -> PyResult<i32> {
+                self.0.helper.store_str.call1(py, (s, ))?.extract(py)
+            }).unwrap();
+            string_store.insert(s.into(), id);
+            id
+        }
     }
 }

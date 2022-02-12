@@ -12,7 +12,7 @@ use inkwell::{
 };
 use nac3core::typecheck::typedef::{Unifier, TypeEnum};
 use nac3parser::{
-    ast::{self, Stmt, StrRef},
+    ast::{self, ExprKind, Stmt, StmtKind, StrRef},
     parser::{self, parse_program},
 };
 use pyo3::prelude::*;
@@ -24,7 +24,10 @@ use nac3core::{
     codegen::{concrete_type::ConcreteTypeStore, CodeGenTask, WithCall, WorkerRegistry},
     codegen::irrt::load_irrt,
     symbol_resolver::SymbolResolver,
-    toplevel::{composer::{TopLevelComposer, ComposerConfig}, DefinitionId, GenCall, TopLevelDef},
+    toplevel::{
+        composer::{ComposerConfig, TopLevelComposer},
+        DefinitionId, GenCall, TopLevelDef,
+    },
     typecheck::typedef::{FunSignature, FuncArg},
     typecheck::{type_inferencer::PrimitiveStore, typedef::Type},
 };
@@ -32,7 +35,7 @@ use nac3core::{
 use tempfile::{self, TempDir};
 
 use crate::{
-    codegen::ArtiqCodeGenerator,
+    codegen::{rpc_codegen_callback, ArtiqCodeGenerator},
     symbol_resolver::{InnerResolver, PythonHelper, Resolver},
 };
 
@@ -61,6 +64,7 @@ pub struct PrimitivePythonId {
     tuple: u64,
     typevar: u64,
     none: u64,
+    exception: u64,
     generic_alias: (u64, u64),
     virtual_id: u64,
 }
@@ -81,6 +85,7 @@ struct Nac3 {
     primitive_ids: PrimitivePythonId,
     working_directory: TempDir,
     top_levels: Vec<TopLevelComponent>,
+    string_store: Arc<RwLock<HashMap<String, i32>>>,
 }
 
 impl Nac3 {
@@ -127,9 +132,13 @@ impl Nac3 {
                             let id_fn = PyModule::import(py, "builtins")?.getattr("id")?;
                             match &base.node {
                                 ast::ExprKind::Name { id, .. } => {
-                                    let base_obj = module.getattr(py, id.to_string())?;
-                                    let base_id = id_fn.call1((base_obj,))?.extract()?;
-                                    Ok(registered_class_ids.contains(&base_id))
+                                    if *id == "Exception".into() {
+                                        Ok(true)
+                                    } else {
+                                        let base_obj = module.getattr(py, id.to_string())?;
+                                        let base_id = id_fn.call1((base_obj,))?.extract()?;
+                                        Ok(registered_class_ids.contains(&base_id))
+                                    }
                                 }
                                 _ => Ok(true),
                             }
@@ -143,7 +152,9 @@ impl Nac3 {
                         {
                             decorator_list.iter().any(|decorator| {
                                 if let ast::ExprKind::Name { id, .. } = decorator.node {
-                                    id.to_string() == "kernel" || id.to_string() == "portable"
+                                    id.to_string() == "kernel"
+                                        || id.to_string() == "portable"
+                                        || id.to_string() == "rpc"
                                 } else {
                                     false
                                 }
@@ -159,7 +170,7 @@ impl Nac3 {
                 } => decorator_list.iter().any(|decorator| {
                     if let ast::ExprKind::Name { id, .. } = decorator.node {
                         let id = id.to_string();
-                        id == "extern" || id == "portable" || id == "kernel"
+                        id == "extern" || id == "portable" || id == "kernel" || id == "rpc"
                     } else {
                         false
                     }
@@ -188,7 +199,7 @@ impl Nac3 {
                 Ok(ty) => ty,
                 Err(e) => return Some(format!("type error inside object launching kernel: {}", e))
             };
-        
+
         let fun_ty = if method_name.is_empty() {
             base_ty
         } else if let TypeEnum::TObj { fields, .. } = &*unifier.get_ty(base_ty) {
@@ -201,7 +212,7 @@ impl Nac3 {
         } else {
             return Some("cannot launch kernel by calling a non-callable".into())
         };
-        
+
         if let TypeEnum::TFunc(sig) = &*unifier.get_ty(fun_ty) {
             let FunSignature { args, .. } = &*sig.borrow();
             if arg_names.len() > args.len() {
@@ -269,7 +280,7 @@ impl Nac3 {
                     ret: primitive.int64,
                     vars: HashMap::new(),
                 },
-                Arc::new(GenCall::new(Box::new(move |ctx, _, _, _| {
+                Arc::new(GenCall::new(Box::new(move |ctx, _, _, _, _| {
                     Some(time_fns.emit_now_mu(ctx))
                 }))),
             ),
@@ -284,8 +295,9 @@ impl Nac3 {
                     ret: primitive.none,
                     vars: HashMap::new(),
                 },
-                Arc::new(GenCall::new(Box::new(move |ctx, _, _, args| {
-                    time_fns.emit_at_mu(ctx, args[0].1);
+                Arc::new(GenCall::new(Box::new(move |ctx, _, _, args, generator| {
+                    let arg = args[0].1.clone().to_basic_value_enum(ctx, generator);
+                    time_fns.emit_at_mu(ctx, arg);
                     None
                 }))),
             ),
@@ -300,16 +312,20 @@ impl Nac3 {
                     ret: primitive.none,
                     vars: HashMap::new(),
                 },
-                Arc::new(GenCall::new(Box::new(move |ctx, _, _, args| {
-                    time_fns.emit_delay_mu(ctx, args[0].1);
+                Arc::new(GenCall::new(Box::new(move |ctx, _, _, args, generator| {
+                    let arg = args[0].1.clone().to_basic_value_enum(ctx, generator);
+                    time_fns.emit_delay_mu(ctx, arg);
                     None
                 }))),
             ),
         ];
-        let (_, builtins_def, builtins_ty) = TopLevelComposer::new(builtins.clone(), ComposerConfig {
-            kernel_ann: Some("Kernel"),
-            kernel_invariant_ann: "KernelInvariant"
-        });
+        let (_, builtins_def, builtins_ty) = TopLevelComposer::new(
+            builtins.clone(),
+            ComposerConfig {
+                kernel_ann: Some("Kernel"),
+                kernel_invariant_ann: "KernelInvariant",
+            },
+        );
 
         let builtins_mod = PyModule::import(py, "builtins").unwrap();
         let id_fn = builtins_mod.getattr("id").unwrap();
@@ -385,6 +401,11 @@ impl Nac3 {
                 .unwrap()
                 .extract()
                 .unwrap(),
+            exception: id_fn
+                .call1((builtins_mod.getattr("tuple").unwrap(),))
+                .unwrap()
+                .extract()
+                .unwrap(),
         };
 
         let working_directory = tempfile::Builder::new().prefix("nac3-").tempdir().unwrap();
@@ -405,6 +426,7 @@ impl Nac3 {
             top_levels: Default::default(),
             pyid_to_def: Default::default(),
             working_directory,
+            string_store: Default::default()
         })
     }
 
@@ -441,6 +463,7 @@ impl Nac3 {
         method_name: &str,
         args: Vec<&PyAny>,
         filename: &str,
+        embedding_map: &PyAny,
         py: Python,
     ) -> PyResult<()> {
         let (mut composer, _, _) = TopLevelComposer::new(self.builtins.clone(), ComposerConfig {
@@ -451,17 +474,26 @@ impl Nac3 {
         let builtins = PyModule::import(py, "builtins")?;
         let typings = PyModule::import(py, "typing")?;
         let id_fn = builtins.getattr("id")?;
+        let store_obj = embedding_map.getattr("store_object").unwrap().to_object(py);
+        let store_str = embedding_map.getattr("store_str").unwrap().to_object(py);
+        let store_fun = embedding_map
+            .getattr("store_function")
+            .unwrap()
+            .to_object(py);
         let helper = PythonHelper {
             id_fn: builtins.getattr("id").unwrap().to_object(py),
             len_fn: builtins.getattr("len").unwrap().to_object(py),
             type_fn: builtins.getattr("type").unwrap().to_object(py),
             origin_ty_fn: typings.getattr("get_origin").unwrap().to_object(py),
             args_ty_fn: typings.getattr("get_args").unwrap().to_object(py),
+            store_obj,
+            store_str
         };
         let mut module_to_resolver_cache: HashMap<u64, _> = HashMap::new();
 
         let pyid_to_type = Arc::new(RwLock::new(HashMap::<u64, Type>::new()));
         let global_value_ids = Arc::new(RwLock::new(HashSet::<u64>::new()));
+        let mut rpc_ids = vec![];
         for (stmt, path, module) in self.top_levels.iter() {
             let py_module: &PyAny = module.extract(py)?;
             let module_id: u64 = id_fn.call1((py_module,))?.extract()?;
@@ -492,6 +524,7 @@ impl Nac3 {
                         id_to_primitive: Default::default(),
                         field_to_val: Default::default(),
                         helper,
+                        string_store: self.string_store.clone(),
                     })))
                         as Arc<dyn SymbolResolver + Send + Sync>;
                     let name_to_pyid = Rc::new(name_to_pyid);
@@ -502,7 +535,30 @@ impl Nac3 {
 
             let (name, def_id, ty) = composer
                 .register_top_level(stmt.clone(), Some(resolver.clone()), path.clone())
-                .map_err(|e| exceptions::PyRuntimeError::new_err(format!("nac3 compilation failure: {}", e)))?;
+                .map_err(|e| {
+                    exceptions::PyRuntimeError::new_err(format!("nac3 compilation failure: {}", e))
+                })?;
+
+            match &stmt.node {
+                StmtKind::FunctionDef { decorator_list, .. } => {
+                    if decorator_list.iter().any(|decorator| matches!(decorator.node, ExprKind::Name { id, .. } if id == "rpc".into())) {
+                        store_fun.call1(py, (def_id.0.into_py(py), module.getattr(py, name.to_string()).unwrap())).unwrap();
+                        rpc_ids.push((None, def_id));
+                    }
+                }
+                StmtKind::ClassDef { name, body, .. } => {
+                    let class_obj = module.getattr(py, name.to_string()).unwrap();
+                    for stmt in body.iter() {
+                        if let StmtKind::FunctionDef { name, decorator_list, .. } = &stmt.node {
+                            if decorator_list.iter().any(|decorator| matches!(decorator.node, ExprKind::Name { id, .. } if id == "rpc".into())) {
+                                rpc_ids.push((Some((class_obj.clone(), *name)), def_id));
+                            }
+                        }
+                    }
+                }
+                _ => ()
+            }
+
             let id = *name_to_pyid.get(&name).unwrap();
             self.pyid_to_def.write().insert(id, def_id);
             {
@@ -552,6 +608,7 @@ impl Nac3 {
             name_to_pyid,
             module: module.to_object(py),
             helper,
+            string_store: self.string_store.clone(),
         }))) as Arc<dyn SymbolResolver + Send + Sync>;
         let (_, def_id, _) = composer
             .register_top_level(
@@ -595,6 +652,45 @@ impl Nac3 {
             }
         }
         let top_level = Arc::new(composer.make_top_level_context());
+
+        {
+            let rpc_codegen = rpc_codegen_callback();
+            let defs = top_level.definitions.read();
+            for (class_data, id) in rpc_ids.iter() {
+                let mut def = defs[id.0].write();
+                match &mut *def {
+                    TopLevelDef::Function {
+                        codegen_callback, ..
+                    } => {
+                        *codegen_callback = Some(rpc_codegen.clone());
+                    }
+                    TopLevelDef::Class { methods, .. } => {
+                        let (class_def, method_name) = class_data.as_ref().unwrap();
+                        for (name, _, id) in methods.iter() {
+                            if name != method_name {
+                                continue;
+                            }
+                            if let TopLevelDef::Function {
+                                codegen_callback, ..
+                            } = &mut *defs[id.0].write()
+                            {
+                                *codegen_callback = Some(rpc_codegen.clone());
+                                store_fun
+                                    .call1(
+                                        py,
+                                        (
+                                            id.0.into_py(py),
+                                            class_def.getattr(py, name.to_string()).unwrap(),
+                                        ),
+                                    )
+                                    .unwrap();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         let instance = {
             let defs = top_level.definitions.read();
             let mut definition = defs[def_id.0].write();
@@ -634,15 +730,17 @@ impl Nac3 {
             let buffer = buffer.as_slice().into();
             membuffer.lock().push(buffer);
         })));
-        let size_t = if self.isa == Isa::Host {
-            64
-        } else {
-            32
-        };
+        let size_t = if self.isa == Isa::Host { 64 } else { 32 };
         let thread_names: Vec<String> = (0..4).map(|_| "main".to_string()).collect();
         let threads: Vec<_> = thread_names
             .iter()
-            .map(|s| Box::new(ArtiqCodeGenerator::new(s.to_string(), size_t, self.time_fns)))
+            .map(|s| {
+                Box::new(ArtiqCodeGenerator::new(
+                    s.to_string(),
+                    size_t,
+                    self.time_fns,
+                ))
+            })
             .collect();
 
         py.allow_threads(|| {
@@ -759,11 +857,12 @@ impl Nac3 {
         obj: &PyAny,
         method_name: &str,
         args: Vec<&PyAny>,
+        embedding_map: &PyAny,
         py: Python,
     ) -> PyResult<PyObject> {
         let filename_path = self.working_directory.path().join("module.elf");
         let filename = filename_path.to_str().unwrap();
-        self.compile_method_to_file(obj, method_name, args, filename, py)?;
+        self.compile_method_to_file(obj, method_name, args, filename, embedding_map, py)?;
         Ok(PyBytes::new(py, &fs::read(filename).unwrap()).into())
     }
 }

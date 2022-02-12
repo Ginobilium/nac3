@@ -6,13 +6,14 @@ from typing import Generic, TypeVar
 from math import floor, ceil
 
 import nac3artiq
+from embedding_map import EmbeddingMap
 
 
 __all__ = [
     "Kernel", "KernelInvariant", "virtual",
     "round64", "floor64", "ceil64",
     "extern", "kernel", "portable", "nac3",
-    "ms", "us", "ns",
+    "rpc", "ms", "us", "ns",
     "print_int32", "print_int64",
     "Core", "TTLOut",
     "parallel", "sequential"
@@ -65,6 +66,10 @@ def extern(function):
     register_function(function)
     return function
 
+def rpc(function):
+    """Decorates a function declaration defined by the core device runtime."""
+    register_function(function)
+    return function
 
 def kernel(function_or_method):
     """Decorates a function or method to be executed on the core device."""
@@ -146,6 +151,9 @@ class Core:
 
     def run(self, method, *args, **kwargs):
         global allow_registration
+
+        embedding = EmbeddingMap()
+
         if allow_registration:
             compiler.analyze(registered_functions, registered_classes)
             allow_registration = False
@@ -157,7 +165,7 @@ class Core:
             obj = method
             name = ""
 
-        compiler.compile_method_to_file(obj, name, args, "module.elf")
+        compiler.compile_method_to_file(obj, name, args, "module.elf", embedding)
 
     @kernel
     def reset(self):
