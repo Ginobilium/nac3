@@ -90,7 +90,22 @@ impl TopLevelComposer {
             fields: HashMap::new().into(),
             params: HashMap::new().into(),
         });
-        let primitives = PrimitiveStore { int32, int64, float, bool, none, range, str };
+        let exception = unifier.add_ty(TypeEnum::TObj {
+            obj_id: DefinitionId(7),
+            fields: vec![
+                ("__name__".into(), (int32, true)),
+                ("__file__".into(), (int32, true)),
+                ("__line__".into(), (int32, true)),
+                ("__col__".into(), (int32, true)),
+                ("__func__".into(), (str, true)),
+                ("__message__".into(), (str, true)),
+                ("__param0__".into(), (int64, true)),
+                ("__param1__".into(), (int64, true)),
+                ("__param2__".into(), (int64, true)),
+            ].into_iter().collect::<HashMap<_, _>>().into(),
+            params: HashMap::new().into(),
+        });
+        let primitives = PrimitiveStore { int32, int64, float, bool, none, range, str, exception };
         crate::typecheck::magic_methods::set_primitives_magic_methods(&primitives, &mut unifier);
         (primitives, unifier)
     }
@@ -379,6 +394,13 @@ impl TopLevelComposer {
                     None
                 } else {
                     Some("int64".to_string())
+                }
+            }
+            SymbolValue::Str(..) => {
+                if matches!(ty, TypeAnnotation::Primitive(t) if *t == primitive.str) {
+                    None
+                } else {
+                    Some("str".to_string())
                 }
             }
             SymbolValue::Tuple(elts) => {

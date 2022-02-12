@@ -63,6 +63,8 @@ pub fn parse_ast_to_type_annotation_kinds<T>(
             Ok(TypeAnnotation::Primitive(primitives.none))
         } else if id == &"str".into() {
             Ok(TypeAnnotation::Primitive(primitives.str))
+        } else if id == &"Exception".into() {
+            Ok(TypeAnnotation::CustomClass { id: DefinitionId(7), params: Default::default() })
         } else if let Some(obj_id) = resolver.get_identifier_def(*id) {
             let type_vars = {
                 let def_read = top_level_defs[obj_id.0].try_read();

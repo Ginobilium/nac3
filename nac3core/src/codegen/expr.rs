@@ -76,14 +76,20 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
         index
     }
 
-    fn gen_symbol_val(&mut self, val: &SymbolValue) -> BasicValueEnum<'ctx> {
+    pub fn gen_symbol_val(&mut self, generator: &mut dyn CodeGenerator, val: &SymbolValue) -> BasicValueEnum<'ctx> {
         match val {
             SymbolValue::I32(v) => self.ctx.i32_type().const_int(*v as u64, true).into(),
             SymbolValue::I64(v) => self.ctx.i64_type().const_int(*v as u64, true).into(),
             SymbolValue::Bool(v) => self.ctx.bool_type().const_int(*v as u64, true).into(),
             SymbolValue::Double(v) => self.ctx.f64_type().const_float(*v).into(),
+            SymbolValue::Str(v) => {
+                let str_ptr = self.builder.build_global_string_ptr(v, "const").as_pointer_value().into();
+                let size = generator.get_size_type(self.ctx).const_int(v.len() as u64, false);
+                let ty = self.get_llvm_type(generator, self.primitives.str).into_struct_type();
+                ty.const_named_struct(&[str_ptr, size.into()]).into()
+            }
             SymbolValue::Tuple(ls) => {
-                let vals = ls.iter().map(|v| self.gen_symbol_val(v)).collect_vec();
+                let vals = ls.iter().map(|v| self.gen_symbol_val(generator, v)).collect_vec();
                 let fields = vals.iter().map(|v| v.get_type()).collect_vec();
                 let ty = self.ctx.struct_type(&fields, false);
                 let ptr = self.builder.build_alloca(ty, "tuple");
@@ -118,7 +124,7 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
         )
     }
 
-    fn gen_const(&mut self, value: &Constant, ty: Type) -> BasicValueEnum<'ctx> {
+    pub fn gen_const(&mut self, generator: &mut dyn CodeGenerator, value: &Constant, ty: Type) -> BasicValueEnum<'ctx> {
         match value {
             Constant::Bool(v) => {
                 assert!(self.unifier.unioned(ty, self.primitives.bool));
@@ -145,7 +151,7 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
                 let types =
                     if let TypeEnum::TTuple { ty } = &*ty { ty.clone() } else { unreachable!() };
                 let values = zip(types.into_iter(), v.iter())
-                    .map(|(ty, v)| self.gen_const(v, ty))
+                    .map(|(ty, v)| self.gen_const(generator, v, ty))
                     .collect_vec();
                 let types = values.iter().map(BasicValueEnum::get_type).collect_vec();
                 let ty = self.ctx.struct_type(&types, false);
@@ -153,7 +159,16 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
             }
             Constant::Str(v) => {
                 assert!(self.unifier.unioned(ty, self.primitives.str));
-                self.builder.build_global_string_ptr(v, "const").as_pointer_value().into()
+                if let Some(v) = self.const_strings.get(v) {
+                    *v
+                } else {
+                    let str_ptr = self.builder.build_global_string_ptr(v, "const").as_pointer_value().into();
+                    let size = generator.get_size_type(self.ctx).const_int(v.len() as u64, false);
+                    let ty = self.get_llvm_type(generator, self.primitives.str);
+                    let val = ty.into_struct_type().const_named_struct(&[str_ptr, size.into()]).into();
+                    self.const_strings.insert(v.to_string(), val);
+                    val
+                }
             }
             _ => unreachable!(),
         }
@@ -241,6 +256,14 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
             _ => unimplemented!(),
         }
     }
+    pub fn gen_string<G: CodeGenerator, S: Into<String>>(
+        &mut self,
+        generator: &mut G,
+        s: S
+    ) -> BasicValueEnum<'ctx> {
+        self.gen_const(generator, &nac3parser::ast::Constant::Str(s.into()), self.primitives.str)
+    }
+
 }
 
 pub fn gen_constructor<'ctx, 'a, G: CodeGenerator>(

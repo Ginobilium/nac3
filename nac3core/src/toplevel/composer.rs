@@ -4,7 +4,8 @@ use nac3parser::ast::fold::Fold;
 
 use crate::{
     typecheck::type_inferencer::{FunctionData, Inferencer},
-    codegen::expr::get_subst_key,
+    codegen::{expr::get_subst_key, stmt::exn_constructor},
+    symbol_resolver::SymbolValue,
 };
 
 use super::*;
@@ -90,8 +91,13 @@ impl TopLevelComposer {
                 assert!(name == *simple_name);
                 builtin_ty.insert(name, *signature);
                 builtin_id.insert(name, DefinitionId(id));
-            } else {
-                unreachable!()
+            } else if let TopLevelDef::Class { name, constructor, object_id, type_vars, .. } = &*def {
+                assert!(id == object_id.0);
+                assert!(type_vars.is_empty());
+                if let Some(constructor) = constructor {
+                    builtin_ty.insert(*name, *constructor);
+                }
+                builtin_id.insert(*name, DefinitionId(id));
             }
         }
 
@@ -471,7 +477,6 @@ impl TopLevelComposer {
         let unifier = self.unifier.borrow_mut();
 
         // first, only push direct parent into the list
-        // skip 5 to skip analyzing the primitives
         for (class_def, class_ast) in self.definition_ast_list.iter_mut().skip(self.builtin_num) {
             let mut class_def = class_def.write();
             let (class_def_id, class_bases, class_ancestors, class_resolver, class_type_vars) = {
@@ -540,7 +545,6 @@ impl TopLevelComposer {
 
         // second, get all ancestors
         let mut ancestors_store: HashMap<DefinitionId, Vec<TypeAnnotation>> = Default::default();
-        // skip 5 to skip analyzing the primitives
         for (class_def, _) in self.definition_ast_list.iter().skip(self.builtin_num) {
             let class_def = class_def.read();
             let (class_ancestors, class_id) = {
@@ -562,8 +566,7 @@ impl TopLevelComposer {
         }
 
         // insert the ancestors to the def list
-        // skip 5 to skip analyzing the primitives
-        for (class_def, _) in self.definition_ast_list.iter_mut().skip(self.builtin_num) {
+        for (class_def, class_ast) in self.definition_ast_list.iter_mut().skip(self.builtin_num) {
             let mut class_def = class_def.write();
             let (class_ancestors, class_id, class_type_vars) = {
                 if let TopLevelDef::Class { ancestors, object_id, type_vars, .. } =
@@ -581,6 +584,26 @@ impl TopLevelComposer {
             // insert self type annotation to the front of the vector to maintain the order
             class_ancestors
                 .insert(0, make_self_type_annotation(class_type_vars.as_slice(), class_id));
+
+            // special case classes that inherit from Exception
+            if class_ancestors.iter().any(|ann| matches!(ann, TypeAnnotation::CustomClass { id, .. } if id.0 == 7)) {
+                // if inherited from Exception, the body should be a pass
+                if let ast::StmtKind::ClassDef { body, .. } = &class_ast.as_ref().unwrap().node {
+                    if body.len() != 1 || !matches!(body[0].node, ast::StmtKind::Pass { .. }) {
+                        return Err("Classes inherited from exception should have `pass` as body".into());
+                    }
+                } else {
+                    unreachable!()
+                }
+            }
+        }
+
+        // deal with ancestor of Exception object
+        if let TopLevelDef::Class { name, ancestors, object_id, .. } = &mut *self.definition_ast_list[7].0.write() {
+            assert_eq!(*name, "Exception".into());
+            ancestors.push(make_self_type_annotation(&[], *object_id));
+        } else {
+            unreachable!();
         }
 
         Ok(())
@@ -595,7 +618,6 @@ impl TopLevelComposer {
 
         let mut type_var_to_concrete_def: HashMap<Type, TypeAnnotation> = HashMap::new();
 
-        // skip 5 to skip analyzing the primitives
         for (class_def, class_ast) in def_ast_list.iter().skip(self.builtin_num) {
             if matches!(&*class_def.read(), TopLevelDef::Class { .. }) {
                 Self::analyze_single_class_methods_fields(
@@ -609,8 +631,6 @@ impl TopLevelComposer {
                 )?
             }
         }
-
-        // println!("type_var_to_concrete_def1: {:?}", type_var_to_concrete_def);
 
         // handle the inheritanced methods and fields
         let mut current_ancestor_depth: usize = 2;
@@ -646,19 +666,8 @@ impl TopLevelComposer {
             }
         }
 
-        // println!("type_var_to_concrete_def3: {:?}\n", type_var_to_concrete_def);
-
         // unification of previously assigned typevar
         for (ty, def) in type_var_to_concrete_def {
-            // println!(
-            //     "{:?}_{} -> {:?}\n",
-            //     ty,
-            //     unifier.stringify(ty,
-            //         &mut |id| format!("class{}", id),
-            //         &mut |id| format!("tvar{}", id)
-            //     ),
-            //     def
-            // );
             let target_ty =
                 get_type_from_type_annotation_kinds(&temp_def_list, unifier, primitives, &def)?;
             unifier.unify(ty, target_ty)?;
@@ -946,7 +955,7 @@ impl TopLevelComposer {
                                 ))
                             }
                         }
-                        
+
                         if name == &"__init__".into() && !defined_paramter_name.contains(&zelf) {
                             return Err(format!("__init__ method must have a `self` parameter (at {})", b.location));
                         }
@@ -1301,10 +1310,14 @@ impl TopLevelComposer {
     fn analyze_function_instance(&mut self) -> Result<(), String> {
         // first get the class contructor type correct for the following type check in function body
         // also do class field instantiation check
-        for (def, ast) in self.definition_ast_list.iter().skip(self.builtin_num) {
+        let init_str_id = "__init__".into();
+        let mut definition_extension = Vec::new();
+        let mut constructors = Vec::new();
+        for (i, (def, ast)) in self.definition_ast_list.iter().enumerate().skip(self.builtin_num) {
             let class_def = def.read();
             if let TopLevelDef::Class {
                 constructor,
+                ancestors,
                 methods,
                 fields,
                 type_vars,
@@ -1314,13 +1327,54 @@ impl TopLevelComposer {
                 ..
             } = &*class_def
             {
+                let self_type = get_type_from_type_annotation_kinds(
+                    self.extract_def_list().as_slice(),
+                    &mut self.unifier,
+                    &self.primitives_ty,
+                    &make_self_type_annotation(type_vars, *object_id),
+                )?;
+                if ancestors.iter().any(|ann| matches!(ann, TypeAnnotation::CustomClass { id, .. } if id.0 == 7)) {
+                    // create constructor for these classes
+                    let string = self.primitives_ty.str;
+                    let int64 = self.primitives_ty.int64;
+                    let signature = self.unifier.add_ty(TypeEnum::TFunc(RefCell::new(FunSignature {
+                        args: vec![
+                            FuncArg { name: "msg".into(), ty: string,
+                                default_value: Some(SymbolValue::Str("".into()))},
+                            FuncArg { name: "param0".into(), ty: int64,
+                                default_value: Some(SymbolValue::I64(0))},
+                            FuncArg { name: "param1".into(), ty: int64,
+                                default_value: Some(SymbolValue::I64(0))},
+                            FuncArg { name: "param2".into(), ty: int64,
+                                default_value: Some(SymbolValue::I64(0))},
+                        ],
+                        ret: self_type,
+                        vars: Default::default()
+                    })));
+                    let cons_fun = TopLevelDef::Function {
+                        name: format!("{}.{}", class_name, "__init__"),
+                        simple_name: init_str_id,
+                        signature,
+                        var_id: Default::default(),
+                        instance_to_symbol: Default::default(),
+                        instance_to_stmt: Default::default(),
+                        resolver: None,
+                        codegen_callback: Some(Arc::new(GenCall::new(Box::new(exn_constructor))))
+                    };
+                    constructors.push((i, signature, definition_extension.len()));
+                    definition_extension.push((Arc::new(RwLock::new(cons_fun)), None));
+                    self.unifier
+                        .unify(constructor.unwrap(), signature)
+                        .map_err(|old| format!("{} (at {})", old, ast.as_ref().unwrap().location))?;
+                    continue;
+                }
                 let mut init_id: Option<DefinitionId> = None;
                 // get the class contructor type correct
                 let (contor_args, contor_type_vars) = {
                     let mut constructor_args: Vec<FuncArg> = Vec::new();
                     let mut type_vars: HashMap<u32, Type> = HashMap::new();
                     for (name, func_sig, id) in methods {
-                        if name == &"__init__".into() {
+                        if *name == init_str_id {
                             init_id = Some(*id);
                             if let TypeEnum::TFunc(sig) = self.unifier.get_ty(*func_sig).as_ref() {
                                 let FunSignature { args, vars, .. } = &*sig.borrow();
@@ -1333,12 +1387,6 @@ impl TopLevelComposer {
                     }
                     (constructor_args, type_vars)
                 };
-                let self_type = get_type_from_type_annotation_kinds(
-                    self.extract_def_list().as_slice(),
-                    &mut self.unifier,
-                    &self.primitives_ty,
-                    &make_self_type_annotation(type_vars, *object_id),
-                )?;
                 let contor_type = self.unifier.add_ty(TypeEnum::TFunc(
                     FunSignature { args: contor_args, ret: self_type, vars: contor_type_vars }
                         .into(),
@@ -1352,7 +1400,7 @@ impl TopLevelComposer {
                     let init_ast =
                         self.definition_ast_list.get(init_id.0).unwrap().1.as_ref().unwrap();
                     if let ast::StmtKind::FunctionDef { name, body, .. } = &init_ast.node {
-                        if name != &"__init__".into() {
+                        if *name != init_str_id {
                             unreachable!("must be init function here")
                         }
                         let all_inited = Self::get_all_assigned_field(body.as_slice())?;
@@ -1370,11 +1418,23 @@ impl TopLevelComposer {
                 }
             }
         }
+        for (i, signature, id) in constructors.into_iter() {
+            if let TopLevelDef::Class { methods, .. } = &mut *self.definition_ast_list[i].0.write() {
+                methods.push((init_str_id, signature,
+                        DefinitionId(self.definition_ast_list.len() + id)));
+            } else {
+                unreachable!()
+            }
+        }
+        self.definition_ast_list.extend_from_slice(&definition_extension);
 
         let ctx = Arc::new(self.make_top_level_context());
         // type inference inside function body
         for (id, (def, ast)) in self.definition_ast_list.iter().enumerate().skip(self.builtin_num)
         {
+            if ast.is_none() {
+                continue;
+            }
             let mut function_def = def.write();
             if let TopLevelDef::Function {
                 instance_to_stmt,

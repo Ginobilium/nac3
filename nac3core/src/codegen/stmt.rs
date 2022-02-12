@@ -402,6 +402,71 @@ pub fn gen_if<'ctx, 'a, G: CodeGenerator>(
             }
         }
         then_exited && else_exited
+pub fn exn_constructor<'ctx, 'a>(
+    ctx: &mut CodeGenContext<'ctx, 'a>,
+    obj: Option<(Type, ValueEnum<'ctx>)>,
+    _fun: (&FunSignature, DefinitionId),
+    mut args: Vec<(Option<StrRef>, ValueEnum<'ctx>)>,
+    generator: &mut dyn CodeGenerator
+) -> Option<BasicValueEnum<'ctx>> {
+    let (zelf_ty, zelf) = obj.unwrap();
+    let zelf = zelf.to_basic_value_enum(ctx, generator).into_pointer_value();
+    let int32 = ctx.ctx.i32_type();
+    let zero = int32.const_zero();
+    let zelf_id = {
+        if let TypeEnum::TObj { obj_id, .. } = &*ctx.unifier.get_ty(zelf_ty) {
+            obj_id.0
+        } else {
+            unreachable!()
+        }
+    };
+    let defs = ctx.top_level.definitions.read();
+    let def = defs[zelf_id].read();
+    let zelf_name = if let TopLevelDef::Class { name, .. } = &*def {
+        *name
+    } else {
+        unreachable!()
+    };
+    let exception_name = format!("0:{}", zelf_name);
+    unsafe {
+        let id_ptr = ctx.builder.build_in_bounds_gep(zelf, &[zero, zero], "exn.id");
+        let id = ctx.resolver.get_string_id(&exception_name);
+        ctx.builder.build_store(id_ptr, int32.const_int(id as u64, false));
+        let empty_string = ctx.gen_const(generator, &Constant::Str("".into()), ctx.primitives.str);
+        let ptr = ctx.builder.build_in_bounds_gep(
+            zelf, &[zero, int32.const_int(5, false)], "exn.msg");
+        let msg = if !args.is_empty() {
+            args.remove(0).1.to_basic_value_enum(ctx, generator)
+        } else {
+            empty_string
+        };
+        ctx.builder.build_store(ptr, msg);
+        for i in [6, 7, 8].iter() {
+            let value = if !args.is_empty() {
+                args.remove(0).1.to_basic_value_enum(ctx, generator)
+            } else {
+                ctx.ctx.i64_type().const_zero().into()
+            };
+            let ptr = ctx.builder.build_in_bounds_gep(
+                zelf, &[zero, int32.const_int(*i, false)], "exn.param");
+            ctx.builder.build_store(ptr, value);
+        }
+        // set file, func to empty string
+        for i in [1, 4].iter() {
+            let ptr = ctx.builder.build_in_bounds_gep(
+                zelf, &[zero, int32.const_int(*i, false)], "exn.str");
+            ctx.builder.build_store(ptr, empty_string);
+        }
+        // set ints to zero
+        for i in [2, 3].iter() {
+            let ptr = ctx.builder.build_in_bounds_gep(
+                zelf, &[zero, int32.const_int(*i, false)], "exn.ints");
+            ctx.builder.build_store(ptr, zero);
+        }
+    }
+    Some(zelf.into())
+}
+
     } else {
         unreachable!()
     }

@@ -31,6 +31,9 @@ pub enum Primitive {
     Float,
     Bool,
     None,
+    Range,
+    Str,
+    Exception
 }
 
 #[derive(Debug)]
@@ -66,6 +69,9 @@ impl ConcreteTypeStore {
                 ConcreteTypeEnum::TPrimitive(Primitive::Float),
                 ConcreteTypeEnum::TPrimitive(Primitive::Bool),
                 ConcreteTypeEnum::TPrimitive(Primitive::None),
+                ConcreteTypeEnum::TPrimitive(Primitive::Range),
+                ConcreteTypeEnum::TPrimitive(Primitive::Str),
+                ConcreteTypeEnum::TPrimitive(Primitive::Exception),
             ],
         }
     }
@@ -118,6 +124,12 @@ impl ConcreteTypeStore {
             ConcreteType(3)
         } else if unifier.unioned(ty, primitives.none) {
             ConcreteType(4)
+        } else if unifier.unioned(ty, primitives.range) {
+            ConcreteType(5)
+        } else if unifier.unioned(ty, primitives.str) {
+            ConcreteType(6)
+        } else if unifier.unioned(ty, primitives.exception) {
+            ConcreteType(7)
         } else if let Some(cty) = cache.get(&ty) {
             if let Some(cty) = cty {
                 *cty
@@ -211,6 +223,9 @@ impl ConcreteTypeStore {
                     Primitive::Float => primitives.float,
                     Primitive::Bool => primitives.bool,
                     Primitive::None => primitives.none,
+                    Primitive::Range => primitives.range,
+                    Primitive::Str => primitives.str,
+                    Primitive::Exception => primitives.exception,
                 };
                 *cache.get_mut(&cty).unwrap() = Some(ty);
                 return ty;

@@ -2,13 +2,16 @@ use std::collections::HashMap;
 use std::fmt::Debug;
 use std::{cell::RefCell, sync::Arc};
 
-use crate::{codegen::CodeGenerator, typecheck::{
-    type_inferencer::PrimitiveStore,
-    typedef::{Type, Unifier},
-}};
 use crate::{
     codegen::CodeGenContext,
     toplevel::{DefinitionId, TopLevelDef},
+};
+use crate::{
+    codegen::CodeGenerator,
+    typecheck::{
+        type_inferencer::PrimitiveStore,
+        typedef::{Type, Unifier},
+    },
 };
 use crate::{location::Location, typecheck::typedef::TypeEnum};
 use inkwell::values::{BasicValueEnum, FloatValue, IntValue, PointerValue};
@@ -20,6 +23,7 @@ use parking_lot::RwLock;
 pub enum SymbolValue {
     I32(i32),
     I64(i64),
+    Str(String),
     Double(f64),
     Bool(bool),
     Tuple(Vec<SymbolValue>),
@@ -109,7 +113,7 @@ pub trait SymbolResolver {
 }
 
 thread_local! {
-    static IDENTIFIER_ID: [StrRef; 8] = [
+    static IDENTIFIER_ID: [StrRef; 10] = [
         "int32".into(),
         "int64".into(),
         "float".into(),
@@ -117,7 +121,9 @@ thread_local! {
         "None".into(),
         "virtual".into(),
         "list".into(),
-        "tuple".into()
+        "tuple".into(),
+        "str".into(),
+        "Exception".into(),
     ];
 }
 
@@ -139,6 +145,8 @@ pub fn parse_type_annotation<T>(
     let virtual_id = ids[5];
     let list_id = ids[6];
     let tuple_id = ids[7];
+    let str_id = ids[8];
+    let exn_id = ids[9];
 
     let name_handling = |id: &StrRef, unifier: &mut Unifier| {
         if *id == int32_id {
@@ -151,6 +159,10 @@ pub fn parse_type_annotation<T>(
             Ok(primitives.bool)
         } else if *id == none_id {
             Ok(primitives.none)
+        } else if *id == str_id {
+            Ok(primitives.str)
+        } else if *id == exn_id {
+            Ok(primitives.exception)
         } else {
             let obj_id = resolver.get_identifier_def(*id);
             if let Some(obj_id) = obj_id {
@@ -179,8 +191,7 @@ pub fn parse_type_annotation<T>(
                 }
             } else {
                 // it could be a type variable
-                let ty = resolver
-                    .get_symbol_type(unifier, top_level_defs, primitives, *id)?;
+                let ty = resolver.get_symbol_type(unifier, top_level_defs, primitives, *id)?;
                 if let TypeEnum::TVar { .. } = &*unifier.get_ty(ty) {
                     Ok(ty)
                 } else {
@@ -192,35 +203,17 @@ pub fn parse_type_annotation<T>(
 
     let subscript_name_handle = |id: &StrRef, slice: &Expr<T>, unifier: &mut Unifier| {
         if *id == virtual_id {
-            let ty = parse_type_annotation(
-                resolver,
-                top_level_defs,
-                unifier,
-                primitives,
-                slice,
-            )?;
+            let ty = parse_type_annotation(resolver, top_level_defs, unifier, primitives, slice)?;
             Ok(unifier.add_ty(TypeEnum::TVirtual { ty }))
         } else if *id == list_id {
-            let ty = parse_type_annotation(
-                resolver,
-                top_level_defs,
-                unifier,
-                primitives,
-                slice,
-            )?;
+            let ty = parse_type_annotation(resolver, top_level_defs, unifier, primitives, slice)?;
             Ok(unifier.add_ty(TypeEnum::TList { ty }))
         } else if *id == tuple_id {
             if let Tuple { elts, .. } = &slice.node {
                 let ty = elts
                     .iter()
                     .map(|elt| {
-                        parse_type_annotation(
-                            resolver,
-                            top_level_defs,
-                            unifier,
-                            primitives,
-                            elt,
-                        )
+                        parse_type_annotation(resolver, top_level_defs, unifier, primitives, elt)
                     })
                     .collect::<Result<Vec<_>, _>>()?;
                 Ok(unifier.add_ty(TypeEnum::TTuple { ty }))
@@ -231,23 +224,11 @@ pub fn parse_type_annotation<T>(
             let types = if let Tuple { elts, .. } = &slice.node {
                 elts.iter()
                     .map(|v| {
-                        parse_type_annotation(
-                            resolver,
-                            top_level_defs,
-                            unifier,
-                            primitives,
-                            v,
-                        )
+                        parse_type_annotation(resolver, top_level_defs, unifier, primitives, v)
                     })
                     .collect::<Result<Vec<_>, _>>()?
             } else {
-                vec![parse_type_annotation(
-                    resolver,
-                    top_level_defs,
-                    unifier,
-                    primitives,
-                    slice,
-                )?]
+                vec![parse_type_annotation(resolver, top_level_defs, unifier, primitives, slice)?]
             };
 
             let obj_id = resolver

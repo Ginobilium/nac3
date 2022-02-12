@@ -37,6 +37,7 @@ pub struct PrimitiveStore {
     pub none: Type,
     pub range: Type,
     pub str: Type,
+    pub exception: Type,
 }
 
 pub struct FunctionData {

@@ -314,25 +314,50 @@ pub fn gen_func<'ctx, G: CodeGenerator>(
         none: unifier.get_representative(primitives.none),
         range: unifier.get_representative(primitives.range),
         str: unifier.get_representative(primitives.str),
+        exception: unifier.get_representative(primitives.exception),
     };
 
     let mut type_cache: HashMap<_, _> = [
-        (unifier.get_representative(primitives.int32), context.i32_type().into()),
-        (unifier.get_representative(primitives.int64), context.i64_type().into()),
-        (unifier.get_representative(primitives.float), context.f64_type().into()),
-        (unifier.get_representative(primitives.bool), context.bool_type().into()),
+        (primitives.int32, context.i32_type().into()),
+        (primitives.int64, context.i64_type().into()),
+        (primitives.float, context.f64_type().into()),
+        (primitives.bool, context.bool_type().into()),
+        (primitives.str, {
+            let str_type = context.opaque_struct_type("str");
+            let fields = [
+                context.i8_type().ptr_type(AddressSpace::Generic).into(),
+                generator.get_size_type(context).into(),
+            ];
+            str_type.set_body(&fields, false);
+            str_type.into()
+        }),
         (
-            unifier.get_representative(primitives.str),
-            context.i8_type().ptr_type(AddressSpace::Generic).into(),
-        ),
-        (
-            unifier.get_representative(primitives.range),
-            context.i32_type().array_type(3).ptr_type(AddressSpace::Generic).into()
+            primitives.range,
+            context.i32_type().array_type(3).ptr_type(AddressSpace::Generic).into(),
         ),
     ]
     .iter()
     .cloned()
     .collect();
+    type_cache.insert(primitives.exception, {
+        let exception = context.opaque_struct_type("Exception");
+        let int32 = context.i32_type().into();
+        let int64 = context.i64_type().into();
+        let str_ty = *type_cache.get(&primitives.str).unwrap();
+        let fields = [
+            int32,
+            str_ty,
+            int32,
+            int32,
+            str_ty,
+            str_ty,
+            int64,
+            int64,
+            int64
+        ];
+        exception.set_body(&fields, false);
+        exception.ptr_type(AddressSpace::Generic).into()
+    });
 
     let (args, ret) = if let ConcreteTypeEnum::TFunc { args, ret, .. } =
         task.store.get(task.signature)

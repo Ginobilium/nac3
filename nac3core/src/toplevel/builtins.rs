@@ -1,6 +1,6 @@
 use super::*;
 use crate::{
-    codegen::{expr::destructure_range, irrt::calculate_len_for_slice_range},
+    codegen::{expr::destructure_range, irrt::calculate_len_for_slice_range, stmt::exn_constructor},
     symbol_resolver::SymbolValue,
 };
 use inkwell::{FloatPredicate, IntPredicate};
@@ -21,6 +21,47 @@ pub fn get_builtins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
     let num_ty = primitives.1.get_fresh_var_with_range(&[int32, int64, float, boolean]);
     let var_map: HashMap<_, _> = vec![(num_ty.1, num_ty.0)].into_iter().collect();
 
+    let exception_fields = vec![
+        ("__name__".into(), int32, true),
+        ("__file__".into(), string, true),
+        ("__line__".into(), int32, true),
+        ("__col__".into(), int32, true),
+        ("__func__".into(), string, true),
+        ("__message__".into(), string, true),
+        ("__param0__".into(), int64, true),
+        ("__param1__".into(), int64, true),
+        ("__param2__".into(), int64, true),
+    ];
+    let div_by_zero = primitives.1.add_ty(TypeEnum::TObj {
+        obj_id: DefinitionId(10),
+        fields: RefCell::new(exception_fields.iter().map(|(a, b, c)| (*a, (*b, *c))).collect()),
+        params: Default::default()
+    });
+    let index_error = primitives.1.add_ty(TypeEnum::TObj {
+        obj_id: DefinitionId(11),
+        fields: RefCell::new(exception_fields.iter().map(|(a, b, c)| (*a, (*b, *c))).collect()),
+        params: Default::default()
+    });
+    let exn_cons_args = vec![
+        FuncArg { name: "msg".into(), ty: string,
+            default_value: Some(SymbolValue::Str("".into()))},
+        FuncArg { name: "param0".into(), ty: int64,
+            default_value: Some(SymbolValue::I64(0))},
+        FuncArg { name: "param1".into(), ty: int64,
+            default_value: Some(SymbolValue::I64(0))},
+        FuncArg { name: "param2".into(), ty: int64,
+            default_value: Some(SymbolValue::I64(0))},
+    ];
+    let div_by_zero_signature = primitives.1.add_ty(TypeEnum::TFunc(RefCell::new(FunSignature {
+        args: exn_cons_args.clone(),
+        ret: div_by_zero,
+        vars: Default::default()
+    })));
+    let index_error_signature = primitives.1.add_ty(TypeEnum::TFunc(RefCell::new(FunSignature {
+        args: exn_cons_args,
+        ret: index_error,
+        vars: Default::default()
+    })));
     let top_level_def_list = vec![
         Arc::new(RwLock::new(TopLevelComposer::make_top_level_class_def(
             0,
@@ -49,6 +90,62 @@ pub fn get_builtins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
             None,
         ))),
         Arc::new(RwLock::new(TopLevelComposer::make_top_level_class_def(6, None, "str".into(), None))),
+        Arc::new(RwLock::new(TopLevelDef::Class {
+            name: "Exception".into(),
+            object_id: DefinitionId(7),
+            type_vars: Default::default(),
+            fields: exception_fields.clone(),
+            methods: Default::default(),
+            ancestors: vec![],
+            constructor: None,
+            resolver: None,
+        })),
+        Arc::new(RwLock::new(TopLevelDef::Function {
+            name: "ZeroDivisionError.__init__".into(),
+            simple_name: "__init__".into(),
+            signature: div_by_zero_signature,
+            var_id: Default::default(),
+            instance_to_symbol: Default::default(),
+            instance_to_stmt: Default::default(),
+            resolver: None,
+            codegen_callback: Some(Arc::new(GenCall::new(Box::new(exn_constructor))))
+        })),
+        Arc::new(RwLock::new(TopLevelDef::Function {
+            name: "IndexError.__init__".into(),
+            simple_name: "__init__".into(),
+            signature: index_error_signature,
+            var_id: Default::default(),
+            instance_to_symbol: Default::default(),
+            instance_to_stmt: Default::default(),
+            resolver: None,
+            codegen_callback: Some(Arc::new(GenCall::new(Box::new(exn_constructor))))
+        })),
+        Arc::new(RwLock::new(TopLevelDef::Class {
+            name: "ZeroDivisionError".into(),
+            object_id: DefinitionId(10),
+            type_vars: Default::default(),
+            fields: exception_fields.clone(),
+            methods: vec![("__init__".into(), div_by_zero_signature, DefinitionId(8))],
+            ancestors: vec![
+                TypeAnnotation::CustomClass { id: DefinitionId(10), params: Default::default() },
+                TypeAnnotation::CustomClass { id: DefinitionId(7), params: Default::default() }
+            ],
+            constructor: Some(div_by_zero_signature),
+            resolver: None,
+        })),
+        Arc::new(RwLock::new(TopLevelDef::Class {
+            name: "IndexError".into(),
+            object_id: DefinitionId(11),
+            type_vars: Default::default(),
+            fields: exception_fields,
+            methods: vec![("__init__".into(), index_error_signature, DefinitionId(9))],
+            ancestors: vec![
+                TypeAnnotation::CustomClass { id: DefinitionId(11), params: Default::default() },
+                TypeAnnotation::CustomClass { id: DefinitionId(7), params: Default::default() }
+            ],
+            constructor: Some(index_error_signature),
+            resolver: None,
+        })),
         Arc::new(RwLock::new(TopLevelDef::Function {
             name: "int32".into(),
             simple_name: "int32".into(),
@@ -609,6 +706,8 @@ pub fn get_builtins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
     (
         izip!(top_level_def_list, ast_list).collect_vec(),
         &[
+            "ZeroDivisionError",
+            "IndexError",
             "int32",
             "int64",
             "float",
