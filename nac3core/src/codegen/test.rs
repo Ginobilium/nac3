@@ -3,7 +3,6 @@ use crate::{
         concrete_type::ConcreteTypeStore, CodeGenContext, CodeGenTask, DefaultCodeGenerator,
         WithCall, WorkerRegistry,
     },
-    location::Location,
     symbol_resolver::{SymbolResolver, ValueEnum},
     toplevel::{
         composer::TopLevelComposer, DefinitionId, FunInstance, TopLevelContext, TopLevelDef,
@@ -55,10 +54,6 @@ impl SymbolResolver for Resolver {
         _: StrRef,
         _: &mut CodeGenContext<'ctx, 'a>,
     ) -> Option<ValueEnum<'ctx>> {
-        unimplemented!()
-    }
-
-    fn get_symbol_location(&self, _: StrRef) -> Option<Location> {
         unimplemented!()
     }
 

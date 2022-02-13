@@ -2,7 +2,6 @@ use super::super::typedef::*;
 use super::*;
 use crate::{
     codegen::CodeGenContext,
-    location::Location,
     symbol_resolver::ValueEnum,
     toplevel::{DefinitionId, TopLevelDef},
 };
@@ -38,10 +37,6 @@ impl SymbolResolver for Resolver {
         _: StrRef,
         _: &mut CodeGenContext<'ctx, 'a>,
     ) -> Option<ValueEnum<'ctx>> {
-        unimplemented!()
-    }
-
-    fn get_symbol_location(&self, _: StrRef) -> Option<Location> {
         unimplemented!()
     }
 

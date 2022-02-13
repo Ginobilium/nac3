@@ -1,7 +1,6 @@
 use inkwell::{types::BasicType, values::BasicValueEnum, AddressSpace};
 use nac3core::{
     codegen::{CodeGenContext, CodeGenerator},
-    location::Location,
     symbol_resolver::{StaticValue, SymbolResolver, SymbolValue, ValueEnum},
     toplevel::{DefinitionId, TopLevelDef},
     typecheck::{
@@ -987,10 +986,6 @@ impl SymbolResolver for Resolver {
                 resolver: self.0.clone(),
             }))
         })
-    }
-
-    fn get_symbol_location(&self, _: StrRef) -> Option<Location> {
-        unimplemented!()
     }
 
     fn get_identifier_def(&self, id: StrRef) -> Option<DefinitionId> {

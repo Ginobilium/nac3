@@ -1,6 +1,5 @@
 use crate::{
     codegen::CodeGenContext,
-    location::Location,
     symbol_resolver::{SymbolResolver, ValueEnum},
     toplevel::DefinitionId,
     typecheck::{
@@ -59,10 +58,6 @@ impl SymbolResolver for Resolver {
         _: StrRef,
         _: &mut CodeGenContext<'ctx, 'a>,
     ) -> Option<ValueEnum<'ctx>> {
-        unimplemented!()
-    }
-
-    fn get_symbol_location(&self, _: StrRef) -> Option<Location> {
         unimplemented!()
     }
 

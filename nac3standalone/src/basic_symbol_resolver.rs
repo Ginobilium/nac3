@@ -1,6 +1,5 @@
 use nac3core::{
     codegen::CodeGenContext,
-    location::Location,
     symbol_resolver::{SymbolResolver, SymbolValue, ValueEnum},
     toplevel::{DefinitionId, TopLevelDef},
     typecheck::{
@@ -61,10 +60,6 @@ impl SymbolResolver for Resolver {
         _: StrRef,
         _: &mut CodeGenContext<'ctx, 'a>,
     ) -> Option<ValueEnum<'ctx>> {
-        unimplemented!()
-    }
-
-    fn get_symbol_location(&self, _: StrRef) -> Option<Location> {
         unimplemented!()
     }
 

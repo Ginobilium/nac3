@@ -13,7 +13,7 @@ use crate::{
         typedef::{Type, Unifier},
     },
 };
-use crate::{location::Location, typecheck::typedef::TypeEnum};
+use crate::typecheck::typedef::TypeEnum;
 use inkwell::values::{BasicValueEnum, FloatValue, IntValue, PointerValue};
 use itertools::{chain, izip};
 use nac3parser::ast::{Expr, StrRef};
@@ -113,7 +113,6 @@ pub trait SymbolResolver {
         ctx: &mut CodeGenContext<'ctx, 'a>,
     ) -> Option<ValueEnum<'ctx>>;
 
-    fn get_symbol_location(&self, str: StrRef) -> Option<Location>;
     fn get_default_param_value(&self, expr: &nac3parser::ast::Expr) -> Option<SymbolValue>;
     fn get_string_id(&self, s: &str) -> i32;
     // handle function call etc.
