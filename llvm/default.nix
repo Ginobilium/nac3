@@ -18,7 +18,7 @@
 let
   inherit (lib) optional optionals optionalString;
 
-  release_version = "13.0.0";
+  release_version = "13.0.1";
   candidate = ""; # empty or "rcN"
   dash-candidate = lib.optionalString (candidate != "") "-${candidate}";
   version = "${release_version}${dash-candidate}"; # differentiating these (variables) is important for RCs
@@ -35,7 +35,7 @@ in stdenv.mkDerivation (rec {
   pname = "llvm";
   inherit version;
 
-  src = fetch pname "sha256-QI0RcIZD6oJvUZ/3l2H838EtZBolECKe7EWecvgWMCA=";
+  src = fetch pname "sha256-7GuA2Cw4SsrS3BkpA6bPLNuv+4ibhL+5janXHmMPyDQ=";
 
   unpackPhase = ''
     unpackFile $src
