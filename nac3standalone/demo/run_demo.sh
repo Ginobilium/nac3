@@ -16,5 +16,5 @@ fi
 
 rm -f *.o
 $nac3standalone $1
-rustc -o demo demo.rs -Clink-arg=./module.o
+rustc -o demo demo.rs -Crelocation-model=static -Clink-arg=./module.o
 ./demo
