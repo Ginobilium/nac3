@@ -28,7 +28,6 @@ def run() -> int32:
     m2 = -2
     output_int32_list(data[m2::m1])
 
-    # work around https://git.m-labs.hk/M-Labs/nac3/issues/188
     get_list_slice()
     list_slice_assignment()
     return 0
