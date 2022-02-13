@@ -588,8 +588,10 @@ impl TopLevelComposer {
             if class_ancestors.iter().any(|ann| matches!(ann, TypeAnnotation::CustomClass { id, .. } if id.0 == 7)) {
                 // if inherited from Exception, the body should be a pass
                 if let ast::StmtKind::ClassDef { body, .. } = &class_ast.as_ref().unwrap().node {
-                    if body.len() != 1 || !matches!(body[0].node, ast::StmtKind::Pass { .. }) {
-                        return Err("Classes inherited from exception should have `pass` as body".into());
+                    for stmt in body.iter() {
+                        if matches!(stmt.node, ast::StmtKind::FunctionDef { .. } | ast::StmtKind::AnnAssign { .. }) {
+                            return Err("Classes inherited from exception should have no custom fields/methods".into());
+                        }
                     }
                 } else {
                     unreachable!()
