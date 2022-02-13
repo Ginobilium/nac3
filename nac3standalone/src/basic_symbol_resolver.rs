@@ -17,6 +17,7 @@ pub struct ResolverInternal {
     pub id_to_def: Mutex<HashMap<StrRef, DefinitionId>>,
     pub class_names: Mutex<HashMap<StrRef, Type>>,
     pub module_globals: Mutex<HashMap<StrRef, SymbolValue>>,
+    pub str_store: Mutex<HashMap<String, i32>>,
 }
 
 impl ResolverInternal {
@@ -71,7 +72,14 @@ impl SymbolResolver for Resolver {
         self.0.id_to_def.lock().get(&id).cloned()
     }
 
-    fn get_string_id(&self, _: &str) -> i32 {
-        unimplemented!()
+    fn get_string_id(&self, s: &str) -> i32 {
+        let mut str_store = self.0.str_store.lock();
+        if let Some(id) = str_store.get(s) {
+            *id
+        } else {
+            let id = str_store.len() as i32;
+            str_store.insert(s.to_string(), id);
+            id
+        }
     }
 }

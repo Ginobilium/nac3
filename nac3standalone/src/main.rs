@@ -52,6 +52,7 @@ fn main() {
         id_to_def: builtins_def.into(),
         class_names: Default::default(),
         module_globals: Default::default(),
+        str_store: Default::default(),
     }
     .into();
     let resolver =
@@ -247,7 +248,7 @@ fn main() {
 
     let membuffers: Arc<Mutex<Vec<Vec<u8>>>> = Default::default();
     let membuffer = membuffers.clone();
-    
+
     let f = Arc::new(WithCall::new(Box::new(move |module| {
         let buffer = module.write_bitcode_to_memory();
         let buffer = buffer.as_slice().into();
@@ -288,7 +289,7 @@ fn main() {
     builder.set_inliner_with_threshold(255);
     builder.populate_module_pass_manager(&passes);
     passes.run_on(&main);
-    
+
     let triple = TargetMachine::get_default_triple();
     let target =
         Target::from_triple(&triple).expect("couldn't create target from target triple");

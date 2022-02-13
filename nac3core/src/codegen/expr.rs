@@ -1193,6 +1193,7 @@ pub fn gen_expr<'ctx, 'a, G: CodeGenerator>(
                         .unwrap()
                         .to_basic_value_enum(ctx, generator)
                         .into_int_value();
+                    let raw_index = ctx.builder.build_int_s_extend(raw_index, generator.get_size_type(ctx.ctx), "sext");
                     // handle negative index
                     let is_negative = ctx.builder.build_int_compare(inkwell::IntPredicate::SLT, raw_index,
                         generator.get_size_type(ctx.ctx).const_zero(), "is_neg");

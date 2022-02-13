@@ -29,8 +29,8 @@ def run() -> int32:
     output_int32_list(data[m2::m1])
 
     # work around https://git.m-labs.hk/M-Labs/nac3/issues/188
-    #get_list_slice()
-    #list_slice_assignment()
+    get_list_slice()
+    list_slice_assignment()
     return 0
 
 def get_list_slice():
@@ -66,7 +66,7 @@ def get_list_slice():
         il[15:50:1],
     ]:
         output_int32_list(l0)
-    
+
     for l1 in [
         bl[:],
         bl[1:1],
@@ -120,7 +120,7 @@ def get_list_slice():
         fl[15:50:1],
     ]:
         output_int32_list([int32(f) for f in l2])
-    
+
     for l3 in [
         al[:],
         al[1:1],
@@ -148,7 +148,7 @@ def get_list_slice():
     ]:
         output_int32_list([a.a for a in l3])
         output_int32_list([int32(a.b) for a in l3])
-    
+
     for l4 in [
         tl[:],
         tl[1:1],
@@ -188,7 +188,7 @@ def list_slice_assignment():
     fl = [1.2, 2.3, 3.4, 4.5, 5.6, 6.7, 7.8, 8.9, 9.0, 10.1]
     al = [A(i, bl[i]) for i in range(len(bl))]
     tl = [(i, al[i], fl[i], (), (i, i + 1, bl[i])) for i in range(len(bl))]
-    
+
     il1 = il[:]
     il1[2:5] = [99,98,97]
     output_int32_list(il1)
