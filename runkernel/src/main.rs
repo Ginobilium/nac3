@@ -42,6 +42,11 @@ pub extern "C" fn print_int64(x: i64) {
     println!("print_int64: {}", x);
 }
 
+#[no_mangle]
+pub extern "C" fn __artiq_personality(_state: u32, _exception_object: u32, _context: u32) -> u32 {
+    unimplemented!();
+}
+
 
 fn main() {
     let filename = env::args().nth(1).unwrap();
