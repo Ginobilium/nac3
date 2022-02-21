@@ -1028,6 +1028,10 @@ impl<'a> Inferencer<'a> {
                 Ok(ty)
             }
             _ => {
+                if let TypeEnum::TTuple { .. } = &*self.unifier.get_ty(value.custom.unwrap())
+                {
+                    return report_error("Tuple index must be a constant (KernelInvariant is also not supported)", slice.location)
+                }
                 // the index is not a constant, so value can only be a list
                 self.constrain(slice.custom.unwrap(), self.primitives.int32, &slice.location)?;
                 let list = self.unifier.add_ty(TypeEnum::TList { ty });
