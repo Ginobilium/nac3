@@ -30,8 +30,8 @@ use std::thread;
 pub mod concrete_type;
 pub mod expr;
 mod generator;
-pub mod stmt;
 pub mod irrt;
+pub mod stmt;
 
 #[cfg(test)]
 mod test;
@@ -274,12 +274,22 @@ fn get_llvm_type<'ctx>(
                 // a struct with fields in the order of declaration
                 let top_level_defs = top_level.definitions.read();
                 let definition = top_level_defs.get(obj_id.0).unwrap();
-                let ty = if let TopLevelDef::Class { name, fields: fields_list, .. } = &*definition.read()
+                let ty = if let TopLevelDef::Class { name, fields: fields_list, .. } =
+                    &*definition.read()
                 {
                     let struct_type = ctx.opaque_struct_type(&name.to_string());
                     let fields = fields_list
                         .iter()
-                        .map(|f| get_llvm_type(ctx, generator, unifier, top_level, type_cache, fields[&f.0].0))
+                        .map(|f| {
+                            get_llvm_type(
+                                ctx,
+                                generator,
+                                unifier,
+                                top_level,
+                                type_cache,
+                                fields[&f.0].0,
+                            )
+                        })
                         .collect_vec();
                     struct_type.set_body(&fields, false);
                     struct_type.ptr_type(AddressSpace::Generic).into()
@@ -298,9 +308,12 @@ fn get_llvm_type<'ctx>(
             }
             TList { ty } => {
                 // a struct with an integer and a pointer to an array
-                let element_type = get_llvm_type(ctx, generator, unifier, top_level, type_cache, *ty);
-                let fields =
-                    [element_type.ptr_type(AddressSpace::Generic).into(), generator.get_size_type(ctx).into()];
+                let element_type =
+                    get_llvm_type(ctx, generator, unifier, top_level, type_cache, *ty);
+                let fields = [
+                    element_type.ptr_type(AddressSpace::Generic).into(),
+                    generator.get_size_type(ctx).into(),
+                ];
                 ctx.struct_type(&fields, false).ptr_type(AddressSpace::Generic).into()
             }
             TVirtual { .. } => unimplemented!(),
@@ -331,14 +344,17 @@ pub fn gen_func<'ctx, G: CodeGenerator>(
         // this should be unification between variables and concrete types
         // and should not cause any problem...
         let b = task.store.to_unifier_type(&mut unifier, &primitives, *b, &mut cache);
-        unifier.unify(*a, b).or_else(|err| {
-            if matches!(&*unifier.get_ty(*a), TypeEnum::TRigidVar { .. }) {
-                unifier.replace_rigid_var(*a, b);
-                Ok(())
-            } else {
-                Err(err)
-            }
-        }).unwrap()
+        unifier
+            .unify(*a, b)
+            .or_else(|err| {
+                if matches!(&*unifier.get_ty(*a), TypeEnum::TRigidVar { .. }) {
+                    unifier.replace_rigid_var(*a, b);
+                    Ok(())
+                } else {
+                    Err(err)
+                }
+            })
+            .unwrap()
     }
 
     // rebuild primitive store with unique representatives
@@ -367,10 +383,7 @@ pub fn gen_func<'ctx, G: CodeGenerator>(
             str_type.set_body(&fields, false);
             str_type.into()
         }),
-        (
-            primitives.range,
-            context.i32_type().array_type(3).ptr_type(AddressSpace::Generic).into(),
-        ),
+        (primitives.range, context.i32_type().array_type(3).ptr_type(AddressSpace::Generic).into()),
     ]
     .iter()
     .cloned()
@@ -380,17 +393,7 @@ pub fn gen_func<'ctx, G: CodeGenerator>(
         let int32 = context.i32_type().into();
         let int64 = context.i64_type().into();
         let str_ty = *type_cache.get(&primitives.str).unwrap();
-        let fields = [
-            int32,
-            str_ty,
-            int32,
-            int32,
-            str_ty,
-            str_ty,
-            int64,
-            int64,
-            int64
-        ];
+        let fields = [int32, str_ty, int32, int32, str_ty, str_ty, int64, int64, int64];
         exception.set_body(&fields, false);
         exception.ptr_type(AddressSpace::Generic).into()
     });
@@ -414,15 +417,30 @@ pub fn gen_func<'ctx, G: CodeGenerator>(
     let params = args
         .iter()
         .map(|arg| {
-            get_llvm_type(context, generator, &mut unifier, top_level_ctx.as_ref(), &mut type_cache, arg.ty).into()
+            get_llvm_type(
+                context,
+                generator,
+                &mut unifier,
+                top_level_ctx.as_ref(),
+                &mut type_cache,
+                arg.ty,
+            )
+            .into()
         })
         .collect_vec();
 
     let fn_type = if unifier.unioned(ret, primitives.none) {
         context.void_type().fn_type(&params, false)
     } else {
-        get_llvm_type(context, generator, &mut unifier, top_level_ctx.as_ref(), &mut type_cache, ret)
-            .fn_type(&params, false)
+        get_llvm_type(
+            context,
+            generator,
+            &mut unifier,
+            top_level_ctx.as_ref(),
+            &mut type_cache,
+            ret,
+        )
+        .fn_type(&params, false)
     };
 
     let symbol = &task.symbol_name;
@@ -445,7 +463,14 @@ pub fn gen_func<'ctx, G: CodeGenerator>(
     for (n, arg) in args.iter().enumerate() {
         let param = fn_val.get_nth_param(n as u32).unwrap();
         let alloca = builder.build_alloca(
-            get_llvm_type(context, generator, &mut unifier, top_level_ctx.as_ref(), &mut type_cache, arg.ty),
+            get_llvm_type(
+                context,
+                generator,
+                &mut unifier,
+                top_level_ctx.as_ref(),
+                &mut type_cache,
+                arg.ty,
+            ),
             &arg.name.to_string(),
         );
         builder.build_store(alloca, param);

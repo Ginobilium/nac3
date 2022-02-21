@@ -6,10 +6,10 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use std::{borrow::Cow, collections::HashSet};
 
-use nac3parser::ast::{StrRef, Location};
+use nac3parser::ast::{Location, StrRef};
 
-use super::unification_table::{UnificationKey, UnificationTable};
 use super::type_error::{TypeError, TypeErrorKind};
+use super::unification_table::{UnificationKey, UnificationTable};
 use crate::symbol_resolver::SymbolValue;
 use crate::toplevel::{DefinitionId, TopLevelContext, TopLevelDef};
 
@@ -51,14 +51,14 @@ pub struct FunSignature {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum RecordKey {
     Str(StrRef),
-    Int(i32)
+    Int(i32),
 }
 
 impl From<&RecordKey> for StrRef {
     fn from(r: &RecordKey) -> Self {
         match r {
             RecordKey::Str(s) => *s,
-            RecordKey::Int(i) => StrRef::from(i.to_string())
+            RecordKey::Int(i) => StrRef::from(i.to_string()),
         }
     }
 }
@@ -85,7 +85,7 @@ impl Display for RecordKey {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             RecordKey::Str(s) => write!(f, "{}", s),
-            RecordKey::Int(i) => write!(f, "{}", i)
+            RecordKey::Int(i) => write!(f, "{}", i),
         }
     }
 }
@@ -94,7 +94,7 @@ impl Display for RecordKey {
 pub struct RecordField {
     ty: Type,
     mutable: bool,
-    loc: Option<Location>
+    loc: Option<Location>,
 }
 
 impl RecordField {
@@ -108,7 +108,7 @@ pub enum TypeEnum {
     TRigidVar {
         id: u32,
         name: Option<StrRef>,
-        loc: Option<Location>
+        loc: Option<Location>,
     },
     TVar {
         id: u32,
@@ -117,7 +117,7 @@ pub enum TypeEnum {
         // empty indicates no restriction
         range: Vec<Type>,
         name: Option<StrRef>,
-        loc: Option<Location>
+        loc: Option<Location>,
     },
     TTuple {
         ty: Vec<Type>,
@@ -264,7 +264,11 @@ impl Unifier {
         self.unification_table.probe_value_immutable(a).clone()
     }
 
-    pub fn get_fresh_rigid_var(&mut self, name: Option<StrRef>, loc: Option<Location>) -> (Type, u32) {
+    pub fn get_fresh_rigid_var(
+        &mut self,
+        name: Option<StrRef>,
+        loc: Option<Location>,
+    ) -> (Type, u32) {
         let id = self.var_id + 1;
         self.var_id += 1;
         (self.add_ty(TypeEnum::TRigidVar { id, name, loc }), id)
@@ -279,11 +283,16 @@ impl Unifier {
     }
 
     /// Get a fresh type variable.
-    pub fn get_fresh_var_with_range(&mut self, range: &[Type], name: Option<StrRef>, loc: Option<Location>) -> (Type, u32) {
+    pub fn get_fresh_var_with_range(
+        &mut self,
+        range: &[Type],
+        name: Option<StrRef>,
+        loc: Option<Location>,
+    ) -> (Type, u32) {
         let id = self.var_id + 1;
         self.var_id += 1;
         let range = range.to_vec();
-        (self.add_ty(TypeEnum::TVar { id, range, fields: None, name, loc}), id)
+        (self.add_ty(TypeEnum::TVar { id, range, fields: None, name, loc }), id)
     }
 
     /// Unification would not unify rigid variables with other types, but we want to do this for
@@ -344,8 +353,7 @@ impl Unifier {
                             .map(|params| {
                                 self.subst(
                                     ty,
-                                    &zip(keys.iter().cloned(), params.iter().cloned())
-                                        .collect(),
+                                    &zip(keys.iter().cloned(), params.iter().cloned()).collect(),
                                 )
                                 .unwrap_or(ty)
                             })
@@ -395,23 +403,19 @@ impl Unifier {
         // we check to make sure that all required arguments (those without default
         // arguments) are provided, and do not provide the same argument twice.
         let mut required = required.to_vec();
-        let mut all_names: Vec<_> =
-            signature.args.iter().map(|v| (v.name, v.ty)).rev().collect();
+        let mut all_names: Vec<_> = signature.args.iter().map(|v| (v.name, v.ty)).rev().collect();
         for (i, t) in posargs.iter().enumerate() {
             if signature.args.len() <= i {
-                return Err(TypeError::new(TypeErrorKind::TooManyArguments{
-                    expected: signature.args.len(),
-                    got: i,
-                }, *loc));
+                return Err(TypeError::new(
+                    TypeErrorKind::TooManyArguments { expected: signature.args.len(), got: i },
+                    *loc,
+                ));
             }
             required.pop();
             let (name, expected) = all_names.pop().unwrap();
-            self.unify_impl(expected, *t, false)
-                .map_err(|_| TypeError::new(TypeErrorKind::IncorrectArgType {
-                    name,
-                    expected,
-                    got: *t,
-                }, *loc))?;
+            self.unify_impl(expected, *t, false).map_err(|_| {
+                TypeError::new(TypeErrorKind::IncorrectArgType { name, expected, got: *t }, *loc)
+            })?;
         }
         for (k, t) in kwargs.iter() {
             if let Some(i) = required.iter().position(|v| v == k) {
@@ -422,23 +426,22 @@ impl Unifier {
                 .position(|v| &v.0 == k)
                 .ok_or_else(|| TypeError::new(TypeErrorKind::UnknownArgName(*k), *loc))?;
             let (name, expected) = all_names.remove(i);
-            self.unify_impl(expected, *t, false)
-                .map_err(|_| TypeError::new(TypeErrorKind::IncorrectArgType {
-                    name,
-                    expected,
-                    got: *t,
-                }, *loc))?;
+            self.unify_impl(expected, *t, false).map_err(|_| {
+                TypeError::new(TypeErrorKind::IncorrectArgType { name, expected, got: *t }, *loc)
+            })?;
         }
         if !required.is_empty() {
-            return Err(TypeError::new(TypeErrorKind::MissingArgs(required.iter().join(", ")), *loc));
+            return Err(TypeError::new(
+                TypeErrorKind::MissingArgs(required.iter().join(", ")),
+                *loc,
+            ));
         }
-        self.unify_impl(*ret, signature.ret, false)
-            .map_err(|mut err| {
-                if err.loc.is_none() {
-                    err.loc = *loc;
-                }
-                err
-            })?;
+        self.unify_impl(*ret, signature.ret, false).map_err(|mut err| {
+            if err.loc.is_none() {
+                err.loc = *loc;
+            }
+            err
+        })?;
         *fun.borrow_mut() = Some(instantiated);
         Ok(())
     }
@@ -471,24 +474,38 @@ impl Unifier {
             )
         };
         match (&*ty_a, &*ty_b) {
-            (TVar { fields: fields1, id, name: name1, loc: loc1, .. }, TVar { fields: fields2, name: name2, loc: loc2, .. }) => {
+            (
+                TVar { fields: fields1, id, name: name1, loc: loc1, .. },
+                TVar { fields: fields2, name: name2, loc: loc2, .. },
+            ) => {
                 let new_fields = match (fields1, fields2) {
                     (None, None) => None,
                     (None, Some(fields)) => Some(fields.clone()),
                     (_, None) => {
                         return self.unify_impl(b, a, true);
-                    },
+                    }
                     (Some(fields1), Some(fields2)) => {
                         let mut new_fields: Mapping<_, _> = fields2.clone();
                         for (key, val1) in fields1.iter() {
                             if let Some(val2) = fields2.get(key) {
-                                self.unify_impl(val1.ty, val2.ty, false)
-                                    .map_err(|_| TypeError::new(TypeErrorKind::FieldUnificationError {
-                                        field: *key,
-                                        types: (val1.ty, val2.ty),
-                                        loc: (*loc1, *loc2),
-                                    }, None))?;
-                                new_fields.insert(*key, RecordField::new(val1.ty, val1.mutable || val2.mutable, val1.loc.or(val2.loc)));
+                                self.unify_impl(val1.ty, val2.ty, false).map_err(|_| {
+                                    TypeError::new(
+                                        TypeErrorKind::FieldUnificationError {
+                                            field: *key,
+                                            types: (val1.ty, val2.ty),
+                                            loc: (*loc1, *loc2),
+                                        },
+                                        None,
+                                    )
+                                })?;
+                                new_fields.insert(
+                                    *key,
+                                    RecordField::new(
+                                        val1.ty,
+                                        val1.mutable || val2.mutable,
+                                        val1.loc.or(val2.loc),
+                                    ),
+                                );
                             } else {
                                 new_fields.insert(*key, *val1);
                             }
@@ -496,21 +513,26 @@ impl Unifier {
                         Some(new_fields)
                     }
                 };
-                let intersection = self.get_intersection(a, b).map_err(|_|
-                    TypeError::new(TypeErrorKind::IncompatibleTypes(a, b), None))?.unwrap();
+                let intersection = self
+                    .get_intersection(a, b)
+                    .map_err(|_| TypeError::new(TypeErrorKind::IncompatibleTypes(a, b), None))?
+                    .unwrap();
                 let range = if let TypeEnum::TVar { range, .. } = &*self.get_ty(intersection) {
                     range.clone()
                 } else {
                     unreachable!()
                 };
                 self.unification_table.unify(a, b);
-                self.unification_table.set_value(a, Rc::new(TypeEnum::TVar {
-                    id: *id,
-                    fields: new_fields,
-                    range,
-                    name: name1.or(*name2),
-                    loc: loc1.or(*loc2)
-                }));
+                self.unification_table.set_value(
+                    a,
+                    Rc::new(TypeEnum::TVar {
+                        id: *id,
+                        fields: new_fields,
+                        range,
+                        name: name1.or(*name2),
+                        loc: loc1.or(*loc2),
+                    }),
+                );
             }
             (TVar { fields: None, range, .. }, _) => {
                 // We check for the range of the type variable to see if unification is allowed.
@@ -520,8 +542,12 @@ impl Unifier {
                 // The return value x of check_var_compatibility would be a new type that is
                 // guaranteed to be compatible with a under all possible instantiations. So we
                 // unify x with b to recursively apply the constrains, and then set a to x.
-                let x = self.check_var_compatibility(b, range).map_err(|_|
-                    TypeError::new(TypeErrorKind::IncompatibleRange(b, range.clone()), None))?.unwrap_or(b);
+                let x = self
+                    .check_var_compatibility(b, range)
+                    .map_err(|_| {
+                        TypeError::new(TypeErrorKind::IncompatibleRange(b, range.clone()), None)
+                    })?
+                    .unwrap_or(b);
                 self.unify_impl(x, b, false)?;
                 self.set_a_to_b(a, x);
             }
@@ -532,17 +558,23 @@ impl Unifier {
                         RecordKey::Int(i) => {
                             if v.mutable {
                                 return Err(TypeError::new(
-                                        TypeErrorKind::MutationError(*k, b), v.loc));
+                                    TypeErrorKind::MutationError(*k, b),
+                                    v.loc,
+                                ));
                             }
                             let ind = if i < 0 { len + i } else { i };
                             if ind >= len || ind < 0 {
                                 return Err(TypeError::new(
-                                        TypeErrorKind::TupleIndexOutOfBounds{ index: i, len}, v.loc));
+                                    TypeErrorKind::TupleIndexOutOfBounds { index: i, len },
+                                    v.loc,
+                                ));
                             }
-                            self.unify_impl(v.ty, ty[ind as usize], false).map_err(|e| e.at(v.loc))?;
+                            self.unify_impl(v.ty, ty[ind as usize], false)
+                                .map_err(|e| e.at(v.loc))?;
                         }
-                        RecordKey::Str(_) => return Err(TypeError::new(
-                                TypeErrorKind::NoSuchField(*k, b), v.loc)),
+                        RecordKey::Str(_) => {
+                            return Err(TypeError::new(TypeErrorKind::NoSuchField(*k, b), v.loc))
+                        }
                     }
                 }
                 let x = self.check_var_compatibility(b, range)?.unwrap_or(b);
@@ -552,9 +584,12 @@ impl Unifier {
             (TVar { fields: Some(fields), range, .. }, TList { ty }) => {
                 for (k, v) in fields.iter() {
                     match *k {
-                        RecordKey::Int(_) => self.unify_impl(v.ty, *ty, false).map_err(|e| e.at(v.loc))?,
-                        RecordKey::Str(_) => return Err(TypeError::new(
-                                TypeErrorKind::NoSuchField(*k, b), v.loc)),
+                        RecordKey::Int(_) => {
+                            self.unify_impl(v.ty, *ty, false).map_err(|e| e.at(v.loc))?
+                        }
+                        RecordKey::Str(_) => {
+                            return Err(TypeError::new(TypeErrorKind::NoSuchField(*k, b), v.loc))
+                        }
                     }
                 }
                 let x = self.check_var_compatibility(b, range)?.unwrap_or(b);
@@ -578,23 +613,26 @@ impl Unifier {
                 for (k, field) in map.iter() {
                     match *k {
                         RecordKey::Str(s) => {
-                            let (ty, mutable) = fields
-                                .get(&s)
-                                .copied()
-                                .ok_or_else(|| TypeError::new(
-                                        TypeErrorKind::NoSuchField(*k, b), field.loc))?;
+                            let (ty, mutable) = fields.get(&s).copied().ok_or_else(|| {
+                                TypeError::new(TypeErrorKind::NoSuchField(*k, b), field.loc)
+                            })?;
                             // typevar represents the usage of the variable
                             // it is OK to have immutable usage for mutable fields
                             // but cannot have mutable usage for immutable fields
-                            if field.mutable && !mutable{
+                            if field.mutable && !mutable {
                                 return Err(TypeError::new(
-                                        TypeErrorKind::MutationError(*k, b), field.loc));
+                                    TypeErrorKind::MutationError(*k, b),
+                                    field.loc,
+                                ));
                             }
-                            self.unify_impl(field.ty, ty, false)
-                                .map_err(|v| v.at(field.loc))?;
+                            self.unify_impl(field.ty, ty, false).map_err(|v| v.at(field.loc))?;
                         }
-                        RecordKey::Int(_) => return Err(TypeError::new(
-                            TypeErrorKind::NoSuchField(*k, b), field.loc))
+                        RecordKey::Int(_) => {
+                            return Err(TypeError::new(
+                                TypeErrorKind::NoSuchField(*k, b),
+                                field.loc,
+                            ))
+                        }
                     }
                 }
                 let x = self.check_var_compatibility(b, range)?.unwrap_or(b);
@@ -607,29 +645,35 @@ impl Unifier {
                     for (k, field) in map.iter() {
                         match *k {
                             RecordKey::Str(s) => {
-                                let (ty, _) = fields
-                                    .get(&s)
-                                    .copied()
-                                    .ok_or_else(|| TypeError::new(
-                                            TypeErrorKind::NoSuchField(*k, b), field.loc))?;
+                                let (ty, _) = fields.get(&s).copied().ok_or_else(|| {
+                                    TypeError::new(TypeErrorKind::NoSuchField(*k, b), field.loc)
+                                })?;
                                 if !matches!(self.get_ty(ty).as_ref(), TFunc { .. }) {
                                     return Err(TypeError::new(
-                                        TypeErrorKind::NoSuchField(*k, b), field.loc))
+                                        TypeErrorKind::NoSuchField(*k, b),
+                                        field.loc,
+                                    ));
                                 }
                                 if field.mutable {
                                     return Err(TypeError::new(
-                                            TypeErrorKind::MutationError(*k, b), field.loc));
+                                        TypeErrorKind::MutationError(*k, b),
+                                        field.loc,
+                                    ));
                                 }
                                 self.unify_impl(field.ty, ty, false)
                                     .map_err(|v| v.at(field.loc))?;
                             }
-                            RecordKey::Int(_) => return Err(TypeError::new(
-                                TypeErrorKind::NoSuchField(*k, b), field.loc))
+                            RecordKey::Int(_) => {
+                                return Err(TypeError::new(
+                                    TypeErrorKind::NoSuchField(*k, b),
+                                    field.loc,
+                                ))
+                            }
                         }
                     }
                 } else {
                     // require annotation...
-                    return Err(TypeError::new(TypeErrorKind::RequiresTypeAnn, None))
+                    return Err(TypeError::new(TypeErrorKind::RequiresTypeAnn, None));
                 }
                 let x = self.check_var_compatibility(b, range)?.unwrap_or(b);
                 self.unify_impl(x, b, false)?;
@@ -708,7 +752,11 @@ impl Unifier {
         self.stringify_with_notes(ty, &mut None)
     }
 
-    pub fn stringify_with_notes(&self, ty: Type, notes: &mut Option<HashMap<u32, String>>) -> String {
+    pub fn stringify_with_notes(
+        &self,
+        ty: Type,
+        notes: &mut Option<HashMap<u32, String>>,
+    ) -> String {
         let top_level = self.top_level.clone();
         self.internal_stringify(
             ty,
@@ -727,51 +775,82 @@ impl Unifier {
                 )
             },
             &mut |id| format!("var{}", id),
-            notes
+            notes,
         )
     }
 
     /// Get string representation of the type
-    pub fn internal_stringify<F, G>(&self, ty: Type, obj_to_name: &mut F, var_to_name: &mut G, notes: &mut Option<HashMap<u32, String>>) -> String
+    pub fn internal_stringify<F, G>(
+        &self,
+        ty: Type,
+        obj_to_name: &mut F,
+        var_to_name: &mut G,
+        notes: &mut Option<HashMap<u32, String>>,
+    ) -> String
     where
         F: FnMut(usize) -> String,
         G: FnMut(u32) -> String,
     {
         let ty = self.unification_table.probe_value_immutable(ty).clone();
         match ty.as_ref() {
-            TypeEnum::TRigidVar { id, name, .. } => name.map(|v| v.to_string()).unwrap_or_else(|| var_to_name(*id)),
+            TypeEnum::TRigidVar { id, name, .. } => {
+                name.map(|v| v.to_string()).unwrap_or_else(|| var_to_name(*id))
+            }
             TypeEnum::TVar { id, name, fields, range, .. } => {
                 let n = if let Some(fields) = fields {
-                    let mut fields = fields.iter().map(|(k, f)| format!("{}={}", k, self.internal_stringify(f.ty, obj_to_name, var_to_name, notes)));
+                    let mut fields = fields.iter().map(|(k, f)| {
+                        format!(
+                            "{}={}",
+                            k,
+                            self.internal_stringify(f.ty, obj_to_name, var_to_name, notes)
+                        )
+                    });
                     let fields = fields.join(", ");
-                    format!("{}[{}]", name.map(|v| v.to_string()).unwrap_or_else(|| var_to_name(*id)), fields)
+                    format!(
+                        "{}[{}]",
+                        name.map(|v| v.to_string()).unwrap_or_else(|| var_to_name(*id)),
+                        fields
+                    )
                 } else {
                     name.map(|v| v.to_string()).unwrap_or_else(|| var_to_name(*id))
                 };
-                if !range.is_empty() && notes.is_some() && !notes.as_ref().unwrap().contains_key(id) {
+                if !range.is_empty() && notes.is_some() && !notes.as_ref().unwrap().contains_key(id)
+                {
                     // just in case if there is any cyclic dependency
                     notes.as_mut().unwrap().insert(*id, "".into());
-                    let body = format!("{} ∈ {{{}}}", n, range.iter().map(|v| self.internal_stringify(*v, obj_to_name, var_to_name, notes)).collect::<Vec<_>>().join(", "));
+                    let body = format!(
+                        "{} ∈ {{{}}}",
+                        n,
+                        range
+                            .iter()
+                            .map(|v| self.internal_stringify(*v, obj_to_name, var_to_name, notes))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    );
                     notes.as_mut().unwrap().insert(*id, body);
                 };
                 n
             }
             TypeEnum::TTuple { ty } => {
-                let mut fields = ty.iter().map(|v| self.internal_stringify(*v, obj_to_name, var_to_name, notes));
+                let mut fields =
+                    ty.iter().map(|v| self.internal_stringify(*v, obj_to_name, var_to_name, notes));
                 format!("tuple[{}]", fields.join(", "))
             }
             TypeEnum::TList { ty } => {
                 format!("list[{}]", self.internal_stringify(*ty, obj_to_name, var_to_name, notes))
             }
             TypeEnum::TVirtual { ty } => {
-                format!("virtual[{}]", self.internal_stringify(*ty, obj_to_name, var_to_name, notes))
+                format!(
+                    "virtual[{}]",
+                    self.internal_stringify(*ty, obj_to_name, var_to_name, notes)
+                )
             }
             TypeEnum::TObj { obj_id, params, .. } => {
                 let name = obj_to_name(obj_id.0);
                 if !params.is_empty() {
-                    let params = params.iter().map(|(_, v)| {
-                        self.internal_stringify(*v, obj_to_name, var_to_name, notes)
-                    });
+                    let params = params
+                        .iter()
+                        .map(|(_, v)| self.internal_stringify(*v, obj_to_name, var_to_name, notes));
                     // sort to preserve order
                     let mut params = params.sorted();
                     format!("{}[{}]", name, params.join(", "))
@@ -786,9 +865,18 @@ impl Unifier {
                     .iter()
                     .map(|arg| {
                         if let Some(dv) = &arg.default_value {
-                            format!("{}:{}={}", arg.name, self.internal_stringify(arg.ty, obj_to_name, var_to_name, notes), dv)
+                            format!(
+                                "{}:{}={}",
+                                arg.name,
+                                self.internal_stringify(arg.ty, obj_to_name, var_to_name, notes),
+                                dv
+                            )
                         } else {
-                            format!("{}:{}", arg.name, self.internal_stringify(arg.ty, obj_to_name, var_to_name, notes))
+                            format!(
+                                "{}:{}",
+                                arg.name,
+                                self.internal_stringify(arg.ty, obj_to_name, var_to_name, notes)
+                            )
                         }
                     })
                     .join(", ");
@@ -834,7 +922,9 @@ impl Unifier {
         } else {
             let mapping = vars
                 .into_iter()
-                .map(|(k, range, name, loc)| (k, self.get_fresh_var_with_range(range.as_ref(), name, loc).0))
+                .map(|(k, range, name, loc)| {
+                    (k, self.get_fresh_var_with_range(range.as_ref(), name, loc).0)
+                })
                 .collect();
             self.subst(ty, &mapping).unwrap_or(ty)
         }
@@ -907,9 +997,8 @@ impl Unifier {
                     let obj_id = *obj_id;
                     let params =
                         self.subst_map(params, mapping, cache).unwrap_or_else(|| params.clone());
-                    let fields = self
-                        .subst_map2(fields, mapping, cache)
-                        .unwrap_or_else(|| fields.clone());
+                    let fields =
+                        self.subst_map2(fields, mapping, cache).unwrap_or_else(|| fields.clone());
                     let new_ty = self.add_ty(TypeEnum::TObj { obj_id, params, fields });
                     if let Some(var) = cache.get(&a).unwrap() {
                         self.unify_impl(new_ty, *var, false).unwrap();
@@ -934,7 +1023,7 @@ impl Unifier {
                     let params = new_params.unwrap_or_else(|| params.clone());
                     let ret = new_ret.unwrap_or_else(|| *ret);
                     let args = new_args.into_owned();
-                    Some( self.add_ty(TypeEnum::TFunc( FunSignature { args, ret, vars: params })),)
+                    Some(self.add_ty(TypeEnum::TFunc(FunSignature { args, ret, vars: params })))
                 } else {
                     None
                 }
@@ -992,7 +1081,10 @@ impl Unifier {
         let x = self.get_ty(a);
         let y = self.get_ty(b);
         match (x.as_ref(), y.as_ref()) {
-            (TVar { range: range1, name, loc, .. }, TVar { fields, range: range2, name: name2, loc: loc2, .. }) => {
+            (
+                TVar { range: range1, name, loc, .. },
+                TVar { fields, range: range2, name: name2, loc: loc2, .. },
+            ) => {
                 // new range is the intersection of them
                 // empty range indicates no constraint
                 if range1.is_empty() {
@@ -1000,14 +1092,25 @@ impl Unifier {
                 } else if range2.is_empty() {
                     Ok(Some(a))
                 } else {
-                    let range = range2.iter().cartesian_product(range1.iter())
-                            .filter_map(|(v1, v2)| self.get_intersection(*v1, *v2).map(|v| v.unwrap_or(*v1)).ok()).collect_vec();
+                    let range = range2
+                        .iter()
+                        .cartesian_product(range1.iter())
+                        .filter_map(|(v1, v2)| {
+                            self.get_intersection(*v1, *v2).map(|v| v.unwrap_or(*v1)).ok()
+                        })
+                        .collect_vec();
                     if range.is_empty() {
                         Err(())
                     } else {
                         let id = self.var_id + 1;
                         self.var_id += 1;
-                        let ty = TVar { id, fields: fields.clone(), range, name: name2.or(*name), loc: loc2.or(*loc) };
+                        let ty = TVar {
+                            id,
+                            fields: fields.clone(),
+                            range,
+                            name: name2.or(*name),
+                            loc: loc2.or(*loc),
+                        };
                         Ok(Some(self.unification_table.new_key(ty.into())))
                     }
                 }
@@ -1026,13 +1129,15 @@ impl Unifier {
                     Err(())
                 }
             }
-            (TVar { range, .. }, _) => {
-                self.check_var_compatibility(b, range).or(Err(()))
-            }
+            (TVar { range, .. }, _) => self.check_var_compatibility(b, range).or(Err(())),
             (TTuple { ty: ty1 }, TTuple { ty: ty2 }) if ty1.len() == ty2.len() => {
-                let ty: Vec<_> = zip(ty1.iter(), ty2.iter()).map(|(a, b)| self.get_intersection(*a, *b)).try_collect()?;
+                let ty: Vec<_> = zip(ty1.iter(), ty2.iter())
+                    .map(|(a, b)| self.get_intersection(*a, *b))
+                    .try_collect()?;
                 if ty.iter().any(Option::is_some) {
-                    Ok(Some(self.add_ty(TTuple { ty: zip(ty.into_iter(), ty1.iter()).map(|(a, b)| a.unwrap_or(*b)).collect()})))
+                    Ok(Some(self.add_ty(TTuple {
+                        ty: zip(ty.into_iter(), ty1.iter()).map(|(a, b)| a.unwrap_or(*b)).collect(),
+                    })))
                 } else {
                     Ok(None)
                 }
@@ -1043,9 +1148,7 @@ impl Unifier {
             (TVirtual { ty: ty1 }, TVirtual { ty: ty2 }) => {
                 Ok(self.get_intersection(*ty1, *ty2)?.map(|ty| self.add_ty(TVirtual { ty })))
             }
-            (TObj { obj_id: id1, .. }, TObj { obj_id: id2, .. }) if id1 == id2 => {
-                Ok(None)
-            }
+            (TObj { obj_id: id1, .. }, TObj { obj_id: id2, .. }) if id1 == id2 => Ok(None),
             // don't deal with function shape for now
             _ => Err(()),
         }

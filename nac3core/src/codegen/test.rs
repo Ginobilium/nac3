@@ -34,7 +34,10 @@ impl Resolver {
 }
 
 impl SymbolResolver for Resolver {
-    fn get_default_param_value(&self, _: &nac3parser::ast::Expr) -> Option<crate::symbol_resolver::SymbolValue> {
+    fn get_default_param_value(
+        &self,
+        _: &nac3parser::ast::Expr,
+    ) -> Option<crate::symbol_resolver::SymbolValue> {
         unimplemented!()
     }
 
@@ -57,7 +60,11 @@ impl SymbolResolver for Resolver {
     }
 
     fn get_identifier_def(&self, id: StrRef) -> Result<DefinitionId, String> {
-        self.id_to_def.read().get(&id).cloned().ok_or_else(|| format!("cannot find symbol `{}`", id))
+        self.id_to_def
+            .read()
+            .get(&id)
+            .cloned()
+            .ok_or_else(|| format!("cannot find symbol `{}`", id))
     }
 
     fn get_string_id(&self, _: &str) -> i32 {
@@ -118,7 +125,7 @@ fn test_primitives() {
         virtual_checks: &mut virtual_checks,
         calls: &mut calls,
         defined_identifiers: identifiers.clone(),
-        in_handler: false
+        in_handler: false,
     };
     inferencer.variable_mapping.insert("a".into(), inferencer.primitives.int32);
     inferencer.variable_mapping.insert("b".into(), inferencer.primitives.int32);
@@ -263,7 +270,7 @@ fn test_simple_call() {
         virtual_checks: &mut virtual_checks,
         calls: &mut calls,
         defined_identifiers: identifiers.clone(),
-        in_handler: false
+        in_handler: false,
     };
     inferencer.variable_mapping.insert("a".into(), inferencer.primitives.int32);
     inferencer.variable_mapping.insert("foo".into(), fun_ty);

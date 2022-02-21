@@ -3,7 +3,7 @@ use std::convert::{From, TryInto};
 use std::iter::once;
 use std::{cell::RefCell, sync::Arc};
 
-use super::typedef::{Call, FunSignature, FuncArg, Type, TypeEnum, Unifier, RecordField};
+use super::typedef::{Call, FunSignature, FuncArg, RecordField, Type, TypeEnum, Unifier};
 use super::{magic_methods::*, typedef::CallId};
 use crate::{symbol_resolver::SymbolResolver, toplevel::TopLevelContext};
 use itertools::izip;
@@ -125,7 +125,10 @@ impl<'a> fold::Fold<()> for Inferencer<'a> {
                 }
             }
             ast::StmtKind::Try { body, handlers, orelse, finalbody, config_comment } => {
-                let body = body.into_iter().map(|stmt| self.fold_stmt(stmt)).collect::<Result<Vec<_>, _>>()?;
+                let body = body
+                    .into_iter()
+                    .map(|stmt| self.fold_stmt(stmt))
+                    .collect::<Result<Vec<_>, _>>()?;
                 let outer_in_handler = self.in_handler;
                 let mut exception_handlers = Vec::with_capacity(handlers.len());
                 self.in_handler = true;
@@ -133,23 +136,29 @@ impl<'a> fold::Fold<()> for Inferencer<'a> {
                     let top_level_defs = self.top_level.definitions.read();
                     let mut naive_folder = NaiveFolder();
                     for handler in handlers.into_iter() {
-                        let ast::ExcepthandlerKind::ExceptHandler { type_, name, body } = handler.node;
+                        let ast::ExcepthandlerKind::ExceptHandler { type_, name, body } =
+                            handler.node;
                         let type_ = if let Some(type_) = type_ {
                             let typ = self.function_data.resolver.parse_type_annotation(
                                 top_level_defs.as_slice(),
                                 self.unifier,
                                 self.primitives,
-                                &type_
+                                &type_,
                             )?;
-                            self.virtual_checks.push((typ, self.primitives.exception, handler.location));
+                            self.virtual_checks.push((
+                                typ,
+                                self.primitives.exception,
+                                handler.location,
+                            ));
                             if let Some(name) = name {
                                 if !self.defined_identifiers.contains(&name) {
                                     self.defined_identifiers.insert(name);
                                 }
                                 if let Some(old_typ) = self.variable_mapping.insert(name, typ) {
                                     let loc = handler.location;
-                                    self.unifier.unify(old_typ, typ).map_err(|e| e.at(Some(loc))
-                                        .to_display(self.unifier).to_string())?;
+                                    self.unifier.unify(old_typ, typ).map_err(|e| {
+                                        e.at(Some(loc)).to_display(self.unifier).to_string()
+                                    })?;
                                 }
                             }
                             let mut type_ = naive_folder.fold_expr(*type_)?;
@@ -158,22 +167,32 @@ impl<'a> fold::Fold<()> for Inferencer<'a> {
                         } else {
                             None
                         };
-                        let body = body.into_iter().map(|stmt| self.fold_stmt(stmt)).collect::<Result<Vec<_>, _>>()?;
+                        let body = body
+                            .into_iter()
+                            .map(|stmt| self.fold_stmt(stmt))
+                            .collect::<Result<Vec<_>, _>>()?;
                         exception_handlers.push(Located {
                             location: handler.location,
                             node: ast::ExcepthandlerKind::ExceptHandler { type_, name, body },
-                            custom: None
+                            custom: None,
                         });
                     }
                 }
                 self.in_handler = outer_in_handler;
                 let handlers = exception_handlers;
-                let orelse = orelse.into_iter().map(|stmt| self.fold_stmt(stmt)).collect::<Result<Vec<_>, _>>()?;
-                let finalbody = finalbody .into_iter().map(|stmt| self.fold_stmt(stmt)).collect::<Result<Vec<_>, _>>()?;
+                let orelse = orelse.into_iter().map(|stmt| self.fold_stmt(stmt)).collect::<Result<
+                    Vec<_>,
+                    _,
+                >>(
+                )?;
+                let finalbody = finalbody
+                    .into_iter()
+                    .map(|stmt| self.fold_stmt(stmt))
+                    .collect::<Result<Vec<_>, _>>()?;
                 Located {
                     location: node.location,
                     node: ast::StmtKind::Try { body, handlers, orelse, finalbody, config_comment },
-                    custom: None
+                    custom: None,
                 }
             }
             ast::StmtKind::For { target, iter, body, orelse, config_comment, type_comment } => {
@@ -186,14 +205,10 @@ impl<'a> fold::Fold<()> for Inferencer<'a> {
                     let list = self.unifier.add_ty(TypeEnum::TList { ty: target.custom.unwrap() });
                     self.unify(list, iter.custom.unwrap(), &iter.location)?;
                 }
-                let body = body
-                    .into_iter()
-                    .map(|b| self.fold_stmt(b))
-                    .collect::<Result<Vec<_>, _>>()?;
-                let orelse = orelse
-                    .into_iter()
-                    .map(|o| self.fold_stmt(o))
-                    .collect::<Result<Vec<_>, _>>()?;
+                let body =
+                    body.into_iter().map(|b| self.fold_stmt(b)).collect::<Result<Vec<_>, _>>()?;
+                let orelse =
+                    orelse.into_iter().map(|o| self.fold_stmt(o)).collect::<Result<Vec<_>, _>>()?;
                 Located {
                     location: node.location,
                     node: ast::StmtKind::For {
@@ -204,7 +219,7 @@ impl<'a> fold::Fold<()> for Inferencer<'a> {
                         config_comment,
                         type_comment,
                     },
-                    custom: None
+                    custom: None,
                 }
             }
             ast::StmtKind::Assign { ref mut targets, ref config_comment, .. } => {
@@ -252,7 +267,8 @@ impl<'a> fold::Fold<()> for Inferencer<'a> {
                             })
                             .collect();
                         let loc = node.location;
-                        let targets = targets.map_err(|e| e.at(Some(loc)).to_display(self.unifier).to_string())?;
+                        let targets = targets
+                            .map_err(|e| e.at(Some(loc)).to_display(self.unifier).to_string())?;
                         return Ok(Located {
                             location: node.location,
                             node: ast::StmtKind::Assign {
@@ -283,8 +299,8 @@ impl<'a> fold::Fold<()> for Inferencer<'a> {
             _ => fold::fold_stmt(self, node)?,
         };
         match &stmt.node {
-            ast::StmtKind::For { .. } => {},
-            ast::StmtKind::Try { .. } => {},
+            ast::StmtKind::For { .. } => {}
+            ast::StmtKind::Try { .. } => {}
             ast::StmtKind::If { test, .. } | ast::StmtKind::While { test, .. } => {
                 self.unify(test.custom.unwrap(), self.primitives.bool, &test.location)?;
             }
@@ -302,9 +318,16 @@ impl<'a> fold::Fold<()> for Inferencer<'a> {
                     return report_error("raise ... from cause is not supported", cause.location);
                 }
                 if let Some(exc) = exc {
-                    self.virtual_checks.push((exc.custom.unwrap(), self.primitives.exception, exc.location));
+                    self.virtual_checks.push((
+                        exc.custom.unwrap(),
+                        self.primitives.exception,
+                        exc.location,
+                    ));
                 } else if !self.in_handler {
-                    return report_error("cannot reraise outside exception handlers", stmt.location);
+                    return report_error(
+                        "cannot reraise outside exception handlers",
+                        stmt.location,
+                    );
                 }
             }
             ast::StmtKind::With { items, .. } => {
@@ -419,8 +442,9 @@ impl<'a> fold::Fold<()> for Inferencer<'a> {
             _ => fold::fold_expr(self, node)?,
         };
         let custom = match &expr.node {
-            ast::ExprKind::Constant { value, .. } =>
-                Some(self.infer_constant(value, &expr.location)?),
+            ast::ExprKind::Constant { value, .. } => {
+                Some(self.infer_constant(value, &expr.location)?)
+            }
             ast::ExprKind::Name { id, .. } => {
                 if !self.defined_identifiers.contains(id) {
                     match self.function_data.resolver.get_symbol_type(
@@ -481,7 +505,9 @@ impl<'a> Inferencer<'a> {
     }
 
     fn unify(&mut self, a: Type, b: Type, location: &Location) -> Result<(), String> {
-        self.unifier.unify(a, b).map_err(|e| e.at(Some(*location)).to_display(self.unifier).to_string())
+        self.unifier
+            .unify(a, b)
+            .map_err(|e| e.at(Some(*location)).to_display(self.unifier).to_string())
     }
 
     fn infer_pattern(&mut self, pattern: &ast::Expr<()>) -> Result<(), String> {
@@ -533,9 +559,9 @@ impl<'a> Inferencer<'a> {
                                 .map(|v| v.name)
                                 .rev()
                                 .collect();
-                            self.unifier
-                                .unify_call(&call, ty, sign, &required)
-                                .map_err(|e| e.at(Some(location)).to_display(self.unifier).to_string())?;
+                            self.unifier.unify_call(&call, ty, sign, &required).map_err(|e| {
+                                e.at(Some(location)).to_display(self.unifier).to_string()
+                            })?;
                             return Ok(sign.ret);
                         }
                     }
@@ -585,8 +611,11 @@ impl<'a> Inferencer<'a> {
                 defined_identifiers.insert(*name);
             }
         }
-        let fn_args: Vec<_> =
-            args.args.iter().map(|v| (v.node.arg, self.unifier.get_fresh_var(Some(v.node.arg), Some(v.location)).0)).collect();
+        let fn_args: Vec<_> = args
+            .args
+            .iter()
+            .map(|v| (v.node.arg, self.unifier.get_fresh_var(Some(v.node.arg), Some(v.location)).0))
+            .collect();
         let mut variable_mapping = self.variable_mapping.clone();
         variable_mapping.extend(fn_args.iter().cloned());
         let ret = self.unifier.get_dummy_var().0;
@@ -649,7 +678,7 @@ impl<'a> Inferencer<'a> {
             calls: self.calls,
             defined_identifiers,
             // listcomp expr should not be considered as inside an exception handler...
-            in_handler: false
+            in_handler: false,
         };
         let generator = generators.pop().unwrap();
         if generator.is_async {
@@ -784,7 +813,7 @@ impl<'a> Inferencer<'a> {
                         .collect(),
                     fun: RefCell::new(None),
                     ret: sign.ret,
-                    loc: Some(location)
+                    loc: Some(location),
                 };
                 let required: Vec<_> = sign
                     .args
@@ -813,7 +842,7 @@ impl<'a> Inferencer<'a> {
                 .collect(),
             fun: RefCell::new(None),
             ret,
-            loc: Some(location)
+            loc: Some(location),
         });
         self.calls.insert(location.into(), call);
         let call = self.unifier.add_ty(TypeEnum::TCall(vec![call]));
@@ -853,8 +882,8 @@ impl<'a> Inferencer<'a> {
                         } else {
                             report_error("Integer out of bound", *loc)
                         }
-                    },
-                    None => report_error("Integer out of bound", *loc)
+                    }
+                    None => report_error("Integer out of bound", *loc),
                 }
             }
             ast::Constant::Float(_) => Ok(self.primitives.float),
@@ -900,8 +929,11 @@ impl<'a> Inferencer<'a> {
             }
         } else {
             let attr_ty = self.unifier.get_dummy_var().0;
-            let fields = once((attr.into(), RecordField::new(
-                        attr_ty, ctx == &ExprContext::Store, Some(value.location)))).collect();
+            let fields = once((
+                attr.into(),
+                RecordField::new(attr_ty, ctx == &ExprContext::Store, Some(value.location)),
+            ))
+            .collect();
             let record = self.unifier.add_record(fields);
             self.constrain(value.custom.unwrap(), record, &value.location)?;
             Ok(attr_ty)
@@ -986,8 +1018,11 @@ impl<'a> Inferencer<'a> {
                     None => None,
                 };
                 let ind = ind.ok_or_else(|| "Index must be int32".to_string())?;
-                let map = once((ind.into(), RecordField::new(
-                        ty, ctx == &ExprContext::Store, Some(value.location)))).collect();
+                let map = once((
+                    ind.into(),
+                    RecordField::new(ty, ctx == &ExprContext::Store, Some(value.location)),
+                ))
+                .collect();
                 let seq = self.unifier.add_record(map);
                 self.constrain(value.custom.unwrap(), seq, &value.location)?;
                 Ok(ty)

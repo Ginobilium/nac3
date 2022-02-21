@@ -1,4 +1,5 @@
-mod cslice {  // copied from https://github.com/dherman/cslice
+mod cslice {
+    // copied from https://github.com/dherman/cslice
     use std::marker::PhantomData;
     use std::slice;
 
@@ -7,14 +8,12 @@ mod cslice {  // copied from https://github.com/dherman/cslice
     pub struct CSlice<'a, T> {
         base: *const T,
         len: usize,
-        marker: PhantomData<&'a ()>
+        marker: PhantomData<&'a ()>,
     }
 
     impl<'a, T> AsRef<[T]> for CSlice<'a, T> {
         fn as_ref(&self) -> &[T] {
-            unsafe {
-                slice::from_raw_parts(self.base, self.len)
-            }
+            unsafe { slice::from_raw_parts(self.base, self.len) }
         }
     }
 }
@@ -43,7 +42,7 @@ pub extern "C" fn output_asciiart(x: i32) {
 pub extern "C" fn output_int32_list(x: &cslice::CSlice<i32>) {
     print!("[");
     let mut it = x.as_ref().iter().peekable();
-    while let Some(e) = it.next()  {
+    while let Some(e) = it.next() {
         if it.peek().is_none() {
             print!("{}", e);
         } else {
@@ -57,7 +56,6 @@ pub extern "C" fn output_int32_list(x: &cslice::CSlice<i32>) {
 pub extern "C" fn __artiq_personality(_state: u32, _exception_object: u32, _context: u32) -> u32 {
     unimplemented!();
 }
-
 
 extern "C" {
     fn run() -> i32;

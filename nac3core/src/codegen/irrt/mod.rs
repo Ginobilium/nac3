@@ -215,7 +215,8 @@ pub fn handle_slice_index_bound<'a, 'ctx, G: CodeGenerator>(
     });
 
     let i = generator.gen_expr(ctx, i)?.unwrap().to_basic_value_enum(ctx, generator);
-    Ok(ctx.builder
+    Ok(ctx
+        .builder
         .build_call(func, &[i.into(), length.into()], "bounded_ind")
         .try_as_basic_value()
         .left()

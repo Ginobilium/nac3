@@ -1,32 +1,22 @@
 use std::convert::TryInto;
 
-use nac3parser::ast::{Constant, Location};
 use crate::symbol_resolver::SymbolValue;
+use nac3parser::ast::{Constant, Location};
 
 use super::*;
 
 impl TopLevelDef {
-    pub fn to_string(
-        &self,
-        unifier: &mut Unifier,
-    ) -> String
-    {
+    pub fn to_string(&self, unifier: &mut Unifier) -> String {
         match self {
-            TopLevelDef::Class {
-                name, ancestors, fields, methods, type_vars, ..
-            } => {
+            TopLevelDef::Class { name, ancestors, fields, methods, type_vars, .. } => {
                 let fields_str = fields
                     .iter()
-                    .map(|(n, ty, _)| {
-                        (n.to_string(), unifier.stringify(*ty))
-                    })
+                    .map(|(n, ty, _)| (n.to_string(), unifier.stringify(*ty)))
                     .collect_vec();
 
                 let methods_str = methods
                     .iter()
-                    .map(|(n, ty, id)| {
-                        (n.to_string(), unifier.stringify(*ty), *id)
-                    })
+                    .map(|(n, ty, id)| (n.to_string(), unifier.stringify(*ty), *id))
                     .collect_vec();
                 format!(
                     "Class {{\nname: {:?},\nancestors: {:?},\nfields: {:?},\nmethods: {:?},\ntype_vars: {:?}\n}}",
@@ -57,38 +47,38 @@ impl TopLevelComposer {
         let mut unifier = Unifier::new();
         let int32 = unifier.add_ty(TypeEnum::TObj {
             obj_id: DefinitionId(0),
-            fields: HashMap::new().into(),
-            params: HashMap::new().into(),
+            fields: HashMap::new(),
+            params: HashMap::new(),
         });
         let int64 = unifier.add_ty(TypeEnum::TObj {
             obj_id: DefinitionId(1),
-            fields: HashMap::new().into(),
-            params: HashMap::new().into(),
+            fields: HashMap::new(),
+            params: HashMap::new(),
         });
         let float = unifier.add_ty(TypeEnum::TObj {
             obj_id: DefinitionId(2),
-            fields: HashMap::new().into(),
-            params: HashMap::new().into(),
+            fields: HashMap::new(),
+            params: HashMap::new(),
         });
         let bool = unifier.add_ty(TypeEnum::TObj {
             obj_id: DefinitionId(3),
-            fields: HashMap::new().into(),
-            params: HashMap::new().into(),
+            fields: HashMap::new(),
+            params: HashMap::new(),
         });
         let none = unifier.add_ty(TypeEnum::TObj {
             obj_id: DefinitionId(4),
-            fields: HashMap::new().into(),
-            params: HashMap::new().into(),
+            fields: HashMap::new(),
+            params: HashMap::new(),
         });
         let range = unifier.add_ty(TypeEnum::TObj {
             obj_id: DefinitionId(5),
-            fields: HashMap::new().into(),
-            params: HashMap::new().into(),
+            fields: HashMap::new(),
+            params: HashMap::new(),
         });
         let str = unifier.add_ty(TypeEnum::TObj {
             obj_id: DefinitionId(6),
-            fields: HashMap::new().into(),
-            params: HashMap::new().into(),
+            fields: HashMap::new(),
+            params: HashMap::new(),
         });
         let exception = unifier.add_ty(TypeEnum::TObj {
             obj_id: DefinitionId(7),
@@ -102,8 +92,10 @@ impl TopLevelComposer {
                 ("__param0__".into(), (int64, true)),
                 ("__param1__".into(), (int64, true)),
                 ("__param2__".into(), (int64, true)),
-            ].into_iter().collect::<HashMap<_, _>>().into(),
-            params: HashMap::new().into(),
+            ]
+            .into_iter()
+            .collect::<HashMap<_, _>>(),
+            params: HashMap::new(),
         });
         let primitives = PrimitiveStore { int32, int64, float, bool, none, range, str, exception };
         crate::typecheck::magic_methods::set_primitives_magic_methods(&primitives, &mut unifier);
@@ -117,7 +109,7 @@ impl TopLevelComposer {
         resolver: Option<Arc<dyn SymbolResolver + Send + Sync>>,
         name: StrRef,
         constructor: Option<Type>,
-        loc: Option<Location>
+        loc: Option<Location>,
     ) -> TopLevelDef {
         TopLevelDef::Class {
             name,
@@ -138,7 +130,7 @@ impl TopLevelComposer {
         simple_name: StrRef,
         ty: Type,
         resolver: Option<Arc<dyn SymbolResolver + Send + Sync>>,
-        loc: Option<Location>
+        loc: Option<Location>,
     ) -> TopLevelDef {
         TopLevelDef::Function {
             name,
@@ -248,8 +240,11 @@ impl TopLevelComposer {
         let this = this.as_ref();
         let other = unifier.get_ty(other);
         let other = other.as_ref();
-        if let (TypeEnum::TFunc(FunSignature { args: this_args, ret: this_ret, ..}),
-                TypeEnum::TFunc(FunSignature { args: other_args, ret: other_ret, .. })) = (this, other) {
+        if let (
+            TypeEnum::TFunc(FunSignature { args: this_args, ret: this_ret, .. }),
+            TypeEnum::TFunc(FunSignature { args: other_args, ret: other_ret, .. }),
+        ) = (this, other)
+        {
             // check args
             let args_ok = this_args
                 .iter()
@@ -362,11 +357,19 @@ impl TopLevelComposer {
         Ok(result)
     }
 
-    pub fn parse_parameter_default_value(default: &ast::Expr, resolver: &(dyn SymbolResolver + Send + Sync)) -> Result<SymbolValue, String> {
+    pub fn parse_parameter_default_value(
+        default: &ast::Expr,
+        resolver: &(dyn SymbolResolver + Send + Sync),
+    ) -> Result<SymbolValue, String> {
         parse_parameter_default_value(default, resolver)
     }
 
-    pub fn check_default_param_type(val: &SymbolValue, ty: &TypeAnnotation, primitive: &PrimitiveStore, unifier: &mut Unifier) -> Result<(), String> {
+    pub fn check_default_param_type(
+        val: &SymbolValue,
+        ty: &TypeAnnotation,
+        primitive: &PrimitiveStore,
+        unifier: &mut Unifier,
+    ) -> Result<(), String> {
         let res = match val {
             SymbolValue::Bool(..) => {
                 if matches!(ty, TypeAnnotation::Primitive(t) if *t == primitive.bool) {
@@ -430,33 +433,26 @@ impl TopLevelComposer {
     }
 }
 
-pub fn parse_parameter_default_value(default: &ast::Expr, resolver: &(dyn SymbolResolver + Send + Sync)) -> Result<SymbolValue, String> {
+pub fn parse_parameter_default_value(
+    default: &ast::Expr,
+    resolver: &(dyn SymbolResolver + Send + Sync),
+) -> Result<SymbolValue, String> {
     fn handle_constant(val: &Constant, loc: &Location) -> Result<SymbolValue, String> {
         match val {
-            Constant::Int(v) => {
-                match v {
-                    Some(v) => {
-                        if let Ok(v) = (*v).try_into() {
-                            Ok(SymbolValue::I32(v))
-                        } else {
-                            Err(format!(
-                                "integer value out of range at {}",
-                                loc
-                            ))
-                        }
-                    },
-                    None => {
-                        Err(format!(
-                            "integer value out of range at {}",
-                            loc
-                        ))
+            Constant::Int(v) => match v {
+                Some(v) => {
+                    if let Ok(v) = (*v).try_into() {
+                        Ok(SymbolValue::I32(v))
+                    } else {
+                        Err(format!("integer value out of range at {}", loc))
                     }
                 }
-            }
+                None => Err(format!("integer value out of range at {}", loc)),
+            },
             Constant::Float(v) => Ok(SymbolValue::Double(*v)),
             Constant::Bool(v) => Ok(SymbolValue::Bool(*v)),
             Constant::Tuple(tuple) => Ok(SymbolValue::Tuple(
-                tuple.iter().map(|x| handle_constant(x, loc)).collect::<Result<Vec<_>, _>>()?
+                tuple.iter().map(|x| handle_constant(x, loc)).collect::<Result<Vec<_>, _>>()?,
             )),
             _ => unimplemented!("this constant is not supported at {}", loc),
         }

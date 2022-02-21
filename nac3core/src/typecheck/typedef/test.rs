@@ -1,5 +1,5 @@
-use super::*;
 use super::super::magic_methods::with_fields;
+use super::*;
 use indoc::indoc;
 use itertools::Itertools;
 use std::collections::HashMap;
@@ -115,10 +115,7 @@ impl TestEnvironment {
             "Foo".into(),
             unifier.add_ty(TypeEnum::TObj {
                 obj_id: DefinitionId(3),
-                fields: [("a".into(), (v0, true))]
-                    .iter()
-                    .cloned()
-                    .collect::<HashMap<_, _>>(),
+                fields: [("a".into(), (v0, true))].iter().cloned().collect::<HashMap<_, _>>(),
                 params: [(id, v0)].iter().cloned().collect::<HashMap<_, _>>(),
             }),
         );
@@ -365,9 +362,11 @@ fn test_recursive_subst() {
 fn test_virtual() {
     let mut env = TestEnvironment::new();
     let int = env.parse("int", &HashMap::new());
-    let fun = env.unifier.add_ty(TypeEnum::TFunc(
-        FunSignature { args: vec![], ret: int, vars: HashMap::new() },
-    ));
+    let fun = env.unifier.add_ty(TypeEnum::TFunc(FunSignature {
+        args: vec![],
+        ret: int,
+        vars: HashMap::new(),
+    }));
     let bar = env.unifier.add_ty(TypeEnum::TObj {
         obj_id: DefinitionId(5),
         fields: [("f".into(), (fun, false)), ("a".into(), (int, false))]
@@ -381,15 +380,21 @@ fn test_virtual() {
 
     let a = env.unifier.add_ty(TypeEnum::TVirtual { ty: bar });
     let b = env.unifier.add_ty(TypeEnum::TVirtual { ty: v0 });
-    let c = env.unifier.add_record([("f".into(), RecordField::new(v1, false, None))].iter().cloned().collect());
+    let c = env
+        .unifier
+        .add_record([("f".into(), RecordField::new(v1, false, None))].iter().cloned().collect());
     env.unifier.unify(a, b).unwrap();
     env.unifier.unify(b, c).unwrap();
     assert!(env.unifier.eq(v1, fun));
 
-    let d = env.unifier.add_record([("a".into(), RecordField::new(v1, true, None))].iter().cloned().collect());
+    let d = env
+        .unifier
+        .add_record([("a".into(), RecordField::new(v1, true, None))].iter().cloned().collect());
     assert_eq!(env.unify(b, d), Err("`virtual[5]::a` field does not exist".to_string()));
 
-    let d = env.unifier.add_record([("b".into(), RecordField::new(v1, true, None))].iter().cloned().collect());
+    let d = env
+        .unifier
+        .add_record([("b".into(), RecordField::new(v1, true, None))].iter().cloned().collect());
     assert_eq!(env.unify(b, d), Err("`virtual[5]::b` field does not exist".to_string()));
 }
 
@@ -451,10 +456,7 @@ fn test_typevar_range() {
     let a = env.unifier.get_fresh_var_with_range(&[int, float], None, None).0;
     let b = env.unifier.get_fresh_var_with_range(&[boolean, float], None, None).0;
     env.unifier.unify(a, b).unwrap();
-    assert_eq!(
-        env.unify(a, int),
-        Err("Expected any one of these types: 1, but got 0".into())
-    );
+    assert_eq!(env.unify(a, int), Err("Expected any one of these types: 1, but got 0".into()));
 
     let a = env.unifier.get_fresh_var_with_range(&[int, float], None, None).0;
     let b = env.unifier.get_fresh_var_with_range(&[boolean, float], None, None).0;
@@ -556,9 +558,12 @@ fn test_instantiation() {
     let types = types
         .iter()
         .map(|ty| {
-            env.unifier.internal_stringify(*ty, &mut |i| obj_map.get(&i).unwrap().to_string(), &mut |i| {
-                format!("v{}", i)
-            }, &mut None)
+            env.unifier.internal_stringify(
+                *ty,
+                &mut |i| obj_map.get(&i).unwrap().to_string(),
+                &mut |i| format!("v{}", i),
+                &mut None,
+            )
         })
         .sorted()
         .collect_vec();

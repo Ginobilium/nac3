@@ -38,10 +38,8 @@ pub struct Resolver(pub Arc<ResolverInternal>);
 impl SymbolResolver for Resolver {
     fn get_default_param_value(&self, expr: &ast::Expr) -> Option<SymbolValue> {
         match &expr.node {
-            ast::ExprKind::Name { id, .. } => {
-                self.0.module_globals.lock().get(id).cloned()
-            }
-            _ => unimplemented!("other type of expr not supported at {}", expr.location)
+            ast::ExprKind::Name { id, .. } => self.0.module_globals.lock().get(id).cloned(),
+            _ => unimplemented!("other type of expr not supported at {}", expr.location),
         }
     }
 

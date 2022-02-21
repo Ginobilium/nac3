@@ -1,9 +1,9 @@
 use nac3parser::ast::fold::Fold;
 
 use crate::{
-    typecheck::type_inferencer::{FunctionData, Inferencer},
     codegen::{expr::get_subst_key, stmt::exn_constructor},
     symbol_resolver::SymbolValue,
+    typecheck::type_inferencer::{FunctionData, Inferencer},
 };
 
 use super::*;
@@ -15,10 +15,7 @@ pub struct ComposerConfig {
 
 impl Default for ComposerConfig {
     fn default() -> Self {
-        ComposerConfig {
-            kernel_ann: None,
-            kernel_invariant_ann: "Invariant"
-        }
+        ComposerConfig { kernel_ann: None, kernel_invariant_ann: "Invariant" }
     }
 }
 
@@ -52,7 +49,7 @@ impl TopLevelComposer {
     /// resolver can later figure out primitive type definitions when passed a primitive type name
     pub fn new(
         builtins: Vec<(StrRef, FunSignature, Arc<GenCall>)>,
-        core_config: ComposerConfig
+        core_config: ComposerConfig,
     ) -> (Self, HashMap<StrRef, DefinitionId>, HashMap<StrRef, Type>) {
         let mut primitives = Self::make_primitives();
         let (mut definition_ast_list, builtin_name_list) = builtins::get_builtins(&mut primitives);
@@ -89,7 +86,8 @@ impl TopLevelComposer {
                 assert!(name == *simple_name);
                 builtin_ty.insert(name, *signature);
                 builtin_id.insert(name, DefinitionId(id));
-            } else if let TopLevelDef::Class { name, constructor, object_id, type_vars, .. } = &*def {
+            } else if let TopLevelDef::Class { name, constructor, object_id, type_vars, .. } = &*def
+            {
                 assert!(id == object_id.0);
                 assert!(type_vars.is_empty());
                 if let Some(constructor) = constructor {
@@ -377,7 +375,7 @@ impl TopLevelComposer {
                         unreachable!("must be both class")
                     }
                 } else {
-                    return Ok(())
+                    return Ok(());
                 }
             };
             let class_resolver = class_resolver.as_ref().unwrap();
@@ -484,72 +482,75 @@ impl TopLevelComposer {
         let unifier = self.unifier.borrow_mut();
         let primitive_types = self.primitives_ty;
 
-        let mut get_direct_parents = |class_def: &Arc<RwLock<TopLevelDef>>, class_ast: &Option<Stmt>| {
-            let mut class_def = class_def.write();
-            let (class_def_id, class_bases, class_ancestors, class_resolver, class_type_vars) = {
-                if let TopLevelDef::Class { ancestors, resolver, object_id, type_vars, .. } =
-                    class_def.deref_mut()
-                {
-                    if let Some(ast::Located {
-                        node: ast::StmtKind::ClassDef { bases, .. }, ..
-                    }) = class_ast
+        let mut get_direct_parents =
+            |class_def: &Arc<RwLock<TopLevelDef>>, class_ast: &Option<Stmt>| {
+                let mut class_def = class_def.write();
+                let (class_def_id, class_bases, class_ancestors, class_resolver, class_type_vars) = {
+                    if let TopLevelDef::Class {
+                        ancestors, resolver, object_id, type_vars, ..
+                    } = class_def.deref_mut()
                     {
-                        (object_id, bases, ancestors, resolver, type_vars)
+                        if let Some(ast::Located {
+                            node: ast::StmtKind::ClassDef { bases, .. },
+                            ..
+                        }) = class_ast
+                        {
+                            (object_id, bases, ancestors, resolver, type_vars)
+                        } else {
+                            unreachable!("must be both class")
+                        }
                     } else {
-                        unreachable!("must be both class")
+                        return Ok(());
                     }
-                } else {
-                    return Ok(());
-                }
-            };
-            let class_resolver = class_resolver.as_ref().unwrap();
-            let class_resolver = class_resolver.deref();
+                };
+                let class_resolver = class_resolver.as_ref().unwrap();
+                let class_resolver = class_resolver.deref();
 
-            let mut has_base = false;
-            for b in class_bases {
-                // type vars have already been handled, so skip on `Generic[...]`
-                if matches!(
-                    &b.node,
-                    ast::ExprKind::Subscript { value, .. }
-                        if matches!(
-                            &value.node,
-                            ast::ExprKind::Name { id, .. } if id == &"Generic".into()
-                        )
-                ) {
-                    continue;
-                }
+                let mut has_base = false;
+                for b in class_bases {
+                    // type vars have already been handled, so skip on `Generic[...]`
+                    if matches!(
+                        &b.node,
+                        ast::ExprKind::Subscript { value, .. }
+                            if matches!(
+                                &value.node,
+                                ast::ExprKind::Name { id, .. } if id == &"Generic".into()
+                            )
+                    ) {
+                        continue;
+                    }
 
-                if has_base {
-                    return Err(format!(
-                        "a class definition can only have at most one base class \
+                    if has_base {
+                        return Err(format!(
+                            "a class definition can only have at most one base class \
                         declaration and one generic declaration (at {})",
-                        b.location
-                    ));
-                }
-                has_base = true;
+                            b.location
+                        ));
+                    }
+                    has_base = true;
 
-                // the function parse_ast_to make sure that no type var occured in
-                // bast_ty if it is a CustomClassKind
-                let base_ty = parse_ast_to_type_annotation_kinds(
-                    class_resolver,
-                    &temp_def_list,
-                    unifier,
-                    &primitive_types,
-                    b,
-                    vec![(*class_def_id, class_type_vars.clone())].into_iter().collect(),
-                )?;
+                    // the function parse_ast_to make sure that no type var occured in
+                    // bast_ty if it is a CustomClassKind
+                    let base_ty = parse_ast_to_type_annotation_kinds(
+                        class_resolver,
+                        &temp_def_list,
+                        unifier,
+                        &primitive_types,
+                        b,
+                        vec![(*class_def_id, class_type_vars.clone())].into_iter().collect(),
+                    )?;
 
-                if let TypeAnnotation::CustomClass { .. } = &base_ty {
-                    class_ancestors.push(base_ty);
-                } else {
-                    return Err(format!(
-                        "class base declaration can only be custom class (at {})",
-                        b.location,
-                    ));
+                    if let TypeAnnotation::CustomClass { .. } = &base_ty {
+                        class_ancestors.push(base_ty);
+                    } else {
+                        return Err(format!(
+                            "class base declaration can only be custom class (at {})",
+                            b.location,
+                        ));
+                    }
                 }
-            }
-            Ok(())
-        };
+                Ok(())
+            };
 
         // first, only push direct parent into the list
         let mut errors = HashSet::new();
@@ -570,7 +571,7 @@ impl TopLevelComposer {
                 if let TopLevelDef::Class { ancestors, object_id, .. } = class_def.deref() {
                     (ancestors, *object_id)
                 } else {
-                    return Ok(())
+                    return Ok(());
                 }
             };
             ancestors_store.insert(
@@ -614,11 +615,17 @@ impl TopLevelComposer {
                 .insert(0, make_self_type_annotation(class_type_vars.as_slice(), class_id));
 
             // special case classes that inherit from Exception
-            if class_ancestors.iter().any(|ann| matches!(ann, TypeAnnotation::CustomClass { id, .. } if id.0 == 7)) {
+            if class_ancestors
+                .iter()
+                .any(|ann| matches!(ann, TypeAnnotation::CustomClass { id, .. } if id.0 == 7))
+            {
                 // if inherited from Exception, the body should be a pass
                 if let ast::StmtKind::ClassDef { body, .. } = &class_ast.as_ref().unwrap().node {
                     for stmt in body.iter() {
-                        if matches!(stmt.node, ast::StmtKind::FunctionDef { .. } | ast::StmtKind::AnnAssign { .. }) {
+                        if matches!(
+                            stmt.node,
+                            ast::StmtKind::FunctionDef { .. } | ast::StmtKind::AnnAssign { .. }
+                        ) {
                             return Err("Classes inherited from exception should have no custom fields/methods".into());
                         }
                     }
@@ -629,7 +636,9 @@ impl TopLevelComposer {
         }
 
         // deal with ancestor of Exception object
-        if let TopLevelDef::Class { name, ancestors, object_id, .. } = &mut *self.definition_ast_list[7].0.write() {
+        if let TopLevelDef::Class { name, ancestors, object_id, .. } =
+            &mut *self.definition_ast_list[7].0.write()
+        {
             assert_eq!(*name, "Exception".into());
             ancestors.push(make_self_type_annotation(&[], *object_id));
         } else {
@@ -658,7 +667,7 @@ impl TopLevelComposer {
                     unifier,
                     primitives,
                     &mut type_var_to_concrete_def,
-                    (&self.keyword_list, &self.core_config)
+                    (&self.keyword_list, &self.core_config),
                 ) {
                     errors.insert(e);
                 }
@@ -740,7 +749,7 @@ impl TopLevelComposer {
                 x
             } else {
                 // if let TopLevelDef::Function { name, .. } = ``
-                return Ok(())
+                return Ok(());
             };
 
             if let TopLevelDef::Function { signature: dummy_ty, resolver, var_id, .. } =
@@ -760,7 +769,9 @@ impl TopLevelComposer {
                         // make sure no duplicate parameter
                         let mut defined_paramter_name: HashSet<_> = HashSet::new();
                         for x in args.args.iter() {
-                            if !defined_paramter_name.insert(x.node.arg) || keyword_list.contains(&x.node.arg) {
+                            if !defined_paramter_name.insert(x.node.arg)
+                                || keyword_list.contains(&x.node.arg)
+                            {
                                 return Err(format!(
                                     "top level function must have unique parameter names \
                                     and names should not be the same as the keywords (at {})",
@@ -769,17 +780,21 @@ impl TopLevelComposer {
                             }
                         }
 
-                        let arg_with_default: Vec<(&ast::Located<ast::ArgData<()>>, Option<&ast::Expr>)> = args
+                        let arg_with_default: Vec<(
+                            &ast::Located<ast::ArgData<()>>,
+                            Option<&ast::Expr>,
+                        )> = args
                             .args
                             .iter()
                             .rev()
-                            .zip(args
-                                .defaults
-                                .iter()
-                                .rev()
-                                .map(|x| -> Option<&ast::Expr> { Some(x) })
-                                .chain(std::iter::repeat(None))
-                            ).collect_vec();
+                            .zip(
+                                args.defaults
+                                    .iter()
+                                    .rev()
+                                    .map(|x| -> Option<&ast::Expr> { Some(x) })
+                                    .chain(std::iter::repeat(None)),
+                            )
+                            .collect_vec();
 
                         arg_with_default
                             .iter()
@@ -839,16 +854,21 @@ impl TopLevelComposer {
                                     default_value: match default {
                                         None => None,
                                         Some(default) => Some({
-                                            let v = Self::parse_parameter_default_value(default, resolver)?;
+                                            let v = Self::parse_parameter_default_value(
+                                                default, resolver,
+                                            )?;
                                             Self::check_default_param_type(
                                                 &v,
                                                 &type_annotation,
                                                 primitives_store,
-                                                unifier
-                                            ).map_err(|err| format!("{} (at {})", err, x.location))?;
+                                                unifier,
+                                            )
+                                            .map_err(
+                                                |err| format!("{} (at {})", err, x.location),
+                                            )?;
                                             v
-                                        })
-                                    }
+                                        }),
+                                    },
                                 })
                             })
                             .collect::<Result<Vec<_>, _>>()?
@@ -910,18 +930,20 @@ impl TopLevelComposer {
                         .collect_vec()
                         .as_slice()
                     );
-                    let function_ty = unifier.add_ty(TypeEnum::TFunc(
-                        FunSignature { args: arg_types, ret: return_ty, vars: function_var_map }
-                    ));
-                    unifier
-                        .unify(*dummy_ty, function_ty)
-                        .map_err(|e| e.at(Some(function_ast.location)).to_display(unifier).to_string())?;
+                    let function_ty = unifier.add_ty(TypeEnum::TFunc(FunSignature {
+                        args: arg_types,
+                        ret: return_ty,
+                        vars: function_var_map,
+                    }));
+                    unifier.unify(*dummy_ty, function_ty).map_err(|e| {
+                        e.at(Some(function_ast.location)).to_display(unifier).to_string()
+                    })?;
                 } else {
                     unreachable!("must be both function");
                 }
             } else {
                 // not top level function def, skip
-                return Ok(())
+                return Ok(());
             }
             Ok(())
         };
@@ -931,7 +953,7 @@ impl TopLevelComposer {
             }
         }
         if !errors.is_empty() {
-            return Err(errors.iter().join("\n----------\n"))
+            return Err(errors.iter().join("\n----------\n"));
         }
         Ok(())
     }
@@ -1003,35 +1025,46 @@ impl TopLevelComposer {
                         let zelf: StrRef = "self".into();
                         for x in args.args.iter() {
                             if !defined_paramter_name.insert(x.node.arg)
-                                || (keyword_list.contains(&x.node.arg) && x.node.arg != zelf) {
+                                || (keyword_list.contains(&x.node.arg) && x.node.arg != zelf)
+                            {
                                 return Err(format!(
                                     "top level function must have unique parameter names \
                                     and names should not be the same as the keywords (at {})",
                                     x.location
-                                ))
+                                ));
                             }
                         }
 
                         if name == &"__init__".into() && !defined_paramter_name.contains(&zelf) {
-                            return Err(format!("__init__ method must have a `self` parameter (at {})", b.location));
+                            return Err(format!(
+                                "__init__ method must have a `self` parameter (at {})",
+                                b.location
+                            ));
                         }
                         if !defined_paramter_name.contains(&zelf) {
-                            return Err(format!("class method must have a `self` parameter (at {})", b.location));
+                            return Err(format!(
+                                "class method must have a `self` parameter (at {})",
+                                b.location
+                            ));
                         }
 
                         let mut result = Vec::new();
 
-                        let arg_with_default: Vec<(&ast::Located<ast::ArgData<()>>, Option<&ast::Expr>)> = args
+                        let arg_with_default: Vec<(
+                            &ast::Located<ast::ArgData<()>>,
+                            Option<&ast::Expr>,
+                        )> = args
                             .args
                             .iter()
                             .rev()
-                            .zip(args
-                                .defaults
-                                .iter()
-                                .rev()
-                                .map(|x| -> Option<&ast::Expr> { Some(x) })
-                                .chain(std::iter::repeat(None))
-                            ).collect_vec();
+                            .zip(
+                                args.defaults
+                                    .iter()
+                                    .rev()
+                                    .map(|x| -> Option<&ast::Expr> { Some(x) })
+                                    .chain(std::iter::repeat(None)),
+                            )
+                            .collect_vec();
 
                         for (x, default) in arg_with_default.into_iter().rev() {
                             let name = x.node.arg;
@@ -1085,13 +1118,20 @@ impl TopLevelComposer {
                                                 return Err(format!("`self` parameter cannot take default value (at {})", x.location));
                                             }
                                             Some({
-                                                let v = Self::parse_parameter_default_value(default, class_resolver)?;
-                                                Self::check_default_param_type(&v, &type_ann, primitives, unifier)
-                                                    .map_err(|err| format!("{} (at {})", err, x.location))?;
+                                                let v = Self::parse_parameter_default_value(
+                                                    default,
+                                                    class_resolver,
+                                                )?;
+                                                Self::check_default_param_type(
+                                                    &v, &type_ann, primitives, unifier,
+                                                )
+                                                .map_err(|err| {
+                                                    format!("{} (at {})", err, x.location)
+                                                })?;
                                                 v
                                             })
                                         }
-                                    }
+                                    },
                                 };
                                 // push the dummy type and the type annotation
                                 // into the list for later unification
@@ -1162,14 +1202,17 @@ impl TopLevelComposer {
                     } else {
                         unreachable!()
                     }
-                    let method_type = unifier.add_ty(TypeEnum::TFunc(
-                        FunSignature { args: arg_types, ret: ret_type, vars: method_var_map }
-                            .into(),
-                    ));
+                    let method_type = unifier.add_ty(TypeEnum::TFunc(FunSignature {
+                        args: arg_types,
+                        ret: ret_type,
+                        vars: method_var_map,
+                    }));
 
                     // unify now since function type is not in type annotation define
                     // which should be fine since type within method_type will be subst later
-                    unifier.unify(method_dummy_ty, method_type).map_err(|e| e.to_display(unifier).to_string())?;
+                    unifier
+                        .unify(method_dummy_ty, method_type)
+                        .map_err(|e| e.to_display(unifier).to_string())?;
                 }
                 ast::StmtKind::AnnAssign { target, annotation, value: None, .. } => {
                     if let ast::ExprKind::Name { id: attr, .. } = &target.node {
@@ -1178,16 +1221,24 @@ impl TopLevelComposer {
 
                             // handle Kernel[T], KernelInvariant[T]
                             let (annotation, mutable) = match &annotation.node {
-                                ast::ExprKind::Subscript { value, slice, .. } if matches!(
-                                    &value.node,
-                                    ast::ExprKind::Name { id, .. } if id == &core_config.kernel_invariant_ann.into()
-                                ) => (slice, false),
-                                ast::ExprKind::Subscript { value, slice, .. } if matches!(
-                                    &value.node,
-                                    ast::ExprKind::Name { id, .. } if core_config.kernel_ann.map_or(false, |c| id == &c.into())
-                                ) => (slice, true),
+                                ast::ExprKind::Subscript { value, slice, .. }
+                                    if matches!(
+                                        &value.node,
+                                        ast::ExprKind::Name { id, .. } if id == &core_config.kernel_invariant_ann.into()
+                                    ) =>
+                                {
+                                    (slice, false)
+                                }
+                                ast::ExprKind::Subscript { value, slice, .. }
+                                    if matches!(
+                                        &value.node,
+                                        ast::ExprKind::Name { id, .. } if core_config.kernel_ann.map_or(false, |c| id == &c.into())
+                                    ) =>
+                                {
+                                    (slice, true)
+                                }
                                 _ if core_config.kernel_ann.is_none() => (annotation, true),
-                                _ => continue // ignore fields annotated otherwise
+                                _ => continue, // ignore fields annotated otherwise
                             };
                             class_fields_def.push((*attr, dummy_field_type, mutable));
 
@@ -1220,8 +1271,7 @@ impl TopLevelComposer {
                         } else {
                             return Err(format!(
                                 "same class fields `{}` defined twice (at {})",
-                                attr,
-                                target.location
+                                attr, target.location
                             ));
                         }
                     } else {
@@ -1233,10 +1283,12 @@ impl TopLevelComposer {
                 }
                 ast::StmtKind::Pass { .. } => {}
                 ast::StmtKind::Expr { value: _, .. } => {} // typically a docstring; ignoring all expressions matches CPython behavior
-                _ => return Err(format!(
-                    "unsupported statement in class definition body (at {})",
-                    b.location
-                )),
+                _ => {
+                    return Err(format!(
+                        "unsupported statement in class definition body (at {})",
+                        b.location
+                    ))
+                }
             }
         }
         Ok(())
@@ -1394,23 +1446,38 @@ impl TopLevelComposer {
                     primitives_ty,
                     &make_self_type_annotation(type_vars, *object_id),
                 )?;
-                if ancestors.iter().any(|ann| matches!(ann, TypeAnnotation::CustomClass { id, .. } if id.0 == 7)) {
+                if ancestors
+                    .iter()
+                    .any(|ann| matches!(ann, TypeAnnotation::CustomClass { id, .. } if id.0 == 7))
+                {
                     // create constructor for these classes
                     let string = primitives_ty.str;
                     let int64 = primitives_ty.int64;
                     let signature = unifier.add_ty(TypeEnum::TFunc(FunSignature {
                         args: vec![
-                            FuncArg { name: "msg".into(), ty: string,
-                            default_value: Some(SymbolValue::Str("".into()))},
-                            FuncArg { name: "param0".into(), ty: int64,
-                            default_value: Some(SymbolValue::I64(0))},
-                            FuncArg { name: "param1".into(), ty: int64,
-                            default_value: Some(SymbolValue::I64(0))},
-                            FuncArg { name: "param2".into(), ty: int64,
-                            default_value: Some(SymbolValue::I64(0))},
+                            FuncArg {
+                                name: "msg".into(),
+                                ty: string,
+                                default_value: Some(SymbolValue::Str("".into())),
+                            },
+                            FuncArg {
+                                name: "param0".into(),
+                                ty: int64,
+                                default_value: Some(SymbolValue::I64(0)),
+                            },
+                            FuncArg {
+                                name: "param1".into(),
+                                ty: int64,
+                                default_value: Some(SymbolValue::I64(0)),
+                            },
+                            FuncArg {
+                                name: "param2".into(),
+                                ty: int64,
+                                default_value: Some(SymbolValue::I64(0)),
+                            },
                         ],
                         ret: self_type,
-                        vars: Default::default()
+                        vars: Default::default(),
                     }));
                     let cons_fun = TopLevelDef::Function {
                         name: format!("{}.{}", class_name, "__init__"),
@@ -1421,14 +1488,13 @@ impl TopLevelComposer {
                         instance_to_stmt: Default::default(),
                         resolver: None,
                         codegen_callback: Some(Arc::new(GenCall::new(Box::new(exn_constructor)))),
-                        loc: None
+                        loc: None,
                     };
                     constructors.push((i, signature, definition_extension.len()));
                     definition_extension.push((Arc::new(RwLock::new(cons_fun)), None));
-                    unifier
-                        .unify(constructor.unwrap(), signature)
-                        .map_err(|e| e.at(Some(ast.as_ref().unwrap().location))
-                            .to_display(unifier).to_string())?;
+                    unifier.unify(constructor.unwrap(), signature).map_err(|e| {
+                        e.at(Some(ast.as_ref().unwrap().location)).to_display(unifier).to_string()
+                    })?;
                     return Ok(());
                 }
                 let mut init_id: Option<DefinitionId> = None;
@@ -1439,7 +1505,9 @@ impl TopLevelComposer {
                     for (name, func_sig, id) in methods {
                         if *name == init_str_id {
                             init_id = Some(*id);
-                            if let TypeEnum::TFunc(FunSignature { args, vars, ..}) = unifier.get_ty(*func_sig).as_ref() {
+                            if let TypeEnum::TFunc(FunSignature { args, vars, .. }) =
+                                unifier.get_ty(*func_sig).as_ref()
+                            {
                                 constructor_args.extend_from_slice(args);
                                 type_vars.extend(vars);
                             } else {
@@ -1449,17 +1517,18 @@ impl TopLevelComposer {
                     }
                     (constructor_args, type_vars)
                 };
-                let contor_type = unifier.add_ty(TypeEnum::TFunc(
-                    FunSignature { args: contor_args, ret: self_type, vars: contor_type_vars }
-                ));
-                unifier
-                    .unify(constructor.unwrap(), contor_type)
-                    .map_err(|e| e.at(Some(ast.as_ref().unwrap().location)).to_display(&unifier).to_string())?;
+                let contor_type = unifier.add_ty(TypeEnum::TFunc(FunSignature {
+                    args: contor_args,
+                    ret: self_type,
+                    vars: contor_type_vars,
+                }));
+                unifier.unify(constructor.unwrap(), contor_type).map_err(|e| {
+                    e.at(Some(ast.as_ref().unwrap().location)).to_display(unifier).to_string()
+                })?;
 
                 // class field instantiation check
                 if let (Some(init_id), false) = (init_id, fields.is_empty()) {
-                    let init_ast =
-                        definition_ast_list.get(init_id.0).unwrap().1.as_ref().unwrap();
+                    let init_ast = definition_ast_list.get(init_id.0).unwrap().1.as_ref().unwrap();
                     if let ast::StmtKind::FunctionDef { name, body, .. } = &init_ast.node {
                         if *name != init_str_id {
                             unreachable!("must be init function here")
@@ -1490,9 +1559,13 @@ impl TopLevelComposer {
         }
 
         for (i, signature, id) in constructors.into_iter() {
-            if let TopLevelDef::Class { methods, .. } = &mut *self.definition_ast_list[i].0.write() {
-                methods.push((init_str_id, signature,
-                        DefinitionId(self.definition_ast_list.len() + id)));
+            if let TopLevelDef::Class { methods, .. } = &mut *self.definition_ast_list[i].0.write()
+            {
+                methods.push((
+                    init_str_id,
+                    signature,
+                    DefinitionId(self.definition_ast_list.len() + id),
+                ));
             } else {
                 unreachable!()
             }
@@ -1508,7 +1581,7 @@ impl TopLevelComposer {
         let method_class = &mut self.method_class;
         let mut analyze_2 = |id, def: &Arc<RwLock<TopLevelDef>>, ast: &Option<Stmt>| {
             if ast.is_none() {
-                return Ok(())
+                return Ok(());
             }
             let mut function_def = def.write();
             if let TopLevelDef::Function {
@@ -1522,7 +1595,9 @@ impl TopLevelComposer {
                 ..
             } = &mut *function_def
             {
-                if let TypeEnum::TFunc(FunSignature { args, ret, vars }) = unifier.get_ty(*signature).as_ref() {
+                if let TypeEnum::TFunc(FunSignature { args, ret, vars }) =
+                    unifier.get_ty(*signature).as_ref()
+                {
                     // None if is not class method
                     let uninst_self_type = {
                         if let Some(class_id) = method_class.get(&DefinitionId(id)) {
@@ -1553,7 +1628,8 @@ impl TopLevelComposer {
                             .iter()
                             .map(|(_, ty)| {
                                 unifier.get_instantiations(*ty).unwrap_or_else(|| {
-                                    if let TypeEnum::TVar { name, loc, .. } = &*unifier.get_ty(*ty) {
+                                    if let TypeEnum::TVar { name, loc, .. } = &*unifier.get_ty(*ty)
+                                    {
                                         let rigid = unifier.get_fresh_rigid_var(*name, *loc).0;
                                         no_ranges.push(rigid);
                                         vec![rigid]
@@ -1588,33 +1664,32 @@ impl TopLevelComposer {
                                 .collect_vec()
                         };
                         let self_type = {
-                            uninst_self_type
-                                .clone()
-                                .map(|(self_type, type_vars)| {
-                                    let subst_for_self = {
-                                        let class_ty_var_ids = type_vars
-                                            .iter()
-                                            .map(|x| {
-                                                if let TypeEnum::TVar { id, .. } = &*unifier.get_ty(*x) {
-                                                    *id
-                                                } else {
-                                                    unreachable!("must be type var here");
-                                                }
-                                            })
-                                            .collect::<HashSet<_>>();
-                                        subst
-                                            .iter()
-                                            .filter_map(|(ty_var_id, ty_var_target)| {
-                                                if class_ty_var_ids.contains(ty_var_id) {
-                                                    Some((*ty_var_id, *ty_var_target))
-                                                } else {
-                                                    None
-                                                }
-                                            })
-                                            .collect::<HashMap<_, _>>()
-                                    };
-                                    unifier.subst(self_type, &subst_for_self).unwrap_or(self_type)
-                                })
+                            uninst_self_type.clone().map(|(self_type, type_vars)| {
+                                let subst_for_self = {
+                                    let class_ty_var_ids = type_vars
+                                        .iter()
+                                        .map(|x| {
+                                            if let TypeEnum::TVar { id, .. } = &*unifier.get_ty(*x)
+                                            {
+                                                *id
+                                            } else {
+                                                unreachable!("must be type var here");
+                                            }
+                                        })
+                                        .collect::<HashSet<_>>();
+                                    subst
+                                        .iter()
+                                        .filter_map(|(ty_var_id, ty_var_target)| {
+                                            if class_ty_var_ids.contains(ty_var_id) {
+                                                Some((*ty_var_id, *ty_var_target))
+                                            } else {
+                                                None
+                                            }
+                                        })
+                                        .collect::<HashMap<_, _>>()
+                                };
+                                unifier.subst(self_type, &subst_for_self).unwrap_or(self_type)
+                            })
                         };
                         let mut identifiers = {
                             // NOTE: none and function args?
@@ -1632,9 +1707,7 @@ impl TopLevelComposer {
                             defined_identifiers: identifiers.clone(),
                             function_data: &mut FunctionData {
                                 resolver: resolver.as_ref().unwrap().clone(),
-                                return_type: if unifier
-                                    .unioned(inst_ret, primitives_ty.none)
-                                {
+                                return_type: if unifier.unioned(inst_ret, primitives_ty.none) {
                                     None
                                 } else {
                                     Some(inst_ret)
@@ -1656,7 +1729,7 @@ impl TopLevelComposer {
                             primitives: primitives_ty,
                             virtual_checks: &mut Vec::new(),
                             calls: &mut calls,
-                            in_handler: false
+                            in_handler: false,
                         };
 
                         let fun_body =
@@ -1696,7 +1769,10 @@ impl TopLevelComposer {
                                     if let TypeEnum::TObj { obj_id, .. } = &*base {
                                         *obj_id
                                     } else {
-                                        return Err(format!("Base type should be a class (at {})", loc))
+                                        return Err(format!(
+                                            "Base type should be a class (at {})",
+                                            loc
+                                        ));
                                     }
                                 };
                                 let subtype_id = {
@@ -1706,7 +1782,10 @@ impl TopLevelComposer {
                                     } else {
                                         let base_repr = inferencer.unifier.stringify(*base);
                                         let subtype_repr = inferencer.unifier.stringify(*subtype);
-                                        return Err(format!("Expected a subtype of {}, but got {} (at {})", base_repr, subtype_repr, loc))
+                                        return Err(format!(
+                                            "Expected a subtype of {}, but got {} (at {})",
+                                            base_repr, subtype_repr, loc
+                                        ));
                                     }
                                 };
                                 let subtype_entry = defs[subtype_id.0].read();
@@ -1716,7 +1795,10 @@ impl TopLevelComposer {
                                     if m.is_none() {
                                         let base_repr = inferencer.unifier.stringify(*base);
                                         let subtype_repr = inferencer.unifier.stringify(*subtype);
-                                        return Err(format!("Expected a subtype of {}, but got {} (at {})", base_repr, subtype_repr, loc))
+                                        return Err(format!(
+                                            "Expected a subtype of {}, but got {} (at {})",
+                                            base_repr, subtype_repr, loc
+                                        ));
                                     }
                                 } else {
                                     unreachable!();
@@ -1748,12 +1830,7 @@ impl TopLevelComposer {
                         }
 
                         instance_to_stmt.insert(
-                            get_subst_key(
-                                unifier,
-                                self_type,
-                                &subst,
-                                Some(insted_vars),
-                            ),
+                            get_subst_key(unifier, self_type, &subst, Some(insted_vars)),
                             FunInstance {
                                 body: Arc::new(fun_body),
                                 unifier_id: 0,

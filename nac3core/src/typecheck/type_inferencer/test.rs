@@ -1,4 +1,4 @@
-use super::super::{typedef::*, magic_methods::with_fields};
+use super::super::{magic_methods::with_fields, typedef::*};
 use super::*;
 use crate::{
     codegen::CodeGenContext,
@@ -18,7 +18,10 @@ struct Resolver {
 }
 
 impl SymbolResolver for Resolver {
-    fn get_default_param_value(&self, _: &nac3parser::ast::Expr) -> Option<crate::symbol_resolver::SymbolValue> {
+    fn get_default_param_value(
+        &self,
+        _: &nac3parser::ast::Expr,
+    ) -> Option<crate::symbol_resolver::SymbolValue> {
         unimplemented!()
     }
 
@@ -66,54 +69,51 @@ impl TestEnvironment {
 
         let int32 = unifier.add_ty(TypeEnum::TObj {
             obj_id: DefinitionId(0),
-            fields: HashMap::new().into(),
-            params: HashMap::new().into(),
+            fields: HashMap::new(),
+            params: HashMap::new(),
         });
         with_fields(&mut unifier, int32, |unifier, fields| {
-            let add_ty = unifier.add_ty(TypeEnum::TFunc(
-                FunSignature {
-                    args: vec![FuncArg { name: "other".into(), ty: int32, default_value: None }],
-                    ret: int32,
-                    vars: HashMap::new(),
-                }
-                .into(),
-            ));
+            let add_ty = unifier.add_ty(TypeEnum::TFunc(FunSignature {
+                args: vec![FuncArg { name: "other".into(), ty: int32, default_value: None }],
+                ret: int32,
+                vars: HashMap::new(),
+            }));
             fields.insert("__add__".into(), (add_ty, false));
         });
         let int64 = unifier.add_ty(TypeEnum::TObj {
             obj_id: DefinitionId(1),
-            fields: HashMap::new().into(),
-            params: HashMap::new().into(),
+            fields: HashMap::new(),
+            params: HashMap::new(),
         });
         let float = unifier.add_ty(TypeEnum::TObj {
             obj_id: DefinitionId(2),
-            fields: HashMap::new().into(),
-            params: HashMap::new().into(),
+            fields: HashMap::new(),
+            params: HashMap::new(),
         });
         let bool = unifier.add_ty(TypeEnum::TObj {
             obj_id: DefinitionId(3),
-            fields: HashMap::new().into(),
-            params: HashMap::new().into(),
+            fields: HashMap::new(),
+            params: HashMap::new(),
         });
         let none = unifier.add_ty(TypeEnum::TObj {
             obj_id: DefinitionId(4),
-            fields: HashMap::new().into(),
-            params: HashMap::new().into(),
+            fields: HashMap::new(),
+            params: HashMap::new(),
         });
         let range = unifier.add_ty(TypeEnum::TObj {
             obj_id: DefinitionId(5),
-            fields: HashMap::new().into(),
-            params: HashMap::new().into(),
+            fields: HashMap::new(),
+            params: HashMap::new(),
         });
         let str = unifier.add_ty(TypeEnum::TObj {
             obj_id: DefinitionId(6),
-            fields: HashMap::new().into(),
-            params: HashMap::new().into(),
+            fields: HashMap::new(),
+            params: HashMap::new(),
         });
         let exception = unifier.add_ty(TypeEnum::TObj {
             obj_id: DefinitionId(7),
-            fields: HashMap::new().into(),
-            params: HashMap::new().into(),
+            fields: HashMap::new(),
+            params: HashMap::new(),
         });
         let primitives = PrimitiveStore { int32, int64, float, bool, none, range, str, exception };
         set_primitives_magic_methods(&primitives, &mut unifier);
@@ -167,58 +167,56 @@ impl TestEnvironment {
         let mut top_level_defs: Vec<Arc<RwLock<TopLevelDef>>> = Vec::new();
         let int32 = unifier.add_ty(TypeEnum::TObj {
             obj_id: DefinitionId(0),
-            fields: HashMap::new().into(),
-            params: HashMap::new().into(),
+            fields: HashMap::new(),
+            params: HashMap::new(),
         });
         with_fields(&mut unifier, int32, |unifier, fields| {
-            let add_ty = unifier.add_ty(TypeEnum::TFunc(
-                FunSignature {
-                    args: vec![FuncArg { name: "other".into(), ty: int32, default_value: None }],
-                    ret: int32,
-                    vars: HashMap::new(),
-                }
-                .into(),
-            ));
+            let add_ty = unifier.add_ty(TypeEnum::TFunc(FunSignature {
+                args: vec![FuncArg { name: "other".into(), ty: int32, default_value: None }],
+                ret: int32,
+                vars: HashMap::new(),
+            }));
             fields.insert("__add__".into(), (add_ty, false));
         });
         let int64 = unifier.add_ty(TypeEnum::TObj {
             obj_id: DefinitionId(1),
-            fields: HashMap::new().into(),
-            params: HashMap::new().into(),
+            fields: HashMap::new(),
+            params: HashMap::new(),
         });
         let float = unifier.add_ty(TypeEnum::TObj {
             obj_id: DefinitionId(2),
-            fields: HashMap::new().into(),
-            params: HashMap::new().into(),
+            fields: HashMap::new(),
+            params: HashMap::new(),
         });
         let bool = unifier.add_ty(TypeEnum::TObj {
             obj_id: DefinitionId(3),
-            fields: HashMap::new().into(),
-            params: HashMap::new().into(),
+            fields: HashMap::new(),
+            params: HashMap::new(),
         });
         let none = unifier.add_ty(TypeEnum::TObj {
             obj_id: DefinitionId(4),
-            fields: HashMap::new().into(),
-            params: HashMap::new().into(),
+            fields: HashMap::new(),
+            params: HashMap::new(),
         });
         let range = unifier.add_ty(TypeEnum::TObj {
             obj_id: DefinitionId(5),
-            fields: HashMap::new().into(),
-            params: HashMap::new().into(),
+            fields: HashMap::new(),
+            params: HashMap::new(),
         });
         let str = unifier.add_ty(TypeEnum::TObj {
             obj_id: DefinitionId(6),
-            fields: HashMap::new().into(),
-            params: HashMap::new().into(),
+            fields: HashMap::new(),
+            params: HashMap::new(),
         });
         let exception = unifier.add_ty(TypeEnum::TObj {
             obj_id: DefinitionId(7),
-            fields: HashMap::new().into(),
-            params: HashMap::new().into(),
+            fields: HashMap::new(),
+            params: HashMap::new(),
         });
         identifier_mapping.insert("None".into(), none);
-        for (i, name) in
-            ["int32", "int64", "float", "bool", "none", "range", "str", "Exception"].iter().enumerate()
+        for (i, name) in ["int32", "int64", "float", "bool", "none", "range", "str", "Exception"]
+            .iter()
+            .enumerate()
         {
             top_level_defs.push(
                 RwLock::new(TopLevelDef::Class {
@@ -230,7 +228,7 @@ impl TestEnvironment {
                     ancestors: Default::default(),
                     resolver: None,
                     constructor: None,
-                    loc: None
+                    loc: None,
                 })
                 .into(),
             );
@@ -243,8 +241,8 @@ impl TestEnvironment {
 
         let foo_ty = unifier.add_ty(TypeEnum::TObj {
             obj_id: DefinitionId(defs + 1),
-            fields: [("a".into(), (v0, true))].iter().cloned().collect::<HashMap<_, _>>().into(),
-            params: [(id, v0)].iter().cloned().collect::<HashMap<_, _>>().into(),
+            fields: [("a".into(), (v0, true))].iter().cloned().collect::<HashMap<_, _>>(),
+            params: [(id, v0)].iter().cloned().collect::<HashMap<_, _>>(),
         });
         top_level_defs.push(
             RwLock::new(TopLevelDef::Class {
@@ -263,26 +261,24 @@ impl TestEnvironment {
 
         identifier_mapping.insert(
             "Foo".into(),
-            unifier.add_ty(TypeEnum::TFunc(
-                FunSignature {
-                    args: vec![],
-                    ret: foo_ty,
-                    vars: [(id, v0)].iter().cloned().collect(),
-                }
-                .into(),
-            )),
+            unifier.add_ty(TypeEnum::TFunc(FunSignature {
+                args: vec![],
+                ret: foo_ty,
+                vars: [(id, v0)].iter().cloned().collect(),
+            })),
         );
 
-        let fun = unifier.add_ty(TypeEnum::TFunc(
-            FunSignature { args: vec![], ret: int32, vars: Default::default() }.into(),
-        ));
+        let fun = unifier.add_ty(TypeEnum::TFunc(FunSignature {
+            args: vec![],
+            ret: int32,
+            vars: Default::default(),
+        }));
         let bar = unifier.add_ty(TypeEnum::TObj {
             obj_id: DefinitionId(defs + 2),
             fields: [("a".into(), (int32, true)), ("b".into(), (fun, true))]
                 .iter()
                 .cloned()
-                .collect::<HashMap<_, _>>()
-                .into(),
+                .collect::<HashMap<_, _>>(),
             params: Default::default(),
         });
         top_level_defs.push(
@@ -295,15 +291,17 @@ impl TestEnvironment {
                 ancestors: Default::default(),
                 resolver: None,
                 constructor: None,
-                loc: None
+                loc: None,
             })
             .into(),
         );
         identifier_mapping.insert(
             "Bar".into(),
-            unifier.add_ty(TypeEnum::TFunc(
-                FunSignature { args: vec![], ret: bar, vars: Default::default() }.into(),
-            )),
+            unifier.add_ty(TypeEnum::TFunc(FunSignature {
+                args: vec![],
+                ret: bar,
+                vars: Default::default(),
+            })),
         );
 
         let bar2 = unifier.add_ty(TypeEnum::TObj {
@@ -311,8 +309,7 @@ impl TestEnvironment {
             fields: [("a".into(), (bool, true)), ("b".into(), (fun, false))]
                 .iter()
                 .cloned()
-                .collect::<HashMap<_, _>>()
-                .into(),
+                .collect::<HashMap<_, _>>(),
             params: Default::default(),
         });
         top_level_defs.push(
@@ -325,15 +322,17 @@ impl TestEnvironment {
                 ancestors: Default::default(),
                 resolver: None,
                 constructor: None,
-                loc: None
+                loc: None,
             })
             .into(),
         );
         identifier_mapping.insert(
             "Bar2".into(),
-            unifier.add_ty(TypeEnum::TFunc(
-                FunSignature { args: vec![], ret: bar2, vars: Default::default() }.into(),
-            )),
+            unifier.add_ty(TypeEnum::TFunc(FunSignature {
+                args: vec![],
+                ret: bar2,
+                vars: Default::default(),
+            })),
         );
         let class_names = [("Bar".into(), bar), ("Bar2".into(), bar2)].iter().cloned().collect();
 
@@ -400,7 +399,7 @@ impl TestEnvironment {
             virtual_checks: &mut self.virtual_checks,
             calls: &mut self.calls,
             defined_identifiers: Default::default(),
-            in_handler: false
+            in_handler: false,
         }
     }
 }
@@ -493,7 +492,7 @@ fn test_basic(source: &str, mapping: HashMap<&str, &str>, virtuals: &[(&str, &st
             *v,
             &mut |v| (*id_to_name.get(&v).unwrap()).into(),
             &mut |v| format!("v{}", v),
-            &mut None
+            &mut None,
         );
         println!("{}: {}", k, name);
     }
@@ -503,7 +502,7 @@ fn test_basic(source: &str, mapping: HashMap<&str, &str>, virtuals: &[(&str, &st
             *ty,
             &mut |v| (*id_to_name.get(&v).unwrap()).into(),
             &mut |v| format!("v{}", v),
-            &mut None
+            &mut None,
         );
         assert_eq!(format!("{}: {}", k, v), format!("{}: {}", k, name));
     }
@@ -513,13 +512,13 @@ fn test_basic(source: &str, mapping: HashMap<&str, &str>, virtuals: &[(&str, &st
             *a,
             &mut |v| (*id_to_name.get(&v).unwrap()).into(),
             &mut |v| format!("v{}", v),
-            &mut None
+            &mut None,
         );
         let b = inferencer.unifier.internal_stringify(
             *b,
             &mut |v| (*id_to_name.get(&v).unwrap()).into(),
             &mut |v| format!("v{}", v),
-            &mut None
+            &mut None,
         );
 
         assert_eq!(&a, x);
@@ -639,7 +638,7 @@ fn test_primitive_magic_methods(source: &str, mapping: HashMap<&str, &str>) {
             *v,
             &mut |v| (*id_to_name.get(&v).unwrap()).into(),
             &mut |v| format!("v{}", v),
-            &mut None
+            &mut None,
         );
         println!("{}: {}", k, name);
     }
@@ -649,7 +648,7 @@ fn test_primitive_magic_methods(source: &str, mapping: HashMap<&str, &str>) {
             *ty,
             &mut |v| (*id_to_name.get(&v).unwrap()).into(),
             &mut |v| format!("v{}", v),
-            &mut None
+            &mut None,
         );
         assert_eq!(format!("{}: {}", k, v), format!("{}: {}", k, name));
     }

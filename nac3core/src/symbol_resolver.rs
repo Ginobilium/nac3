@@ -1,7 +1,8 @@
-use std::{collections::HashMap, fmt::Display};
 use std::fmt::Debug;
 use std::sync::Arc;
+use std::{collections::HashMap, fmt::Display};
 
+use crate::typecheck::typedef::TypeEnum;
 use crate::{
     codegen::CodeGenContext,
     toplevel::{DefinitionId, TopLevelDef},
@@ -13,7 +14,6 @@ use crate::{
         typedef::{Type, Unifier},
     },
 };
-use crate::typecheck::typedef::TypeEnum;
 use inkwell::values::{BasicValueEnum, FloatValue, IntValue, PointerValue};
 use itertools::{chain, izip};
 use nac3parser::ast::{Expr, Location, StrRef};
@@ -36,11 +36,13 @@ impl Display for SymbolValue {
             SymbolValue::I64(i) => write!(f, "int64({})", i),
             SymbolValue::Str(s) => write!(f, "\"{}\"", s),
             SymbolValue::Double(d) => write!(f, "{}", d),
-            SymbolValue::Bool(b) => if *b {
-                write!(f, "True")
-            } else {
-                write!(f, "False")
-            },
+            SymbolValue::Bool(b) => {
+                if *b {
+                    write!(f, "True")
+                } else {
+                    write!(f, "False")
+                }
+            }
             SymbolValue::Tuple(t) => {
                 write!(f, "({})", t.iter().map(|v| format!("{}", v)).collect::<Vec<_>>().join(", "))
             }
@@ -203,7 +205,8 @@ pub fn parse_type_annotation<T>(
                         let fields = chain(
                             fields.iter().map(|(k, v, m)| (*k, (*v, *m))),
                             methods.iter().map(|(k, v, _)| (*k, (*v, false))),
-                        ).collect();
+                        )
+                        .collect();
                         Ok(unifier.add_ty(TypeEnum::TObj {
                             obj_id,
                             fields,
@@ -214,7 +217,8 @@ pub fn parse_type_annotation<T>(
                     }
                 }
                 Err(e) => {
-                    let ty = resolver.get_symbol_type(unifier, top_level_defs, primitives, *id)
+                    let ty = resolver
+                        .get_symbol_type(unifier, top_level_defs, primitives, *id)
                         .map_err(|_| format!("Unknown type annotation at {}: {}", loc, e))?;
                     if let TypeEnum::TVar { .. } = &*unifier.get_ty(ty) {
                         Ok(ty)
@@ -256,8 +260,7 @@ pub fn parse_type_annotation<T>(
                 vec![parse_type_annotation(resolver, top_level_defs, unifier, primitives, slice)?]
             };
 
-            let obj_id = resolver
-                .get_identifier_def(*id)?;
+            let obj_id = resolver.get_identifier_def(*id)?;
             let def = top_level_defs[obj_id.0].read();
             if let TopLevelDef::Class { fields, methods, type_vars, .. } = &*def {
                 if types.len() != type_vars.len() {
@@ -287,11 +290,7 @@ pub fn parse_type_annotation<T>(
                     let ty = unifier.subst(*ty, &subst).unwrap_or(*ty);
                     (*attr, (ty, false))
                 }));
-                Ok(unifier.add_ty(TypeEnum::TObj {
-                    obj_id,
-                    fields,
-                    params: subst,
-                }))
+                Ok(unifier.add_ty(TypeEnum::TObj { obj_id, fields, params: subst }))
             } else {
                 Err("Cannot use function name as type".into())
             }
@@ -338,7 +337,7 @@ impl dyn SymbolResolver + Send + Sync {
                 }
             },
             &mut |id| format!("var{}", id),
-            &mut None
+            &mut None,
         )
     }
 }

@@ -65,21 +65,19 @@ pub fn comparison_name(op: &Cmpop) -> Option<&'static str> {
 }
 
 pub(super) fn with_fields<F>(unifier: &mut Unifier, ty: Type, f: F)
-    where F: FnOnce(&mut Unifier, &mut HashMap<StrRef, (Type, bool)>)
+where
+    F: FnOnce(&mut Unifier, &mut HashMap<StrRef, (Type, bool)>),
 {
-    let (id, mut fields, params) = if let TypeEnum::TObj { obj_id, fields, params } = &*unifier.get_ty(ty) {
-        (*obj_id, fields.clone(), params.clone())
-    } else {
-        unreachable!()
-    };
+    let (id, mut fields, params) =
+        if let TypeEnum::TObj { obj_id, fields, params } = &*unifier.get_ty(ty) {
+            (*obj_id, fields.clone(), params.clone())
+        } else {
+            unreachable!()
+        };
     f(unifier, &mut fields);
     unsafe {
         let unification_table = unifier.get_unification_table();
-        unification_table.set_value(ty, Rc::new(TypeEnum::TObj {
-            obj_id: id,
-            fields,
-            params,
-        }));
+        unification_table.set_value(ty, Rc::new(TypeEnum::TObj { obj_id: id, fields, params }));
     }
 }
 
@@ -106,34 +104,30 @@ pub fn impl_binop(
         for op in ops {
             fields.insert(binop_name(op).into(), {
                 (
-                    unifier.add_ty(TypeEnum::TFunc(
-                        FunSignature {
-                            ret: ret_ty,
-                            vars: function_vars.clone(),
-                            args: vec![FuncArg {
-                                ty: other_ty,
-                                default_value: None,
-                                name: "other".into(),
-                            }],
-                        }
-                    )),
+                    unifier.add_ty(TypeEnum::TFunc(FunSignature {
+                        ret: ret_ty,
+                        vars: function_vars.clone(),
+                        args: vec![FuncArg {
+                            ty: other_ty,
+                            default_value: None,
+                            name: "other".into(),
+                        }],
+                    })),
                     false,
                 )
             });
 
             fields.insert(binop_assign_name(op).into(), {
                 (
-                    unifier.add_ty(TypeEnum::TFunc(
-                        FunSignature {
-                            ret: store.none,
-                            vars: function_vars.clone(),
-                            args: vec![FuncArg {
-                                ty: other_ty,
-                                default_value: None,
-                                name: "other".into(),
-                            }],
-                        }
-                    )),
+                    unifier.add_ty(TypeEnum::TFunc(FunSignature {
+                        ret: store.none,
+                        vars: function_vars.clone(),
+                        args: vec![FuncArg {
+                            ty: other_ty,
+                            default_value: None,
+                            name: "other".into(),
+                        }],
+                    })),
                     false,
                 )
             });
@@ -141,20 +135,17 @@ pub fn impl_binop(
     });
 }
 
-pub fn impl_unaryop(
-    unifier: &mut Unifier,
-    ty: Type,
-    ret_ty: Type,
-    ops: &[ast::Unaryop],
-) {
+pub fn impl_unaryop(unifier: &mut Unifier, ty: Type, ret_ty: Type, ops: &[ast::Unaryop]) {
     with_fields(unifier, ty, |unifier, fields| {
         for op in ops {
             fields.insert(
                 unaryop_name(op).into(),
                 (
-                    unifier.add_ty(TypeEnum::TFunc(
-                        FunSignature { ret: ret_ty, vars: HashMap::new(), args: vec![] }
-                    )),
+                    unifier.add_ty(TypeEnum::TFunc(FunSignature {
+                        ret: ret_ty,
+                        vars: HashMap::new(),
+                        args: vec![],
+                    })),
                     false,
                 ),
             );
@@ -174,17 +165,15 @@ pub fn impl_cmpop(
             fields.insert(
                 comparison_name(op).unwrap().into(),
                 (
-                    unifier.add_ty(TypeEnum::TFunc(
-                        FunSignature {
-                            ret: store.bool,
-                            vars: HashMap::new(),
-                            args: vec![FuncArg {
-                                ty: other_ty,
-                                default_value: None,
-                                name: "other".into(),
-                            }],
-                        }
-                    )),
+                    unifier.add_ty(TypeEnum::TFunc(FunSignature {
+                        ret: store.bool,
+                        vars: HashMap::new(),
+                        args: vec![FuncArg {
+                            ty: other_ty,
+                            default_value: None,
+                            name: "other".into(),
+                        }],
+                    })),
                     false,
                 ),
             );

@@ -10,7 +10,7 @@ use inkwell::{
     targets::*,
     OptimizationLevel,
 };
-use nac3core::typecheck::typedef::{Unifier, TypeEnum};
+use nac3core::typecheck::typedef::{TypeEnum, Unifier};
 use nac3parser::{
     ast::{self, ExprKind, Stmt, StmtKind, StrRef},
     parser::{self, parse_program},
@@ -21,8 +21,8 @@ use pyo3::{exceptions, types::PyBytes, types::PyDict, types::PySet};
 use parking_lot::{Mutex, RwLock};
 
 use nac3core::{
-    codegen::{concrete_type::ConcreteTypeStore, CodeGenTask, WithCall, WorkerRegistry},
     codegen::irrt::load_irrt,
+    codegen::{concrete_type::ConcreteTypeStore, CodeGenTask, WithCall, WorkerRegistry},
     symbol_resolver::SymbolResolver,
     toplevel::{
         composer::{ComposerConfig, TopLevelComposer},
@@ -96,10 +96,7 @@ impl Nac3 {
     ) -> PyResult<()> {
         let (module_name, source_file) = Python::with_gil(|py| -> PyResult<(String, String)> {
             let module: &PyAny = module.extract(py)?;
-            Ok((
-                module.getattr("__name__")?.extract()?,
-                module.getattr("__file__")?.extract()?,
-            ))
+            Ok((module.getattr("__name__")?.extract()?, module.getattr("__file__")?.extract()?))
         })?;
 
         let source = fs::read_to_string(&source_file).map_err(|e| {
@@ -111,10 +108,7 @@ impl Nac3 {
         for mut stmt in parser_result.into_iter() {
             let include = match stmt.node {
                 ast::StmtKind::ClassDef {
-                    ref decorator_list,
-                    ref mut body,
-                    ref mut bases,
-                    ..
+                    ref decorator_list, ref mut body, ref mut bases, ..
                 } => {
                     let nac3_class = decorator_list.iter().any(|decorator| {
                         if let ast::ExprKind::Name { id, .. } = decorator.node {
@@ -146,10 +140,7 @@ impl Nac3 {
                         .unwrap()
                     });
                     body.retain(|stmt| {
-                        if let ast::StmtKind::FunctionDef {
-                            ref decorator_list, ..
-                        } = stmt.node
-                        {
+                        if let ast::StmtKind::FunctionDef { ref decorator_list, .. } = stmt.node {
                             decorator_list.iter().any(|decorator| {
                                 if let ast::ExprKind::Name { id, .. } = decorator.node {
                                     id.to_string() == "kernel"
@@ -165,22 +156,21 @@ impl Nac3 {
                     });
                     true
                 }
-                ast::StmtKind::FunctionDef {
-                    ref decorator_list, ..
-                } => decorator_list.iter().any(|decorator| {
-                    if let ast::ExprKind::Name { id, .. } = decorator.node {
-                        let id = id.to_string();
-                        id == "extern" || id == "portable" || id == "kernel" || id == "rpc"
-                    } else {
-                        false
-                    }
-                }),
+                ast::StmtKind::FunctionDef { ref decorator_list, .. } => {
+                    decorator_list.iter().any(|decorator| {
+                        if let ast::ExprKind::Name { id, .. } = decorator.node {
+                            let id = id.to_string();
+                            id == "extern" || id == "portable" || id == "kernel" || id == "rpc"
+                        } else {
+                            false
+                        }
+                    })
+                }
                 _ => false,
             };
 
             if include {
-                self.top_levels
-                    .push((stmt, module_name.clone(), module.clone()));
+                self.top_levels.push((stmt, module_name.clone(), module.clone()));
             }
         }
         Ok(())
@@ -197,7 +187,7 @@ impl Nac3 {
         let base_ty =
             match resolver.get_symbol_type(unifier, top_level_defs, primitives, "base".into()) {
                 Ok(ty) => ty,
-                Err(e) => return Some(format!("type error inside object launching kernel: {}", e))
+                Err(e) => return Some(format!("type error inside object launching kernel: {}", e)),
             };
 
         let fun_ty = if method_name.is_empty() {
@@ -205,12 +195,15 @@ impl Nac3 {
         } else if let TypeEnum::TObj { fields, .. } = &*unifier.get_ty(base_ty) {
             match fields.get(&(*method_name).into()) {
                 Some(t) => t.0,
-                None => return Some(
-                    format!("object launching kernel does not have method `{}`", method_name)
-                )
+                None => {
+                    return Some(format!(
+                        "object launching kernel does not have method `{}`",
+                        method_name
+                    ))
+                }
             }
         } else {
-            return Some("cannot launch kernel by calling a non-callable".into())
+            return Some("cannot launch kernel by calling a non-callable".into());
         };
 
         if let TypeEnum::TFunc(FunSignature { args, .. }) = &*unifier.get_ty(fun_ty) {
@@ -219,35 +212,43 @@ impl Nac3 {
                     "launching kernel function with too many arguments (expect {}, found {})",
                     args.len(),
                     arg_names.len(),
-                ))
+                ));
             }
             for (i, FuncArg { ty, default_value, name }) in args.iter().enumerate() {
                 let in_name = match arg_names.get(i) {
                     Some(n) => n,
-                    None if default_value.is_none() => return Some(format!(
-                        "argument `{}` not provided when launching kernel function", name
-                    )),
+                    None if default_value.is_none() => {
+                        return Some(format!(
+                            "argument `{}` not provided when launching kernel function",
+                            name
+                        ))
+                    }
                     _ => break,
                 };
                 let in_ty = match resolver.get_symbol_type(
                     unifier,
                     top_level_defs,
                     primitives,
-                    in_name.clone().into()
+                    in_name.clone().into(),
                 ) {
                     Ok(t) => t,
-                    Err(e) => return Some(format!(
-                        "type error ({}) at parameter #{} when calling kernel function", e, i
-                    ))
+                    Err(e) => {
+                        return Some(format!(
+                            "type error ({}) at parameter #{} when calling kernel function",
+                            e, i
+                        ))
+                    }
                 };
                 if let Err(e) = unifier.unify(in_ty, *ty) {
                     return Some(format!(
-                        "type error ({}) at parameter #{} when calling kernel function", e.to_display(unifier).to_string(), i
+                        "type error ({}) at parameter #{} when calling kernel function",
+                        e.to_display(unifier).to_string(),
+                        i
                     ));
                 }
             }
         } else {
-            return Some("cannot launch kernel by calling a non-callable".into())
+            return Some("cannot launch kernel by calling a non-callable".into());
         }
         None
     }
@@ -274,11 +275,7 @@ impl Nac3 {
         let builtins = vec![
             (
                 "now_mu".into(),
-                FunSignature {
-                    args: vec![],
-                    ret: primitive.int64,
-                    vars: HashMap::new(),
-                },
+                FunSignature { args: vec![], ret: primitive.int64, vars: HashMap::new() },
                 Arc::new(GenCall::new(Box::new(move |ctx, _, _, _, _| {
                     Ok(Some(time_fns.emit_now_mu(ctx)))
                 }))),
@@ -320,10 +317,7 @@ impl Nac3 {
         ];
         let (_, builtins_def, builtins_ty) = TopLevelComposer::new(
             builtins.clone(),
-            ComposerConfig {
-                kernel_ann: Some("Kernel"),
-                kernel_invariant_ann: "KernelInvariant",
-            },
+            ComposerConfig { kernel_ann: Some("Kernel"), kernel_invariant_ann: "KernelInvariant" },
         );
 
         let builtins_mod = PyModule::import(py, "builtins").unwrap();
@@ -355,46 +349,22 @@ impl Nac3 {
                     .extract()
                     .unwrap(),
             ),
-            none: id_fn
-                .call1((builtins_mod.getattr("None").unwrap(),))
-                .unwrap()
-                .extract()
-                .unwrap(),
+            none: id_fn.call1((builtins_mod.getattr("None").unwrap(),)).unwrap().extract().unwrap(),
             typevar: id_fn
                 .call1((typing_mod.getattr("TypeVar").unwrap(),))
                 .unwrap()
                 .extract()
                 .unwrap(),
-            int: id_fn
-                .call1((builtins_mod.getattr("int").unwrap(),))
-                .unwrap()
-                .extract()
-                .unwrap(),
-            int32: id_fn
-                .call1((numpy_mod.getattr("int32").unwrap(),))
-                .unwrap()
-                .extract()
-                .unwrap(),
-            int64: id_fn
-                .call1((numpy_mod.getattr("int64").unwrap(),))
-                .unwrap()
-                .extract()
-                .unwrap(),
-            bool: id_fn
-                .call1((builtins_mod.getattr("bool").unwrap(),))
-                .unwrap()
-                .extract()
-                .unwrap(),
+            int: id_fn.call1((builtins_mod.getattr("int").unwrap(),)).unwrap().extract().unwrap(),
+            int32: id_fn.call1((numpy_mod.getattr("int32").unwrap(),)).unwrap().extract().unwrap(),
+            int64: id_fn.call1((numpy_mod.getattr("int64").unwrap(),)).unwrap().extract().unwrap(),
+            bool: id_fn.call1((builtins_mod.getattr("bool").unwrap(),)).unwrap().extract().unwrap(),
             float: id_fn
                 .call1((builtins_mod.getattr("float").unwrap(),))
                 .unwrap()
                 .extract()
                 .unwrap(),
-            list: id_fn
-                .call1((builtins_mod.getattr("list").unwrap(),))
-                .unwrap()
-                .extract()
-                .unwrap(),
+            list: id_fn.call1((builtins_mod.getattr("list").unwrap(),)).unwrap().extract().unwrap(),
             tuple: id_fn
                 .call1((builtins_mod.getattr("tuple").unwrap(),))
                 .unwrap()
@@ -408,11 +378,7 @@ impl Nac3 {
         };
 
         let working_directory = tempfile::Builder::new().prefix("nac3-").tempdir().unwrap();
-        fs::write(
-            working_directory.path().join("kernel.ld"),
-            include_bytes!("kernel.ld"),
-        )
-        .unwrap();
+        fs::write(working_directory.path().join("kernel.ld"), include_bytes!("kernel.ld")).unwrap();
 
         Ok(Nac3 {
             isa,
@@ -425,7 +391,7 @@ impl Nac3 {
             top_levels: Default::default(),
             pyid_to_def: Default::default(),
             working_directory,
-            string_store: Default::default()
+            string_store: Default::default(),
         })
     }
 
@@ -465,20 +431,17 @@ impl Nac3 {
         embedding_map: &PyAny,
         py: Python,
     ) -> PyResult<()> {
-        let (mut composer, _, _) = TopLevelComposer::new(self.builtins.clone(), ComposerConfig {
-            kernel_ann: Some("Kernel"),
-            kernel_invariant_ann: "KernelInvariant"
-        });
+        let (mut composer, _, _) = TopLevelComposer::new(
+            self.builtins.clone(),
+            ComposerConfig { kernel_ann: Some("Kernel"), kernel_invariant_ann: "KernelInvariant" },
+        );
 
         let builtins = PyModule::import(py, "builtins")?;
         let typings = PyModule::import(py, "typing")?;
         let id_fn = builtins.getattr("id")?;
         let store_obj = embedding_map.getattr("store_object").unwrap().to_object(py);
         let store_str = embedding_map.getattr("store_str").unwrap().to_object(py);
-        let store_fun = embedding_map
-            .getattr("store_function")
-            .unwrap()
-            .to_object(py);
+        let store_fun = embedding_map.getattr("store_function").unwrap().to_object(py);
         let helper = PythonHelper {
             id_fn: builtins.getattr("id").unwrap().to_object(py),
             len_fn: builtins.getattr("len").unwrap().to_object(py),
@@ -486,7 +449,7 @@ impl Nac3 {
             origin_ty_fn: typings.getattr("get_origin").unwrap().to_object(py),
             args_ty_fn: typings.getattr("get_args").unwrap().to_object(py),
             store_obj,
-            store_str
+            store_str,
         };
         let mut module_to_resolver_cache: HashMap<u64, _> = HashMap::new();
 
@@ -497,10 +460,8 @@ impl Nac3 {
             let py_module: &PyAny = module.extract(py)?;
             let module_id: u64 = id_fn.call1((py_module,))?.extract()?;
             let helper = helper.clone();
-            let (name_to_pyid, resolver) = module_to_resolver_cache
-                .get(&module_id)
-                .cloned()
-                .unwrap_or_else(|| {
+            let (name_to_pyid, resolver) =
+                module_to_resolver_cache.get(&module_id).cloned().unwrap_or_else(|| {
                     let mut name_to_pyid: HashMap<StrRef, u64> = HashMap::new();
                     let members: &PyDict =
                         py_module.getattr("__dict__").unwrap().cast_as().unwrap();
@@ -535,7 +496,10 @@ impl Nac3 {
             let (name, def_id, ty) = composer
                 .register_top_level(stmt.clone(), Some(resolver.clone()), path.clone())
                 .map_err(|e| {
-                    exceptions::PyRuntimeError::new_err(format!("nac3 compilation failure\n----------\n{}", e))
+                    exceptions::PyRuntimeError::new_err(format!(
+                        "nac3 compilation failure\n----------\n{}",
+                        e
+                    ))
                 })?;
 
             match &stmt.node {
@@ -583,16 +547,10 @@ impl Nac3 {
         let synthesized = if method_name.is_empty() {
             format!("def __modinit__():\n    base({})", arg_names.join(", "))
         } else {
-            format!(
-                "def __modinit__():\n    base.{}({})",
-                method_name,
-                arg_names.join(", ")
-            )
+            format!("def __modinit__():\n    base.{}({})", method_name, arg_names.join(", "))
         };
-        let mut synthesized = parse_program(
-            &synthesized,
-            "__nac3_synthesized_modinit__".to_string().into(),
-        ).unwrap();
+        let mut synthesized =
+            parse_program(&synthesized, "__nac3_synthesized_modinit__".to_string().into()).unwrap();
         let resolver = Arc::new(Resolver(Arc::new(InnerResolver {
             id_to_type: self.builtins_ty.clone().into(),
             id_to_def: self.builtins_def.clone().into(),
@@ -610,34 +568,24 @@ impl Nac3 {
             string_store: self.string_store.clone(),
         }))) as Arc<dyn SymbolResolver + Send + Sync>;
         let (_, def_id, _) = composer
-            .register_top_level(
-                synthesized.pop().unwrap(),
-                Some(resolver.clone()),
-                "".into(),
-            )
+            .register_top_level(synthesized.pop().unwrap(), Some(resolver.clone()), "".into())
             .unwrap();
 
-        let signature = FunSignature {
-            args: vec![],
-            ret: self.primitive.none,
-            vars: HashMap::new(),
-        };
+        let signature =
+            FunSignature { args: vec![], ret: self.primitive.none, vars: HashMap::new() };
         let mut store = ConcreteTypeStore::new();
         let mut cache = HashMap::new();
-        let signature = store.from_signature(
-            &mut composer.unifier,
-            &self.primitive,
-            &signature,
-            &mut cache,
-        );
+        let signature =
+            store.from_signature(&mut composer.unifier, &self.primitive, &signature, &mut cache);
         let signature = store.add_cty(signature);
 
         if let Err(e) = composer.start_analysis(true) {
             // report error of __modinit__ separately
             if !e.contains("__nac3_synthesized_modinit__") {
-                return Err(exceptions::PyRuntimeError::new_err(
-                    format!("nac3 compilation failure: \n----------\n{}", e)
-                ));
+                return Err(exceptions::PyRuntimeError::new_err(format!(
+                    "nac3 compilation failure: \n----------\n{}",
+                    e
+                )));
             } else {
                 let msg = Self::report_modinit(
                     &arg_names,
@@ -645,7 +593,7 @@ impl Nac3 {
                     resolver.clone(),
                     &composer.extract_def_list(),
                     &mut composer.unifier,
-                    &self.primitive
+                    &self.primitive,
                 );
                 return Err(exceptions::PyRuntimeError::new_err(msg.unwrap()));
             }
@@ -658,9 +606,7 @@ impl Nac3 {
             for (class_data, id) in rpc_ids.iter() {
                 let mut def = defs[id.0].write();
                 match &mut *def {
-                    TopLevelDef::Function {
-                        codegen_callback, ..
-                    } => {
+                    TopLevelDef::Function { codegen_callback, .. } => {
                         *codegen_callback = Some(rpc_codegen.clone());
                     }
                     TopLevelDef::Class { methods, .. } => {
@@ -669,9 +615,8 @@ impl Nac3 {
                             if name != method_name {
                                 continue;
                             }
-                            if let TopLevelDef::Function {
-                                codegen_callback, ..
-                            } = &mut *defs[id.0].write()
+                            if let TopLevelDef::Function { codegen_callback, .. } =
+                                &mut *defs[id.0].write()
                             {
                                 *codegen_callback = Some(rpc_codegen.clone());
                                 store_fun
@@ -693,11 +638,8 @@ impl Nac3 {
         let instance = {
             let defs = top_level.definitions.read();
             let mut definition = defs[def_id.0].write();
-            if let TopLevelDef::Function {
-                instance_to_stmt,
-                instance_to_symbol,
-                ..
-            } = &mut *definition
+            if let TopLevelDef::Function { instance_to_stmt, instance_to_symbol, .. } =
+                &mut *definition
             {
                 instance_to_symbol.insert("".to_string(), "__modinit__".into());
                 instance_to_stmt[""].clone()
@@ -733,13 +675,7 @@ impl Nac3 {
         let thread_names: Vec<String> = (0..4).map(|_| "main".to_string()).collect();
         let threads: Vec<_> = thread_names
             .iter()
-            .map(|s| {
-                Box::new(ArtiqCodeGenerator::new(
-                    s.to_string(),
-                    size_t,
-                    self.time_fns,
-                ))
-            })
+            .map(|s| Box::new(ArtiqCodeGenerator::new(s.to_string(), size_t, self.time_fns)))
             .collect();
 
         py.allow_threads(|| {
@@ -784,14 +720,10 @@ impl Nac3 {
                 TargetMachine::get_default_triple(),
                 TargetMachine::get_host_cpu_features().to_string(),
             ),
-            Isa::RiscV32G => (
-                TargetTriple::create("riscv32-unknown-linux"),
-                "+a,+m,+f,+d".to_string(),
-            ),
-            Isa::RiscV32IMA => (
-                TargetTriple::create("riscv32-unknown-linux"),
-                "+a,+m".to_string(),
-            ),
+            Isa::RiscV32G => {
+                (TargetTriple::create("riscv32-unknown-linux"), "+a,+m,+f,+d".to_string())
+            }
+            Isa::RiscV32IMA => (TargetTriple::create("riscv32-unknown-linux"), "+a,+m".to_string()),
             Isa::CortexA9 => (
                 TargetTriple::create("armv7-unknown-linux-gnueabihf"),
                 "+dsp,+fp16,+neon,+vfp3".to_string(),
@@ -819,28 +751,18 @@ impl Nac3 {
             "-x".to_string(),
             "-o".to_string(),
             filename.to_string(),
-            working_directory
-                .join("module.o")
-                .to_string_lossy()
-                .to_string(),
+            working_directory.join("module.o").to_string_lossy().to_string(),
         ];
         if isa != Isa::Host {
             linker_args.push(
                 "-T".to_string()
-                    + self
-                        .working_directory
-                        .path()
-                        .join("kernel.ld")
-                        .to_str()
-                        .unwrap(),
+                    + self.working_directory.path().join("kernel.ld").to_str().unwrap(),
             );
         }
 
         if let Ok(linker_status) = Command::new("ld.lld").args(linker_args).status() {
             if !linker_status.success() {
-                return Err(exceptions::PyRuntimeError::new_err(
-                    "failed to start linker",
-                ));
+                return Err(exceptions::PyRuntimeError::new_err("failed to start linker"));
             }
         } else {
             return Err(exceptions::PyRuntimeError::new_err(

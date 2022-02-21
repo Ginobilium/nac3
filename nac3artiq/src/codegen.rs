@@ -130,18 +130,21 @@ impl<'b> CodeGenerator for ArtiqCodeGenerator<'b> {
                         // the LLVM Context.
                         // The name is guaranteed to be unique as users cannot use this as variable
                         // name.
-                        self.start = old_start.clone().map_or_else(|| {
-                            let start = format!("with-{}-start", self.name_counter).into();
-                            let start_expr = Located {
-                                // location does not matter at this point
-                                location: stmt.location,
-                                node: ExprKind::Name { id: start, ctx: name_ctx.clone() },
-                                custom: Some(ctx.primitives.int64),
-                            };
-                            let start = self.gen_store_target(ctx, &start_expr)?;
-                            ctx.builder.build_store(start, now);
-                            Ok(Some(start_expr)) as Result<_, String>
-                        }, |v| Ok(Some(v)))?;
+                        self.start = old_start.clone().map_or_else(
+                            || {
+                                let start = format!("with-{}-start", self.name_counter).into();
+                                let start_expr = Located {
+                                    // location does not matter at this point
+                                    location: stmt.location,
+                                    node: ExprKind::Name { id: start, ctx: name_ctx.clone() },
+                                    custom: Some(ctx.primitives.int64),
+                                };
+                                let start = self.gen_store_target(ctx, &start_expr)?;
+                                ctx.builder.build_store(start, now);
+                                Ok(Some(start_expr)) as Result<_, String>
+                            },
+                            |v| Ok(Some(v)),
+                        )?;
                         let end = format!("with-{}-end", self.name_counter).into();
                         let end_expr = Located {
                             // location does not matter at this point
@@ -179,8 +182,10 @@ impl<'b> CodeGenerator for ArtiqCodeGenerator<'b> {
                         }
                         // inside a parallel block, should update the outer max now_mu
                         if let Some(old_end) = &old_end {
-                            let outer_end_val =
-                                self.gen_expr(ctx, old_end)?.unwrap().to_basic_value_enum(ctx, self);
+                            let outer_end_val = self
+                                .gen_expr(ctx, old_end)?
+                                .unwrap()
+                                .to_basic_value_enum(ctx, self);
                             let smax =
                                 ctx.module.get_function("llvm.smax.i64").unwrap_or_else(|| {
                                     let i64 = ctx.ctx.i64_type();
@@ -226,7 +231,11 @@ impl<'b> CodeGenerator for ArtiqCodeGenerator<'b> {
     }
 }
 
-fn gen_rpc_tag<'ctx, 'a>(ctx: &mut CodeGenContext<'ctx, 'a>, ty: Type, buffer: &mut Vec<u8>) -> Result<(), String> {
+fn gen_rpc_tag<'ctx, 'a>(
+    ctx: &mut CodeGenContext<'ctx, 'a>,
+    ty: Type,
+    buffer: &mut Vec<u8>,
+) -> Result<(), String> {
     use nac3core::typecheck::typedef::TypeEnum::*;
 
     let int32 = ctx.primitives.int32;
@@ -283,7 +292,7 @@ fn rpc_codegen_callback_fn<'ctx, 'a>(
     let int32 = ctx.ctx.i32_type();
     let tag_ptr_type = ctx.ctx.struct_type(&[ptr_type.into(), size_type.into()], false);
 
-    let service_id = int32.const_int(fun.1.0 as u64, false);
+    let service_id = int32.const_int(fun.1 .0 as u64, false);
     // -- setup rpc tags
     let mut tag = Vec::new();
     if obj.is_some() {
@@ -433,7 +442,7 @@ fn rpc_codegen_callback_fn<'ctx, 'a>(
 
     if ctx.unifier.unioned(fun.0.ret, ctx.primitives.none) {
         ctx.build_call_or_invoke(rpc_recv, &[ptr_type.const_null().into()], "rpc_recv");
-        return Ok(None)
+        return Ok(None);
     }
 
     let prehead_bb = ctx.builder.get_insert_block().unwrap();

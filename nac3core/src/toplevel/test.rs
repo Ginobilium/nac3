@@ -34,7 +34,10 @@ impl ResolverInternal {
 struct Resolver(Arc<ResolverInternal>);
 
 impl SymbolResolver for Resolver {
-    fn get_default_param_value(&self, _: &nac3parser::ast::Expr) -> Option<crate::symbol_resolver::SymbolValue> {
+    fn get_default_param_value(
+        &self,
+        _: &nac3parser::ast::Expr,
+    ) -> Option<crate::symbol_resolver::SymbolValue> {
         unimplemented!()
     }
 
@@ -169,10 +172,12 @@ fn test_simple_function_analyze(source: Vec<&str>, tys: Vec<&str>, names: Vec<&s
     {
         let def = &*def.read();
         if let TopLevelDef::Function { signature, name, .. } = def {
-            let ty_str =
-                composer
-                    .unifier
-                    .internal_stringify(*signature, &mut |id| id.to_string(), &mut |id| id.to_string(), &mut None);
+            let ty_str = composer.unifier.internal_stringify(
+                *signature,
+                &mut |id| id.to_string(),
+                &mut |id| id.to_string(),
+                &mut None,
+            );
             assert_eq!(ty_str, tys[i]);
             assert_eq!(name, names[i]);
         }
@@ -779,9 +784,12 @@ impl<'a> Fold<Option<Type>> for TypeToStringFolder<'a> {
     type Error = String;
     fn map_user(&mut self, user: Option<Type>) -> Result<Self::TargetU, Self::Error> {
         Ok(if let Some(ty) = user {
-            self.unifier.internal_stringify(ty, &mut |id| format!("class{}", id.to_string()), &mut |id| {
-                format!("tvar{}", id.to_string())
-            }, &mut None)
+            self.unifier.internal_stringify(
+                ty,
+                &mut |id| format!("class{}", id.to_string()),
+                &mut |id| format!("tvar{}", id.to_string()),
+                &mut None,
+            )
         } else {
             "None".into()
         })

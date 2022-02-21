@@ -33,7 +33,7 @@ pub enum Primitive {
     None,
     Range,
     Str,
-    Exception
+    Exception,
 }
 
 #[derive(Debug)]
@@ -162,10 +162,16 @@ impl ConcreteTypeStore {
                             // here we should not have type vars, but some partial instantiated
                             // class methods can still have uninstantiated type vars, so
                             // filter out all the methods, as this will not affect codegen
-                            if let TypeEnum::TFunc( .. ) = &*unifier.get_ty(ty.0) {
+                            if let TypeEnum::TFunc(..) = &*unifier.get_ty(ty.0) {
                                 None
                             } else {
-                                Some((*name, (self.from_unifier_type(unifier, primitives, ty.0, cache), ty.1)))
+                                Some((
+                                    *name,
+                                    (
+                                        self.from_unifier_type(unifier, primitives, ty.0, cache),
+                                        ty.1,
+                                    ),
+                                ))
                             }
                         })
                         .collect(),
@@ -246,34 +252,27 @@ impl ConcreteTypeStore {
                     .map(|(name, cty)| {
                         (*name, (self.to_unifier_type(unifier, primitives, cty.0, cache), cty.1))
                     })
-                    .collect::<HashMap<_, _>>()
-                    .into(),
+                    .collect::<HashMap<_, _>>(),
                 params: params
                     .iter()
                     .map(|(id, cty)| (*id, self.to_unifier_type(unifier, primitives, *cty, cache)))
-                    .collect::<HashMap<_, _>>()
-                    .into(),
+                    .collect::<HashMap<_, _>>(),
             },
-            ConcreteTypeEnum::TFunc { args, ret, vars } => TypeEnum::TFunc(
-                FunSignature {
-                    args: args
-                        .iter()
-                        .map(|arg| FuncArg {
-                            name: arg.name,
-                            ty: self.to_unifier_type(unifier, primitives, arg.ty, cache),
-                            default_value: arg.default_value.clone(),
-                        })
-                        .collect(),
-                    ret: self.to_unifier_type(unifier, primitives, *ret, cache),
-                    vars: vars
-                        .iter()
-                        .map(|(id, cty)| {
-                            (*id, self.to_unifier_type(unifier, primitives, *cty, cache))
-                        })
-                        .collect::<HashMap<_, _>>(),
-                }
-                .into(),
-            ),
+            ConcreteTypeEnum::TFunc { args, ret, vars } => TypeEnum::TFunc(FunSignature {
+                args: args
+                    .iter()
+                    .map(|arg| FuncArg {
+                        name: arg.name,
+                        ty: self.to_unifier_type(unifier, primitives, arg.ty, cache),
+                        default_value: arg.default_value.clone(),
+                    })
+                    .collect(),
+                ret: self.to_unifier_type(unifier, primitives, *ret, cache),
+                vars: vars
+                    .iter()
+                    .map(|(id, cty)| (*id, self.to_unifier_type(unifier, primitives, *cty, cache)))
+                    .collect::<HashMap<_, _>>(),
+            }),
         };
         let result = unifier.add_ty(result);
         if let Some(ty) = cache.get(&cty).unwrap() {

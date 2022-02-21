@@ -1,9 +1,9 @@
-use std::fmt::Display;
 use std::collections::HashMap;
+use std::fmt::Display;
 
 use crate::typecheck::typedef::TypeEnum;
 
-use super::typedef::{Type, Unifier, RecordKey};
+use super::typedef::{RecordKey, Type, Unifier};
 use nac3parser::ast::{Location, StrRef};
 
 #[derive(Debug, Clone)]
@@ -53,16 +53,13 @@ impl TypeError {
     }
 
     pub fn to_display(self, unifier: &Unifier) -> DisplayTypeError {
-        DisplayTypeError {
-            err: self,
-            unifier
-        }
+        DisplayTypeError { err: self, unifier }
     }
 }
 
 pub struct DisplayTypeError<'a> {
     pub err: TypeError,
-    pub unifier: &'a Unifier
+    pub unifier: &'a Unifier,
 }
 
 fn loc_to_str(loc: Option<Location>) -> String {
@@ -86,11 +83,7 @@ impl<'a> Display for DisplayTypeError<'a> {
             UnknownArgName(name) => {
                 write!(f, "Unknown argument name: {}", name)
             }
-            IncorrectArgType {
-                name,
-                expected,
-                got,
-            } => {
+            IncorrectArgType { name, expected, got } => {
                 let expected = self.unifier.stringify_with_notes(*expected, &mut notes);
                 let got = self.unifier.stringify_with_notes(*got, &mut notes);
                 write!(
@@ -98,19 +91,26 @@ impl<'a> Display for DisplayTypeError<'a> {
                     "Incorrect argument type for {}. Expected {}, but got {}",
                     name, expected, got
                 )
-            },
+            }
             FieldUnificationError { field, types, loc } => {
                 let lhs = self.unifier.stringify_with_notes(types.0, &mut notes);
                 let rhs = self.unifier.stringify_with_notes(types.1, &mut notes);
                 write!(
                     f,
                     "Unable to unify field {}: Got types {}{} and {}{}",
-                    field, lhs, loc_to_str(loc.0), rhs, loc_to_str(loc.1)
+                    field,
+                    lhs,
+                    loc_to_str(loc.0),
+                    rhs,
+                    loc_to_str(loc.1)
                 )
             }
             IncompatibleRange(t, ts) => {
                 let t = self.unifier.stringify_with_notes(*t, &mut notes);
-                let ts = ts.iter().map(|t| self.unifier.stringify_with_notes(*t, &mut notes)).collect::<Vec<_>>();
+                let ts = ts
+                    .iter()
+                    .map(|t| self.unifier.stringify_with_notes(*t, &mut notes))
+                    .collect::<Vec<_>>();
                 write!(f, "Expected any one of these types: {}, but got {}", ts.join(", "), t)
             }
             IncompatibleTypes(t1, t2) => {
@@ -119,15 +119,21 @@ impl<'a> Display for DisplayTypeError<'a> {
                 match (&*type1, &*type2) {
                     (TypeEnum::TCall(calls), _) => {
                         let loc = self.unifier.calls[calls[0].0].loc;
-                        let result = write!(f, "{} is not callable", self.unifier.stringify_with_notes(*t2, &mut notes));
+                        let result = write!(
+                            f,
+                            "{} is not callable",
+                            self.unifier.stringify_with_notes(*t2, &mut notes)
+                        );
                         if let Some(loc) = loc {
                             result?;
                             write!(f, " (in {})", loc)?;
-                            return Ok(())
+                            return Ok(());
                         }
                         result
                     }
-                    (TypeEnum::TTuple { ty: ty1 }, TypeEnum::TTuple { ty: ty2 }) if ty1.len() != ty2.len() => {
+                    (TypeEnum::TTuple { ty: ty1 }, TypeEnum::TTuple { ty: ty2 })
+                        if ty1.len() != ty2.len() =>
+                    {
                         let t1 = self.unifier.stringify_with_notes(*t1, &mut notes);
                         let t2 = self.unifier.stringify_with_notes(*t2, &mut notes);
                         write!(f, "Tuple length mismatch: got {} and {}", t1, t2)
@@ -152,7 +158,11 @@ impl<'a> Display for DisplayTypeError<'a> {
                 write!(f, "`{}::{}` field does not exist", t, name)
             }
             TupleIndexOutOfBounds { index, len } => {
-                write!(f, "Tuple index out of bounds. Got {} but tuple has only {} elements", index, len)
+                write!(
+                    f,
+                    "Tuple index out of bounds. Got {} but tuple has only {} elements",
+                    index, len
+                )
             }
             RequiresTypeAnn => {
                 write!(f, "Unable to infer virtual object type: Type annotation required")
@@ -174,4 +184,3 @@ impl<'a> Display for DisplayTypeError<'a> {
         Ok(())
     }
 }
-

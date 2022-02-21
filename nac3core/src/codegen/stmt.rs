@@ -7,7 +7,7 @@ use super::{
 use crate::{
     codegen::expr::gen_binop_expr,
     toplevel::{DefinitionId, TopLevelDef},
-    typecheck::typedef::{Type, TypeEnum, FunSignature}
+    typecheck::typedef::{FunSignature, Type, TypeEnum},
 };
 use inkwell::{
     attributes::{Attribute, AttributeLoc},
@@ -16,7 +16,9 @@ use inkwell::{
     values::{BasicValue, BasicValueEnum, FunctionValue, PointerValue},
     IntPredicate::EQ,
 };
-use nac3parser::ast::{ExcepthandlerKind, Expr, ExprKind, Location, Stmt, StmtKind, StrRef, Constant};
+use nac3parser::ast::{
+    Constant, ExcepthandlerKind, Expr, ExprKind, Location, Stmt, StmtKind, StrRef,
+};
 use std::convert::TryFrom;
 
 pub fn gen_var<'ctx, 'a>(
@@ -40,12 +42,16 @@ pub fn gen_store_target<'ctx, 'a, G: CodeGenerator>(
     // very similar to gen_expr, but we don't do an extra load at the end
     // and we flatten nested tuples
     Ok(match &pattern.node {
-        ExprKind::Name { id, .. } => ctx.var_assignment.get(id).map(|v| Ok(v.0) as Result<_, String>).unwrap_or_else(|| {
-            let ptr_ty = ctx.get_llvm_type(generator, pattern.custom.unwrap());
-            let ptr = generator.gen_var_alloc(ctx, ptr_ty)?;
-            ctx.var_assignment.insert(*id, (ptr, None, 0));
-            Ok(ptr)
-        })?,
+        ExprKind::Name { id, .. } => {
+            ctx.var_assignment.get(id).map(|v| Ok(v.0) as Result<_, String>).unwrap_or_else(
+                || {
+                    let ptr_ty = ctx.get_llvm_type(generator, pattern.custom.unwrap());
+                    let ptr = generator.gen_var_alloc(ctx, ptr_ty)?;
+                    ctx.var_assignment.insert(*id, (ptr, None, 0));
+                    Ok(ptr)
+                },
+            )?
+        }
         ExprKind::Attribute { value, attr, .. } => {
             let index = ctx.get_attr_index(value.custom.unwrap(), *attr);
             let val = generator.gen_expr(ctx, value)?.unwrap().to_basic_value_enum(ctx, generator);
@@ -94,7 +100,7 @@ pub fn gen_assign<'ctx, 'a, G: CodeGenerator>(
     target: &Expr<Option<Type>>,
     value: ValueEnum<'ctx>,
 ) -> Result<(), String> {
-    Ok(match &target.node {
+    match &target.node {
         ExprKind::Tuple { elts, .. } => {
             if let BasicValueEnum::StructValue(v) = value.to_basic_value_enum(ctx, generator) {
                 for (i, elt) in elts.iter().enumerate() {
@@ -120,13 +126,12 @@ pub fn gen_assign<'ctx, 'a, G: CodeGenerator>(
                 let (start, end, step) =
                     handle_slice_indices(lower, upper, step, ctx, generator, ls)?;
                 let value = value.to_basic_value_enum(ctx, generator).into_pointer_value();
-                let ty = if let TypeEnum::TList { ty } =
-                    &*ctx.unifier.get_ty(target.custom.unwrap())
-                {
-                    ctx.get_llvm_type(generator, *ty)
-                } else {
-                    unreachable!()
-                };
+                let ty =
+                    if let TypeEnum::TList { ty } = &*ctx.unifier.get_ty(target.custom.unwrap()) {
+                        ctx.get_llvm_type(generator, *ty)
+                    } else {
+                        unreachable!()
+                    };
                 let src_ind = handle_slice_indices(&None, &None, &None, ctx, generator, value)?;
                 list_slice_assignment(
                     ctx,
@@ -153,7 +158,8 @@ pub fn gen_assign<'ctx, 'a, G: CodeGenerator>(
             let val = value.to_basic_value_enum(ctx, generator);
             ctx.builder.build_store(ptr, val);
         }
-    })
+    };
+    Ok(())
 }
 
 pub fn gen_for<'ctx, 'a, G: CodeGenerator>(
@@ -420,10 +426,10 @@ pub fn get_builtins<'ctx, 'a, G: CodeGenerator>(
 ) -> FunctionValue<'ctx> {
     ctx.module.get_function(symbol).unwrap_or_else(|| {
         let ty = match symbol {
-            "__artiq_raise" => ctx.ctx.void_type().fn_type(
-                &[ctx.get_llvm_type(generator, ctx.primitives.exception).into()],
-                false,
-            ),
+            "__artiq_raise" => ctx
+                .ctx
+                .void_type()
+                .fn_type(&[ctx.get_llvm_type(generator, ctx.primitives.exception).into()], false),
             "__artiq_resume" => ctx.ctx.void_type().fn_type(&[], false),
             "__artiq_end_catch" => ctx.ctx.void_type().fn_type(&[], false),
             _ => unimplemented!(),
@@ -444,7 +450,7 @@ pub fn exn_constructor<'ctx, 'a>(
     obj: Option<(Type, ValueEnum<'ctx>)>,
     _fun: (&FunSignature, DefinitionId),
     mut args: Vec<(Option<StrRef>, ValueEnum<'ctx>)>,
-    generator: &mut dyn CodeGenerator
+    generator: &mut dyn CodeGenerator,
 ) -> Result<Option<BasicValueEnum<'ctx>>, String> {
     let (zelf_ty, zelf) = obj.unwrap();
     let zelf = zelf.to_basic_value_enum(ctx, generator).into_pointer_value();
@@ -459,19 +465,16 @@ pub fn exn_constructor<'ctx, 'a>(
     };
     let defs = ctx.top_level.definitions.read();
     let def = defs[zelf_id].read();
-    let zelf_name = if let TopLevelDef::Class { name, .. } = &*def {
-        *name
-    } else {
-        unreachable!()
-    };
+    let zelf_name =
+        if let TopLevelDef::Class { name, .. } = &*def { *name } else { unreachable!() };
     let exception_name = format!("0:{}", zelf_name);
     unsafe {
         let id_ptr = ctx.builder.build_in_bounds_gep(zelf, &[zero, zero], "exn.id");
         let id = ctx.resolver.get_string_id(&exception_name);
         ctx.builder.build_store(id_ptr, int32.const_int(id as u64, false));
         let empty_string = ctx.gen_const(generator, &Constant::Str("".into()), ctx.primitives.str);
-        let ptr = ctx.builder.build_in_bounds_gep(
-            zelf, &[zero, int32.const_int(5, false)], "exn.msg");
+        let ptr =
+            ctx.builder.build_in_bounds_gep(zelf, &[zero, int32.const_int(5, false)], "exn.msg");
         let msg = if !args.is_empty() {
             args.remove(0).1.to_basic_value_enum(ctx, generator)
         } else {
@@ -485,19 +488,28 @@ pub fn exn_constructor<'ctx, 'a>(
                 ctx.ctx.i64_type().const_zero().into()
             };
             let ptr = ctx.builder.build_in_bounds_gep(
-                zelf, &[zero, int32.const_int(*i, false)], "exn.param");
+                zelf,
+                &[zero, int32.const_int(*i, false)],
+                "exn.param",
+            );
             ctx.builder.build_store(ptr, value);
         }
         // set file, func to empty string
         for i in [1, 4].iter() {
             let ptr = ctx.builder.build_in_bounds_gep(
-                zelf, &[zero, int32.const_int(*i, false)], "exn.str");
+                zelf,
+                &[zero, int32.const_int(*i, false)],
+                "exn.str",
+            );
             ctx.builder.build_store(ptr, empty_string);
         }
         // set ints to zero
         for i in [2, 3].iter() {
             let ptr = ctx.builder.build_in_bounds_gep(
-                zelf, &[zero, int32.const_int(*i, false)], "exn.ints");
+                zelf,
+                &[zero, int32.const_int(*i, false)],
+                "exn.ints",
+            );
             ctx.builder.build_store(ptr, zero);
         }
     }
@@ -515,17 +527,33 @@ pub fn gen_raise<'ctx, 'a, G: CodeGenerator>(
             let int32 = ctx.ctx.i32_type();
             let zero = int32.const_zero();
             let exception = exception.into_pointer_value();
-            let file_ptr = ctx.builder.build_in_bounds_gep(exception, &[zero, int32.const_int(1, false)], "file_ptr");
+            let file_ptr = ctx.builder.build_in_bounds_gep(
+                exception,
+                &[zero, int32.const_int(1, false)],
+                "file_ptr",
+            );
             let filename = ctx.gen_string(generator, loc.file.0);
             ctx.builder.build_store(file_ptr, filename);
-            let row_ptr = ctx.builder.build_in_bounds_gep(exception, &[zero, int32.const_int(2, false)], "row_ptr");
+            let row_ptr = ctx.builder.build_in_bounds_gep(
+                exception,
+                &[zero, int32.const_int(2, false)],
+                "row_ptr",
+            );
             ctx.builder.build_store(row_ptr, int32.const_int(loc.row as u64, false));
-            let col_ptr = ctx.builder.build_in_bounds_gep(exception, &[zero, int32.const_int(3, false)], "col_ptr");
+            let col_ptr = ctx.builder.build_in_bounds_gep(
+                exception,
+                &[zero, int32.const_int(3, false)],
+                "col_ptr",
+            );
             ctx.builder.build_store(col_ptr, int32.const_int(loc.column as u64, false));
 
             let current_fun = ctx.builder.get_insert_block().unwrap().get_parent().unwrap();
             let fun_name = ctx.gen_string(generator, current_fun.get_name().to_str().unwrap());
-            let name_ptr = ctx.builder.build_in_bounds_gep(exception, &[zero, int32.const_int(4, false)], "name_ptr");
+            let name_ptr = ctx.builder.build_in_bounds_gep(
+                exception,
+                &[zero, int32.const_int(4, false)],
+                "name_ptr",
+            );
             ctx.builder.build_store(name_ptr, fun_name);
         }
 
@@ -599,7 +627,11 @@ pub fn gen_try<'ctx, 'a, G: CodeGenerator>(
         for handler_node in handlers.iter() {
             let ExcepthandlerKind::ExceptHandler { type_, .. } = &handler_node.node;
             // none or Exception
-            if type_.is_none() || ctx.unifier.unioned(type_.as_ref().unwrap().custom.unwrap(), ctx.primitives.exception) {
+            if type_.is_none()
+                || ctx
+                    .unifier
+                    .unioned(type_.as_ref().unwrap().custom.unwrap(), ctx.primitives.exception)
+            {
                 clauses.push(None);
                 found_catch_all = true;
                 break;
@@ -928,7 +960,8 @@ pub fn gen_stmt<'ctx, 'a, G: CodeGenerator>(
         StmtKind::Try { .. } => gen_try(generator, ctx, stmt)?,
         StmtKind::Raise { exc, .. } => {
             if let Some(exc) = exc {
-                let exc = generator.gen_expr(ctx, exc)?.unwrap().to_basic_value_enum(ctx, generator);
+                let exc =
+                    generator.gen_expr(ctx, exc)?.unwrap().to_basic_value_enum(ctx, generator);
                 gen_raise(generator, ctx, Some(&exc), stmt.location);
             } else {
                 gen_raise(generator, ctx, None, stmt.location);

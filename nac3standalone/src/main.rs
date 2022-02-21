@@ -1,24 +1,30 @@
 use inkwell::{
+    memory_buffer::MemoryBuffer,
     passes::{PassManager, PassManagerBuilder},
     targets::*,
-    OptimizationLevel, memory_buffer::MemoryBuffer,
+    OptimizationLevel,
 };
+use parking_lot::{Mutex, RwLock};
 use std::{borrow::Borrow, collections::HashMap, env, fs, path::Path, sync::Arc};
-use parking_lot::{RwLock, Mutex};
 
-use nac3parser::{ast::{Expr, ExprKind, StmtKind}, parser};
 use nac3core::{
     codegen::{
-        concrete_type::ConcreteTypeStore, CodeGenTask, DefaultCodeGenerator, WithCall,
-        WorkerRegistry, irrt::load_irrt,
+        concrete_type::ConcreteTypeStore, irrt::load_irrt, CodeGenTask, DefaultCodeGenerator,
+        WithCall, WorkerRegistry,
     },
     symbol_resolver::SymbolResolver,
     toplevel::{
-        composer::TopLevelComposer,
-        TopLevelDef, helper::parse_parameter_default_value,
-        type_annotation::*,
+        composer::TopLevelComposer, helper::parse_parameter_default_value, type_annotation::*,
+        TopLevelDef,
     },
-    typecheck::{type_inferencer::PrimitiveStore, typedef::{Type, Unifier, FunSignature}}
+    typecheck::{
+        type_inferencer::PrimitiveStore,
+        typedef::{FunSignature, Type, Unifier},
+    },
+};
+use nac3parser::{
+    ast::{Expr, ExprKind, StmtKind},
+    parser,
 };
 
 mod basic_symbol_resolver;
@@ -26,10 +32,7 @@ use basic_symbol_resolver::*;
 
 fn main() {
     let file_name = env::args().nth(1).unwrap();
-    let threads: u32 = env::args()
-        .nth(2)
-        .map(|s| str::parse(&s).unwrap())
-        .unwrap_or(1);
+    let threads: u32 = env::args().nth(2).map(|s| str::parse(&s).unwrap()).unwrap_or(1);
 
     Target::initialize_all(&InitializationConfig::default());
 
@@ -42,10 +45,8 @@ fn main() {
     };
 
     let primitive: PrimitiveStore = TopLevelComposer::make_primitives().0;
-    let (mut composer, builtins_def, builtins_ty) = TopLevelComposer::new(
-        vec![],
-        Default::default()
-    );
+    let (mut composer, builtins_def, builtins_ty) =
+        TopLevelComposer::new(vec![], Default::default());
 
     let internal_resolver: Arc<ResolverInternal> = ResolverInternal {
         id_to_type: builtins_ty.into(),
@@ -83,15 +84,23 @@ fn main() {
                                     x,
                                     Default::default(),
                                 )?;
-                                get_type_from_type_annotation_kinds(def_list, unifier, primitives, &ty)
+                                get_type_from_type_annotation_kinds(
+                                    def_list, unifier, primitives, &ty,
+                                )
                             })
                             .collect::<Result<Vec<_>, _>>()?;
                         Ok(unifier.get_fresh_var_with_range(&constraints, None, None).0)
                     } else {
-                        Err(format!("expression {:?} cannot be handled as a TypeVar in global scope", var))
+                        Err(format!(
+                            "expression {:?} cannot be handled as a TypeVar in global scope",
+                            var
+                        ))
                     }
                 } else {
-                    Err(format!("expression {:?} cannot be handled as a TypeVar in global scope", var))
+                    Err(format!(
+                        "expression {:?} cannot be handled as a TypeVar in global scope",
+                        var
+                    ))
                 }
             }
 
@@ -116,7 +125,9 @@ fn main() {
                             ) {
                                 internal_resolver.add_id_type(*id, var);
                                 Ok(())
-                            } else if let Ok(val) = parse_parameter_default_value(value.borrow(), resolver) {
+                            } else if let Ok(val) =
+                                parse_parameter_default_value(value.borrow(), resolver)
+                            {
                                 internal_resolver.add_module_global(*id, val);
                                 Ok(())
                             } else {
@@ -126,8 +137,7 @@ fn main() {
                                 ))
                             }
                         }
-                        ExprKind::List { elts, .. }
-                        | ExprKind::Tuple { elts, .. } => {
+                        ExprKind::List { elts, .. } | ExprKind::Tuple { elts, .. } => {
                             handle_assignment_pattern(
                                 elts,
                                 value,
@@ -135,16 +145,18 @@ fn main() {
                                 internal_resolver,
                                 def_list,
                                 unifier,
-                                primitives
+                                primitives,
                             )?;
                             Ok(())
                         }
-                        _ => Err(format!("assignment to {:?} is not supported at {}", targets[0], targets[0].location))
+                        _ => Err(format!(
+                            "assignment to {:?} is not supported at {}",
+                            targets[0], targets[0].location
+                        )),
                     }
                 } else {
                     match &value.node {
-                        ExprKind::List { elts, .. }
-                        | ExprKind::Tuple { elts, .. } => {
+                        ExprKind::List { elts, .. } | ExprKind::Tuple { elts, .. } => {
                             if elts.len() != targets.len() {
                                 Err(format!(
                                     "number of elements to unpack does not match (expect {}, found {}) at {}",
@@ -161,13 +173,16 @@ fn main() {
                                         internal_resolver,
                                         def_list,
                                         unifier,
-                                        primitives
+                                        primitives,
                                     )?;
                                 }
                                 Ok(())
                             }
-                        },
-                        _ => Err(format!("unpack of this expression is not supported at {}", value.location))
+                        }
+                        _ => Err(format!(
+                            "unpack of this expression is not supported at {}",
+                            value.location
+                        )),
                     }
                 }
             }
@@ -190,9 +205,8 @@ fn main() {
             continue;
         }
 
-        let (name, def_id, ty) = composer
-            .register_top_level(stmt, Some(resolver.clone()), "__main__".into())
-            .unwrap();
+        let (name, def_id, ty) =
+            composer.register_top_level(stmt, Some(resolver.clone()), "__main__".into()).unwrap();
 
         internal_resolver.add_id_def(name, def_id);
         if let Some(ty) = ty {
@@ -200,11 +214,7 @@ fn main() {
         }
     }
 
-    let signature = FunSignature {
-        args: vec![],
-        ret: primitive.int32,
-        vars: HashMap::new(),
-    };
+    let signature = FunSignature { args: vec![], ret: primitive.int32, vars: HashMap::new() };
     let mut store = ConcreteTypeStore::new();
     let mut cache = HashMap::new();
     let signature = store.from_signature(&mut composer.unifier, &primitive, &signature, &mut cache);
@@ -216,17 +226,12 @@ fn main() {
 
     let instance = {
         let defs = top_level.definitions.read();
-        let mut instance =
-            defs[resolver
-                .get_identifier_def("run".into())
-                .unwrap_or_else(|_| panic!("cannot find run() entry point")).0
-            ].write();
-        if let TopLevelDef::Function {
-            instance_to_stmt,
-            instance_to_symbol,
-            ..
-        } = &mut *instance
-        {
+        let mut instance = defs[resolver
+            .get_identifier_def("run".into())
+            .unwrap_or_else(|_| panic!("cannot find run() entry point"))
+            .0]
+            .write();
+        if let TopLevelDef::Function { instance_to_stmt, instance_to_symbol, .. } = &mut *instance {
             instance_to_symbol.insert("".to_string(), "run".to_string());
             instance_to_stmt[""].clone()
         } else {
@@ -291,8 +296,7 @@ fn main() {
     passes.run_on(&main);
 
     let triple = TargetMachine::get_default_triple();
-    let target =
-        Target::from_triple(&triple).expect("couldn't create target from target triple");
+    let target = Target::from_triple(&triple).expect("couldn't create target from target triple");
     let target_machine = target
         .create_target_machine(
             &triple,
@@ -304,10 +308,6 @@ fn main() {
         )
         .expect("couldn't create target machine");
     target_machine
-        .write_to_file(
-            &main,
-            FileType::Object,
-            Path::new("module.o"),
-        )
+        .write_to_file(&main, FileType::Object, Path::new("module.o"))
         .expect("couldn't write module to file");
 }
