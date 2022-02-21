@@ -31,7 +31,7 @@ pub fn get_subst_key(
     let mut vars = obj
         .map(|ty| {
             if let TypeEnum::TObj { params, .. } = &*unifier.get_ty(ty) {
-                params.borrow().clone()
+                params.clone()
             } else {
                 unreachable!()
             }
@@ -40,7 +40,7 @@ pub fn get_subst_key(
     vars.extend(fun_vars.iter());
     let sorted = vars.keys().filter(|id| filter.map(|v| v.contains(id)).unwrap_or(true)).sorted();
     sorted
-        .map(|id| unifier.stringify(vars[id], &mut |id| id.to_string(), &mut |id| id.to_string()))
+        .map(|id| unifier.internal_stringify(vars[id], &mut |id| id.to_string(), &mut |id| id.to_string(), &mut None))
         .join(", ")
 }
 
@@ -352,7 +352,7 @@ pub fn gen_constructor<'ctx, 'a, G: CodeGenerator>(
     signature: &FunSignature,
     def: &TopLevelDef,
     params: Vec<(Option<StrRef>, ValueEnum<'ctx>)>,
-) -> BasicValueEnum<'ctx> {
+) -> Result<BasicValueEnum<'ctx>, String> {
     match def {
         TopLevelDef::Class { methods, .. } => {
             // TODO: what about other fields that require alloca?
@@ -374,9 +374,9 @@ pub fn gen_constructor<'ctx, 'a, G: CodeGenerator>(
                     Some((signature.ret, zelf.into())),
                     (&sign, fun_id),
                     params,
-                );
+                )?;
             }
-            zelf
+            Ok(zelf)
         }
         _ => unreachable!(),
     }
@@ -387,7 +387,7 @@ pub fn gen_func_instance<'ctx, 'a>(
     obj: Option<(Type, ValueEnum<'ctx>)>,
     fun: (&FunSignature, &mut TopLevelDef, String),
     id: usize,
-) -> String {
+) -> Result<String, String> {
     if let (
         sign,
         TopLevelDef::Function {
@@ -396,56 +396,57 @@ pub fn gen_func_instance<'ctx, 'a>(
         key,
     ) = fun
     {
-        instance_to_symbol.get(&key).cloned().unwrap_or_else(|| {
-            let symbol = format!("{}.{}", name, instance_to_symbol.len());
-            instance_to_symbol.insert(key.clone(), symbol.clone());
-            let key = ctx.get_subst_key(obj.as_ref().map(|a| a.0), sign, Some(var_id));
-            let instance = instance_to_stmt.get(&key).unwrap();
+        if let Some(sym) = instance_to_symbol.get(&key) {
+            return Ok(sym.clone());
+        }
+        let symbol = format!("{}.{}", name, instance_to_symbol.len());
+        instance_to_symbol.insert(key.clone(), symbol.clone());
+        let key = ctx.get_subst_key(obj.as_ref().map(|a| a.0), sign, Some(var_id));
+        let instance = instance_to_stmt.get(&key).unwrap();
 
-            let mut store = ConcreteTypeStore::new();
-            let mut cache = HashMap::new();
+        let mut store = ConcreteTypeStore::new();
+        let mut cache = HashMap::new();
 
-            let subst = sign
-                .vars
-                .iter()
-                .map(|(id, ty)| {
-                    (
-                        *instance.subst.get(id).unwrap(),
-                        store.from_unifier_type(&mut ctx.unifier, &ctx.primitives, *ty, &mut cache),
-                    )
-                })
-                .collect();
+        let subst = sign
+            .vars
+            .iter()
+            .map(|(id, ty)| {
+                (
+                    *instance.subst.get(id).unwrap(),
+                    store.from_unifier_type(&mut ctx.unifier, &ctx.primitives, *ty, &mut cache),
+                )
+            })
+            .collect();
 
-            let mut signature =
-                store.from_signature(&mut ctx.unifier, &ctx.primitives, sign, &mut cache);
+        let mut signature =
+            store.from_signature(&mut ctx.unifier, &ctx.primitives, sign, &mut cache);
 
-            if let Some(obj) = &obj {
-                let zelf =
-                    store.from_unifier_type(&mut ctx.unifier, &ctx.primitives, obj.0, &mut cache);
-                if let ConcreteTypeEnum::TFunc { args, .. } = &mut signature {
-                    args.insert(
-                        0,
-                        ConcreteFuncArg { name: "self".into(), ty: zelf, default_value: None },
-                    )
-                } else {
-                    unreachable!()
-                }
+        if let Some(obj) = &obj {
+            let zelf =
+                store.from_unifier_type(&mut ctx.unifier, &ctx.primitives, obj.0, &mut cache);
+            if let ConcreteTypeEnum::TFunc { args, .. } = &mut signature {
+                args.insert(
+                    0,
+                    ConcreteFuncArg { name: "self".into(), ty: zelf, default_value: None },
+                )
+            } else {
+                unreachable!()
             }
-            let signature = store.add_cty(signature);
+        }
+        let signature = store.add_cty(signature);
 
-            ctx.registry.add_task(CodeGenTask {
-                symbol_name: symbol.clone(),
-                body: instance.body.clone(),
-                resolver: resolver.as_ref().unwrap().clone(),
-                calls: instance.calls.clone(),
-                subst,
-                signature,
-                store,
-                unifier_index: instance.unifier_id,
-                id,
-            });
-            symbol
-        })
+        ctx.registry.add_task(CodeGenTask {
+            symbol_name: symbol.clone(),
+            body: instance.body.clone(),
+            resolver: resolver.as_ref().unwrap().clone(),
+            calls: instance.calls.clone(),
+            subst,
+            signature,
+            store,
+            unifier_index: instance.unifier_id,
+            id,
+        });
+        Ok(symbol)
     } else {
         unreachable!()
     }
@@ -457,9 +458,8 @@ pub fn gen_call<'ctx, 'a, G: CodeGenerator>(
     obj: Option<(Type, ValueEnum<'ctx>)>,
     fun: (&FunSignature, DefinitionId),
     params: Vec<(Option<StrRef>, ValueEnum<'ctx>)>,
-) -> Option<BasicValueEnum<'ctx>> {
+) -> Result<Option<BasicValueEnum<'ctx>>, String> {
     let definition = ctx.top_level.definitions.read().get(fun.1 .0).cloned().unwrap();
-
     let id;
     let key;
     let param_vals;
@@ -492,7 +492,6 @@ pub fn gen_call<'ctx, 'a, G: CodeGenerator>(
                 if let Some(obj) = &obj {
                     real_params.insert(0, obj.1.clone());
                 }
-
                 let static_params = real_params
                     .iter()
                     .enumerate()
@@ -530,16 +529,16 @@ pub fn gen_call<'ctx, 'a, G: CodeGenerator>(
                     .into_iter()
                     .map(|p| p.to_basic_value_enum(ctx, generator))
                     .collect_vec();
-                instance_to_symbol.get(&key).cloned()
+                instance_to_symbol.get(&key).cloned().ok_or_else(|| "".into())
             }
             TopLevelDef::Class { .. } => {
-                return Some(generator.gen_constructor(ctx, fun.0, &*def, params))
+                return Ok(Some(generator.gen_constructor(ctx, fun.0, &*def, params)?))
             }
         }
     }
-    .unwrap_or_else(|| {
+    .or_else(|_: String| {
         generator.gen_func_instance(ctx, obj.clone(), (fun.0, &mut *definition.write(), key), id)
-    });
+    })?;
     let fun_val = ctx.module.get_function(&symbol).unwrap_or_else(|| {
         let mut args = fun.0.args.clone();
         if let Some(obj) = &obj {
@@ -554,8 +553,7 @@ pub fn gen_call<'ctx, 'a, G: CodeGenerator>(
         };
         ctx.module.add_function(&symbol, fun_ty, None)
     });
-
-    ctx.build_call_or_invoke(fun_val, &param_vals, "call")
+    Ok(ctx.build_call_or_invoke(fun_val, &param_vals, "call"))
 }
 
 pub fn destructure_range<'ctx, 'a>(
@@ -607,7 +605,7 @@ pub fn gen_comprehension<'ctx, 'a, G: CodeGenerator>(
     generator: &mut G,
     ctx: &mut CodeGenContext<'ctx, 'a>,
     expr: &Expr<Option<Type>>,
-) -> BasicValueEnum<'ctx> {
+) -> Result<BasicValueEnum<'ctx>, String> {
     if let ExprKind::ListComp { elt, generators } = &expr.node {
         let current = ctx.builder.get_insert_block().unwrap().get_parent().unwrap();
         let test_bb = ctx.ctx.append_basic_block(current, "test");
@@ -615,13 +613,13 @@ pub fn gen_comprehension<'ctx, 'a, G: CodeGenerator>(
         let cont_bb = ctx.ctx.append_basic_block(current, "cont");
 
         let Comprehension { target, iter, ifs, .. } = &generators[0];
-        let iter_val = generator.gen_expr(ctx, iter).unwrap().to_basic_value_enum(ctx, generator);
+        let iter_val = generator.gen_expr(ctx, iter)?.unwrap().to_basic_value_enum(ctx, generator);
         let int32 = ctx.ctx.i32_type();
         let size_t = generator.get_size_type(ctx.ctx);
         let zero_size_t = size_t.const_zero();
         let zero_32 = int32.const_zero();
 
-        let index = generator.gen_var_alloc(ctx, size_t.into());
+        let index = generator.gen_var_alloc(ctx, size_t.into())?;
         ctx.builder.build_store(index, zero_size_t);
 
         let elem_ty = ctx.get_llvm_type(generator, elt.custom.unwrap());
@@ -664,7 +662,7 @@ pub fn gen_comprehension<'ctx, 'a, G: CodeGenerator>(
             list_content =
                 ctx.build_gep_and_load(list, &[zero_size_t, zero_32]).into_pointer_value();
 
-            let i = generator.gen_store_target(ctx, target);
+            let i = generator.gen_store_target(ctx, target)?;
             ctx.builder.build_store(i, ctx.builder.build_int_sub(start, step, "start_init"));
             ctx.builder.build_unconditional_branch(test_bb);
             ctx.builder.position_at_end(test_bb);
@@ -699,7 +697,7 @@ pub fn gen_comprehension<'ctx, 'a, G: CodeGenerator>(
             list = allocate_list(generator, ctx, elem_ty, length);
             list_content =
                 ctx.build_gep_and_load(list, &[zero_size_t, zero_32]).into_pointer_value();
-            let counter = generator.gen_var_alloc(ctx, size_t.into());
+            let counter = generator.gen_var_alloc(ctx, size_t.into())?;
             // counter = -1
             ctx.builder.build_store(counter, size_t.const_int(u64::max_value(), true));
             ctx.builder.build_unconditional_branch(test_bb);
@@ -714,11 +712,11 @@ pub fn gen_comprehension<'ctx, 'a, G: CodeGenerator>(
                 .build_gep_and_load(iter_val.into_pointer_value(), &[zero_size_t, zero_32])
                 .into_pointer_value();
             let val = ctx.build_gep_and_load(arr_ptr, &[tmp]);
-            generator.gen_assign(ctx, target, val.into());
+            generator.gen_assign(ctx, target, val.into())?;
         }
         for cond in ifs.iter() {
             let result = generator
-                .gen_expr(ctx, cond)
+                .gen_expr(ctx, cond)?
                 .unwrap()
                 .to_basic_value_enum(ctx, generator)
                 .into_int_value();
@@ -726,7 +724,7 @@ pub fn gen_comprehension<'ctx, 'a, G: CodeGenerator>(
             ctx.builder.build_conditional_branch(result, succ, test_bb);
             ctx.builder.position_at_end(succ);
         }
-        let elem = generator.gen_expr(ctx, elt).unwrap();
+        let elem = generator.gen_expr(ctx, elt)?.unwrap();
         let i = ctx.builder.build_load(index, "i").into_int_value();
         let elem_ptr = unsafe { ctx.builder.build_gep(list_content, &[i], "elem_ptr") };
         let val = elem.to_basic_value_enum(ctx, generator);
@@ -739,7 +737,7 @@ pub fn gen_comprehension<'ctx, 'a, G: CodeGenerator>(
             ctx.builder.build_gep(list, &[zero_size_t, int32.const_int(1, false)], "length")
         };
         ctx.builder.build_store(len_ptr, ctx.builder.build_load(index, "index"));
-        list.into()
+        Ok(list.into())
     } else {
         unreachable!()
     }
@@ -751,16 +749,16 @@ pub fn gen_binop_expr<'ctx, 'a, G: CodeGenerator>(
     left: &Expr<Option<Type>>,
     op: &Operator,
     right: &Expr<Option<Type>>,
-) -> ValueEnum<'ctx> {
+) -> Result<ValueEnum<'ctx>, String> {
     let ty1 = ctx.unifier.get_representative(left.custom.unwrap());
     let ty2 = ctx.unifier.get_representative(right.custom.unwrap());
-    let left = generator.gen_expr(ctx, left).unwrap().to_basic_value_enum(ctx, generator);
-    let right = generator.gen_expr(ctx, right).unwrap().to_basic_value_enum(ctx, generator);
+    let left = generator.gen_expr(ctx, left)?.unwrap().to_basic_value_enum(ctx, generator);
+    let right = generator.gen_expr(ctx, right)?.unwrap().to_basic_value_enum(ctx, generator);
 
     // we can directly compare the types, because we've got their representatives
     // which would be unchanged until further unification, which we would never do
     // when doing code generation for function instances
-    if ty1 == ty2 && [ctx.primitives.int32, ctx.primitives.int64].contains(&ty1) {
+    Ok(if ty1 == ty2 && [ctx.primitives.int32, ctx.primitives.int64].contains(&ty1) {
         ctx.gen_int_ops(op, left, right)
     } else if ty1 == ty2 && ctx.primitives.float == ty1 {
         ctx.gen_float_ops(op, left, right)
@@ -783,17 +781,17 @@ pub fn gen_binop_expr<'ctx, 'a, G: CodeGenerator>(
     } else {
         unimplemented!()
     }
-    .into()
+    .into())
 }
 
 pub fn gen_expr<'ctx, 'a, G: CodeGenerator>(
     generator: &mut G,
     ctx: &mut CodeGenContext<'ctx, 'a>,
     expr: &Expr<Option<Type>>,
-) -> Option<ValueEnum<'ctx>> {
+) -> Result<Option<ValueEnum<'ctx>>, String> {
     let int32 = ctx.ctx.i32_type();
     let zero = int32.const_int(0, false);
-    Some(match &expr.node {
+    Ok(Some(match &expr.node {
         ExprKind::Constant { value, .. } => {
             let ty = expr.custom.unwrap();
             ctx.gen_const(generator, value, ty).into()
@@ -823,8 +821,8 @@ pub fn gen_expr<'ctx, 'a, G: CodeGenerator>(
             // we should use memcpy for that instead of generating thousands of stores
             let elements = elts
                 .iter()
-                .map(|x| generator.gen_expr(ctx, x).unwrap().to_basic_value_enum(ctx, generator))
-                .collect_vec();
+                .map(|x| generator.gen_expr(ctx, x).map(|v| v.unwrap().to_basic_value_enum(ctx, generator)))
+                .collect::<Result<Vec<_>, _>>()?;
             let ty = if elements.is_empty() {
                 if let TypeEnum::TList { ty } = &*ctx.unifier.get_ty(expr.custom.unwrap()) {
                     ctx.get_llvm_type(generator, *ty)
@@ -852,8 +850,8 @@ pub fn gen_expr<'ctx, 'a, G: CodeGenerator>(
         ExprKind::Tuple { elts, .. } => {
             let element_val = elts
                 .iter()
-                .map(|x| generator.gen_expr(ctx, x).unwrap().to_basic_value_enum(ctx, generator))
-                .collect_vec();
+                .map(|x| generator.gen_expr(ctx, x).map(|v| v.unwrap().to_basic_value_enum(ctx, generator)))
+                .collect::<Result<Vec<_>, _>>()?;
             let element_ty = element_val.iter().map(BasicValueEnum::get_type).collect_vec();
             let tuple_ty = ctx.ctx.struct_type(&element_ty, false);
             let tuple_ptr = ctx.builder.build_alloca(tuple_ty, "tuple");
@@ -871,7 +869,7 @@ pub fn gen_expr<'ctx, 'a, G: CodeGenerator>(
         }
         ExprKind::Attribute { value, attr, .. } => {
             // note that we would handle class methods directly in calls
-            match generator.gen_expr(ctx, value).unwrap() {
+            match generator.gen_expr(ctx, value)?.unwrap() {
                 ValueEnum::Static(v) => v.get_field(*attr, ctx).unwrap_or_else(|| {
                     let v = v.to_basic_value_enum(ctx, generator);
                     let index = ctx.get_attr_index(value.custom.unwrap(), *attr);
@@ -892,7 +890,7 @@ pub fn gen_expr<'ctx, 'a, G: CodeGenerator>(
         ExprKind::BoolOp { op, values } => {
             // requires conditional branches for short-circuiting...
             let left = generator
-                .gen_expr(ctx, &values[0])
+                .gen_expr(ctx, &values[0])?
                 .unwrap()
                 .to_basic_value_enum(ctx, generator)
                 .into_int_value();
@@ -908,7 +906,7 @@ pub fn gen_expr<'ctx, 'a, G: CodeGenerator>(
                     ctx.builder.build_unconditional_branch(cont_bb);
                     ctx.builder.position_at_end(b_bb);
                     let b = generator
-                        .gen_expr(ctx, &values[1])
+                        .gen_expr(ctx, &values[1])?
                         .unwrap()
                         .to_basic_value_enum(ctx, generator)
                         .into_int_value();
@@ -918,7 +916,7 @@ pub fn gen_expr<'ctx, 'a, G: CodeGenerator>(
                 Boolop::And => {
                     ctx.builder.position_at_end(a_bb);
                     let a = generator
-                        .gen_expr(ctx, &values[1])
+                        .gen_expr(ctx, &values[1])?
                         .unwrap()
                         .to_basic_value_enum(ctx, generator)
                         .into_int_value();
@@ -934,10 +932,10 @@ pub fn gen_expr<'ctx, 'a, G: CodeGenerator>(
             phi.add_incoming(&[(&a, a_bb), (&b, b_bb)]);
             phi.as_basic_value().into()
         }
-        ExprKind::BinOp { op, left, right } => gen_binop_expr(generator, ctx, left, op, right),
+        ExprKind::BinOp { op, left, right } => gen_binop_expr(generator, ctx, left, op, right)?,
         ExprKind::UnaryOp { op, operand } => {
             let ty = ctx.unifier.get_representative(operand.custom.unwrap());
-            let val = generator.gen_expr(ctx, operand).unwrap().to_basic_value_enum(ctx, generator);
+            let val = generator.gen_expr(ctx, operand)?.unwrap().to_basic_value_enum(ctx, generator);
             if ty == ctx.primitives.bool {
                 let val = val.into_int_value();
                 match op {
@@ -984,7 +982,7 @@ pub fn gen_expr<'ctx, 'a, G: CodeGenerator>(
         }
         ExprKind::Compare { left, ops, comparators } => {
             izip!(chain(once(left.as_ref()), comparators.iter()), comparators.iter(), ops.iter(),)
-                .fold(None, |prev, (lhs, rhs, op)| {
+                .fold(Ok(None), |prev: Result<Option<_>, String>, (lhs, rhs, op)| {
                     let ty = ctx.unifier.get_representative(lhs.custom.unwrap());
                     let current =
                         if [ctx.primitives.int32, ctx.primitives.int64, ctx.primitives.bool]
@@ -995,11 +993,11 @@ pub fn gen_expr<'ctx, 'a, G: CodeGenerator>(
                                 BasicValueEnum::IntValue(rhs),
                             ) = (
                                 generator
-                                    .gen_expr(ctx, lhs)
+                                    .gen_expr(ctx, lhs)?
                                     .unwrap()
                                     .to_basic_value_enum(ctx, generator),
                                 generator
-                                    .gen_expr(ctx, rhs)
+                                    .gen_expr(ctx, rhs)?
                                     .unwrap()
                                     .to_basic_value_enum(ctx, generator),
                             ) {
@@ -1023,11 +1021,11 @@ pub fn gen_expr<'ctx, 'a, G: CodeGenerator>(
                                 BasicValueEnum::FloatValue(rhs),
                             ) = (
                                 generator
-                                    .gen_expr(ctx, lhs)
+                                    .gen_expr(ctx, lhs)?
                                     .unwrap()
                                     .to_basic_value_enum(ctx, generator),
                                 generator
-                                    .gen_expr(ctx, rhs)
+                                    .gen_expr(ctx, rhs)?
                                     .unwrap()
                                     .to_basic_value_enum(ctx, generator),
                             ) {
@@ -1048,14 +1046,14 @@ pub fn gen_expr<'ctx, 'a, G: CodeGenerator>(
                         } else {
                             unimplemented!()
                         };
-                    prev.map(|v| ctx.builder.build_and(v, current, "cmp")).or(Some(current))
-                })
+                    Ok(prev?.map(|v| ctx.builder.build_and(v, current, "cmp")).or(Some(current)))
+                })?
                 .unwrap()
                 .into() // as there should be at least 1 element, it should never be none
         }
         ExprKind::IfExp { test, body, orelse } => {
             let test = generator
-                .gen_expr(ctx, test)
+                .gen_expr(ctx, test)?
                 .unwrap()
                 .to_basic_value_enum(ctx, generator)
                 .into_int_value();
@@ -1065,10 +1063,10 @@ pub fn gen_expr<'ctx, 'a, G: CodeGenerator>(
             let cont_bb = ctx.ctx.append_basic_block(current, "cont");
             ctx.builder.build_conditional_branch(test, then_bb, else_bb);
             ctx.builder.position_at_end(then_bb);
-            let a = generator.gen_expr(ctx, body).unwrap().to_basic_value_enum(ctx, generator);
+            let a = generator.gen_expr(ctx, body)?.unwrap().to_basic_value_enum(ctx, generator);
             ctx.builder.build_unconditional_branch(cont_bb);
             ctx.builder.position_at_end(else_bb);
-            let b = generator.gen_expr(ctx, orelse).unwrap().to_basic_value_enum(ctx, generator);
+            let b = generator.gen_expr(ctx, orelse)?.unwrap().to_basic_value_enum(ctx, generator);
             ctx.builder.build_unconditional_branch(cont_bb);
             ctx.builder.position_at_end(cont_bb);
             let phi = ctx.builder.build_phi(a.get_type(), "ifexpr");
@@ -1077,13 +1075,15 @@ pub fn gen_expr<'ctx, 'a, G: CodeGenerator>(
         }
         ExprKind::Call { func, args, keywords } => {
             let mut params =
-                args.iter().map(|arg| (None, generator.gen_expr(ctx, arg).unwrap())).collect_vec();
+                args.iter().map(|arg| Ok((None, generator.gen_expr(ctx, arg)?.unwrap())) as Result<_, String>)
+                .collect::<Result<Vec<_>, _>>()?;
             let kw_iter = keywords.iter().map(|kw| {
-                (
+                Ok((
                     Some(*kw.node.arg.as_ref().unwrap()),
-                    generator.gen_expr(ctx, &kw.node.value).unwrap(),
-                )
+                    generator.gen_expr(ctx, &kw.node.value)?.unwrap(),
+                )) as Result<_, String>
             });
+            let kw_iter = kw_iter.collect::<Result<Vec<_>, _>>()?;
             params.extend(kw_iter);
             let call = ctx.calls.get(&expr.location.into());
             let signature = match call {
@@ -1091,22 +1091,23 @@ pub fn gen_expr<'ctx, 'a, G: CodeGenerator>(
                 None => {
                     let ty = func.custom.unwrap();
                     if let TypeEnum::TFunc(sign) = &*ctx.unifier.get_ty(ty) {
-                        sign.borrow().clone()
+                        sign.clone()
                     } else {
                         unreachable!()
                     }
                 }
             };
-            match &func.as_ref().node {
+            let func = func.as_ref();
+            match &func.node {
                 ExprKind::Name { id, .. } => {
                     // TODO: handle primitive casts and function pointers
-                    let fun = ctx.resolver.get_identifier_def(*id).expect("Unknown identifier");
-                    return generator
-                        .gen_call(ctx, None, (&signature, fun), params)
-                        .map(|v| v.into());
+                    let fun = ctx.resolver.get_identifier_def(*id).map_err(|e| format!("{} (at {})", e, func.location))?;
+                    return Ok(generator
+                        .gen_call(ctx, None, (&signature, fun), params)?
+                        .map(|v| v.into()));
                 }
                 ExprKind::Attribute { value, attr, .. } => {
-                    let val = generator.gen_expr(ctx, value).unwrap();
+                    let val = generator.gen_expr(ctx, value)?.unwrap();
                     let id = if let TypeEnum::TObj { obj_id, .. } =
                         &*ctx.unifier.get_ty(value.custom.unwrap())
                     {
@@ -1129,14 +1130,14 @@ pub fn gen_expr<'ctx, 'a, G: CodeGenerator>(
                             unreachable!()
                         }
                     };
-                    return generator
+                    return Ok(generator
                         .gen_call(
                             ctx,
                             Some((value.custom.unwrap(), val)),
                             (&signature, fun_id),
                             params,
-                        )
-                        .map(|v| v.into());
+                        )?
+                        .map(|v| v.into()));
                 }
                 _ => unimplemented!(),
             }
@@ -1144,7 +1145,7 @@ pub fn gen_expr<'ctx, 'a, G: CodeGenerator>(
         ExprKind::Subscript { value, slice, .. } => {
             if let TypeEnum::TList { ty } = &*ctx.unifier.get_ty(value.custom.unwrap()) {
                 let v = generator
-                    .gen_expr(ctx, value)
+                    .gen_expr(ctx, value)?
                     .unwrap()
                     .to_basic_value_enum(ctx, generator)
                     .into_pointer_value();
@@ -1153,7 +1154,7 @@ pub fn gen_expr<'ctx, 'a, G: CodeGenerator>(
                 if let ExprKind::Slice { lower, upper, step } = &slice.node {
                     let one = int32.const_int(1, false);
                     let (start, end, step) =
-                        handle_slice_indices(lower, upper, step, ctx, generator, v);
+                        handle_slice_indices(lower, upper, step, ctx, generator, v)?;
                     let length = calculate_len_for_slice_range(
                         ctx,
                         start,
@@ -1174,7 +1175,7 @@ pub fn gen_expr<'ctx, 'a, G: CodeGenerator>(
                     );
                     let res_array_ret = allocate_list(generator, ctx, ty, length);
                     let res_ind =
-                        handle_slice_indices(&None, &None, &None, ctx, generator, res_array_ret);
+                        handle_slice_indices(&None, &None, &None, ctx, generator, res_array_ret)?;
                     list_slice_assignment(
                         ctx,
                         generator.get_size_type(ctx.ctx),
@@ -1189,7 +1190,7 @@ pub fn gen_expr<'ctx, 'a, G: CodeGenerator>(
                     let len = ctx.build_gep_and_load(v, &[zero, int32.const_int(1, false)])
                         .into_int_value();
                     let raw_index = generator
-                        .gen_expr(ctx, slice)
+                        .gen_expr(ctx, slice)?
                         .unwrap()
                         .to_basic_value_enum(ctx, generator)
                         .into_int_value();
@@ -1208,7 +1209,7 @@ pub fn gen_expr<'ctx, 'a, G: CodeGenerator>(
                 }
             } else if let TypeEnum::TTuple { .. } = &*ctx.unifier.get_ty(value.custom.unwrap()) {
                 let v = generator
-                    .gen_expr(ctx, value)
+                    .gen_expr(ctx, value)?
                     .unwrap()
                     .to_basic_value_enum(ctx, generator)
                     .into_struct_value();
@@ -1224,7 +1225,7 @@ pub fn gen_expr<'ctx, 'a, G: CodeGenerator>(
             }
         }
         .into(),
-        ExprKind::ListComp { .. } => gen_comprehension(generator, ctx, expr).into(),
+        ExprKind::ListComp { .. } => gen_comprehension(generator, ctx, expr)?.into(),
         _ => unimplemented!(),
-    })
+    }))
 }

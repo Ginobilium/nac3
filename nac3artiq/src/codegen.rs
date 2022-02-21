@@ -64,10 +64,10 @@ impl<'b> CodeGenerator for ArtiqCodeGenerator<'b> {
         obj: Option<(Type, ValueEnum<'ctx>)>,
         fun: (&FunSignature, DefinitionId),
         params: Vec<(Option<StrRef>, ValueEnum<'ctx>)>,
-    ) -> Option<BasicValueEnum<'ctx>> {
-        let result = gen_call(self, ctx, obj, fun, params);
+    ) -> Result<Option<BasicValueEnum<'ctx>>, String> {
+        let result = gen_call(self, ctx, obj, fun, params)?;
         if let Some(end) = self.end.clone() {
-            let old_end = self.gen_expr(ctx, &end).unwrap().to_basic_value_enum(ctx, self);
+            let old_end = self.gen_expr(ctx, &end)?.unwrap().to_basic_value_enum(ctx, self);
             let now = self.timeline.emit_now_mu(ctx);
             let smax = ctx.module.get_function("llvm.smax.i64").unwrap_or_else(|| {
                 let i64 = ctx.ctx.i64_type();
@@ -83,21 +83,21 @@ impl<'b> CodeGenerator for ArtiqCodeGenerator<'b> {
                 .try_as_basic_value()
                 .left()
                 .unwrap();
-            let end_store = self.gen_store_target(ctx, &end);
+            let end_store = self.gen_store_target(ctx, &end)?;
             ctx.builder.build_store(end_store, max);
         }
         if let Some(start) = self.start.clone() {
-            let start_val = self.gen_expr(ctx, &start).unwrap().to_basic_value_enum(ctx, self);
+            let start_val = self.gen_expr(ctx, &start)?.unwrap().to_basic_value_enum(ctx, self);
             self.timeline.emit_at_mu(ctx, start_val);
         }
-        result
+        Ok(result)
     }
 
     fn gen_with<'ctx, 'a>(
         &mut self,
         ctx: &mut CodeGenContext<'ctx, 'a>,
         stmt: &Stmt<Option<Type>>,
-    ) {
+    ) -> Result<(), String> {
         if let StmtKind::With { items, body, .. } = &stmt.node {
             if items.len() == 1 && items[0].optional_vars.is_none() {
                 let item = &items[0];
@@ -119,7 +119,7 @@ impl<'b> CodeGenerator for ArtiqCodeGenerator<'b> {
                         let old_start = self.start.take();
                         let old_end = self.end.take();
                         let now = if let Some(old_start) = &old_start {
-                            self.gen_expr(ctx, old_start).unwrap().to_basic_value_enum(ctx, self)
+                            self.gen_expr(ctx, old_start)?.unwrap().to_basic_value_enum(ctx, self)
                         } else {
                             self.timeline.emit_now_mu(ctx)
                         };
@@ -130,7 +130,7 @@ impl<'b> CodeGenerator for ArtiqCodeGenerator<'b> {
                         // the LLVM Context.
                         // The name is guaranteed to be unique as users cannot use this as variable
                         // name.
-                        self.start = old_start.clone().or_else(|| {
+                        self.start = old_start.clone().map_or_else(|| {
                             let start = format!("with-{}-start", self.name_counter).into();
                             let start_expr = Located {
                                 // location does not matter at this point
@@ -138,10 +138,10 @@ impl<'b> CodeGenerator for ArtiqCodeGenerator<'b> {
                                 node: ExprKind::Name { id: start, ctx: name_ctx.clone() },
                                 custom: Some(ctx.primitives.int64),
                             };
-                            let start = self.gen_store_target(ctx, &start_expr);
+                            let start = self.gen_store_target(ctx, &start_expr)?;
                             ctx.builder.build_store(start, now);
-                            Some(start_expr)
-                        });
+                            Ok(Some(start_expr)) as Result<_, String>
+                        }, |v| Ok(Some(v)))?;
                         let end = format!("with-{}-end", self.name_counter).into();
                         let end_expr = Located {
                             // location does not matter at this point
@@ -149,11 +149,11 @@ impl<'b> CodeGenerator for ArtiqCodeGenerator<'b> {
                             node: ExprKind::Name { id: end, ctx: name_ctx.clone() },
                             custom: Some(ctx.primitives.int64),
                         };
-                        let end = self.gen_store_target(ctx, &end_expr);
+                        let end = self.gen_store_target(ctx, &end_expr)?;
                         ctx.builder.build_store(end, now);
                         self.end = Some(end_expr);
                         self.name_counter += 1;
-                        gen_block(self, ctx, body.iter());
+                        gen_block(self, ctx, body.iter())?;
                         let current = ctx.builder.get_insert_block().unwrap();
                         // if the current block is terminated, move before the terminator
                         // we want to set the timeline before reaching the terminator
@@ -171,7 +171,7 @@ impl<'b> CodeGenerator for ArtiqCodeGenerator<'b> {
                         // set duration
                         let end_expr = self.end.take().unwrap();
                         let end_val =
-                            self.gen_expr(ctx, &end_expr).unwrap().to_basic_value_enum(ctx, self);
+                            self.gen_expr(ctx, &end_expr)?.unwrap().to_basic_value_enum(ctx, self);
 
                         // inside a sequential block
                         if old_start.is_none() {
@@ -180,7 +180,7 @@ impl<'b> CodeGenerator for ArtiqCodeGenerator<'b> {
                         // inside a parallel block, should update the outer max now_mu
                         if let Some(old_end) = &old_end {
                             let outer_end_val =
-                                self.gen_expr(ctx, old_end).unwrap().to_basic_value_enum(ctx, self);
+                                self.gen_expr(ctx, old_end)?.unwrap().to_basic_value_enum(ctx, self);
                             let smax =
                                 ctx.module.get_function("llvm.smax.i64").unwrap_or_else(|| {
                                     let i64 = ctx.ctx.i64_type();
@@ -196,7 +196,7 @@ impl<'b> CodeGenerator for ArtiqCodeGenerator<'b> {
                                 .try_as_basic_value()
                                 .left()
                                 .unwrap();
-                            let outer_end = self.gen_store_target(ctx, old_end);
+                            let outer_end = self.gen_store_target(ctx, old_end)?;
                             ctx.builder.build_store(outer_end, max);
                         }
                         self.start = old_start;
@@ -204,29 +204,29 @@ impl<'b> CodeGenerator for ArtiqCodeGenerator<'b> {
                         if reset_position {
                             ctx.builder.position_at_end(current);
                         }
-                        return;
+                        return Ok(());
                     } else if id == &"sequential".into() {
                         let start = self.start.take();
                         for stmt in body.iter() {
-                            self.gen_stmt(ctx, stmt);
+                            self.gen_stmt(ctx, stmt)?;
                             if ctx.is_terminated() {
                                 break;
                             }
                         }
                         self.start = start;
-                        return
+                        return Ok(());
                     }
                 }
             }
             // not parallel/sequential
-            gen_with(self, ctx, stmt);
+            gen_with(self, ctx, stmt)
         } else {
             unreachable!()
         }
     }
 }
 
-fn gen_rpc_tag<'ctx, 'a>(ctx: &mut CodeGenContext<'ctx, 'a>, ty: Type, buffer: &mut Vec<u8>) {
+fn gen_rpc_tag<'ctx, 'a>(ctx: &mut CodeGenContext<'ctx, 'a>, ty: Type, buffer: &mut Vec<u8>) -> Result<(), String> {
     use nac3core::typecheck::typedef::TypeEnum::*;
 
     let int32 = ctx.primitives.int32;
@@ -249,24 +249,25 @@ fn gen_rpc_tag<'ctx, 'a>(ctx: &mut CodeGenContext<'ctx, 'a>, ty: Type, buffer: &
     } else if ctx.unifier.unioned(ty, none) {
         buffer.push(b'n');
     } else {
-        let ty = ctx.unifier.get_ty(ty);
-        match &*ty {
+        let ty_enum = ctx.unifier.get_ty(ty);
+        match &*ty_enum {
             TTuple { ty } => {
                 buffer.push(b't');
                 buffer.push(ty.len() as u8);
                 for ty in ty {
-                    gen_rpc_tag(ctx, *ty, buffer);
+                    gen_rpc_tag(ctx, *ty, buffer)?;
                 }
             }
             TList { ty } => {
                 buffer.push(b'l');
-                gen_rpc_tag(ctx, *ty, buffer);
+                gen_rpc_tag(ctx, *ty, buffer)?;
             }
             // we should return an error, this will be fixed after improving error message
             // as this requires returning an error during codegen
-            _ => unimplemented!(),
+            _ => return Err(format!("Unsupported type: {:?}", ctx.unifier.stringify(ty))),
         }
     }
+    Ok(())
 }
 
 fn rpc_codegen_callback_fn<'ctx, 'a>(
@@ -275,7 +276,7 @@ fn rpc_codegen_callback_fn<'ctx, 'a>(
     fun: (&FunSignature, DefinitionId),
     args: Vec<(Option<StrRef>, ValueEnum<'ctx>)>,
     generator: &mut dyn CodeGenerator,
-) -> Option<BasicValueEnum<'ctx>> {
+) -> Result<Option<BasicValueEnum<'ctx>>, String> {
     let ptr_type = ctx.ctx.i8_type().ptr_type(inkwell::AddressSpace::Generic);
     let size_type = generator.get_size_type(ctx.ctx);
     let int8 = ctx.ctx.i8_type();
@@ -289,10 +290,10 @@ fn rpc_codegen_callback_fn<'ctx, 'a>(
         tag.push(b'O');
     }
     for arg in fun.0.args.iter() {
-        gen_rpc_tag(ctx, arg.ty, &mut tag);
+        gen_rpc_tag(ctx, arg.ty, &mut tag)?;
     }
     tag.push(b':');
-    gen_rpc_tag(ctx, fun.0.ret, &mut tag);
+    gen_rpc_tag(ctx, fun.0.ret, &mut tag)?;
 
     let mut hasher = DefaultHasher::new();
     tag.hash(&mut hasher);
@@ -432,7 +433,7 @@ fn rpc_codegen_callback_fn<'ctx, 'a>(
 
     if ctx.unifier.unioned(fun.0.ret, ctx.primitives.none) {
         ctx.build_call_or_invoke(rpc_recv, &[ptr_type.const_null().into()], "rpc_recv");
-        return None
+        return Ok(None)
     }
 
     let prehead_bb = ctx.builder.get_insert_block().unwrap();
@@ -474,7 +475,7 @@ fn rpc_codegen_callback_fn<'ctx, 'a>(
 
     ctx.builder.position_at_end(tail_bb);
 
-    if need_load {
+    Ok(if need_load {
         let result = ctx.builder.build_load(slot, "rpc.result");
         ctx.builder.build_call(
             stackrestore,
@@ -484,7 +485,7 @@ fn rpc_codegen_callback_fn<'ctx, 'a>(
         Some(result)
     } else {
         Some(slot.into())
-    }
+    })
 }
 
 pub fn rpc_codegen_callback() -> Arc<GenCall> {

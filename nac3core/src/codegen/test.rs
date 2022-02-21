@@ -18,7 +18,6 @@ use nac3parser::{
     parser::parse_program,
 };
 use parking_lot::RwLock;
-use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
@@ -57,8 +56,8 @@ impl SymbolResolver for Resolver {
         unimplemented!()
     }
 
-    fn get_identifier_def(&self, id: StrRef) -> Option<DefinitionId> {
-        self.id_to_def.read().get(&id).cloned()
+    fn get_identifier_def(&self, id: StrRef) -> Result<DefinitionId, String> {
+        self.id_to_def.read().get(&id).cloned().ok_or_else(|| format!("cannot find symbol `{}`", id))
     }
 
     fn get_string_id(&self, _: &str) -> i32 {
@@ -211,7 +210,7 @@ fn test_simple_call() {
         ret: primitives.int32,
         vars: HashMap::new(),
     };
-    let fun_ty = unifier.add_ty(TypeEnum::TFunc(RefCell::new(signature.clone())));
+    let fun_ty = unifier.add_ty(TypeEnum::TFunc(signature.clone()));
     let mut store = ConcreteTypeStore::new();
     let mut cache = HashMap::new();
     let signature = store.from_signature(&mut unifier, &primitives, &signature, &mut cache);
@@ -227,6 +226,7 @@ fn test_simple_call() {
         instance_to_symbol: HashMap::new(),
         resolver: None,
         codegen_callback: None,
+        loc: None,
     })));
 
     let resolver = Resolver {

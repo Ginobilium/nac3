@@ -1,4 +1,4 @@
-use super::super::typedef::*;
+use super::super::{typedef::*, magic_methods::with_fields};
 use super::*;
 use crate::{
     codegen::CodeGenContext,
@@ -40,8 +40,8 @@ impl SymbolResolver for Resolver {
         unimplemented!()
     }
 
-    fn get_identifier_def(&self, id: StrRef) -> Option<DefinitionId> {
-        self.id_to_def.get(&id).cloned()
+    fn get_identifier_def(&self, id: StrRef) -> Result<DefinitionId, String> {
+        self.id_to_def.get(&id).cloned().ok_or("Unknown identifier".to_string())
     }
 
     fn get_string_id(&self, _: &str) -> i32 {
@@ -69,7 +69,7 @@ impl TestEnvironment {
             fields: HashMap::new().into(),
             params: HashMap::new().into(),
         });
-        if let TypeEnum::TObj { fields, .. } = &*unifier.get_ty(int32) {
+        with_fields(&mut unifier, int32, |unifier, fields| {
             let add_ty = unifier.add_ty(TypeEnum::TFunc(
                 FunSignature {
                     args: vec![FuncArg { name: "other".into(), ty: int32, default_value: None }],
@@ -78,8 +78,8 @@ impl TestEnvironment {
                 }
                 .into(),
             ));
-            fields.borrow_mut().insert("__add__".into(), (add_ty, false));
-        }
+            fields.insert("__add__".into(), (add_ty, false));
+        });
         let int64 = unifier.add_ty(TypeEnum::TObj {
             obj_id: DefinitionId(1),
             fields: HashMap::new().into(),
@@ -170,7 +170,7 @@ impl TestEnvironment {
             fields: HashMap::new().into(),
             params: HashMap::new().into(),
         });
-        if let TypeEnum::TObj { fields, .. } = &*unifier.get_ty(int32) {
+        with_fields(&mut unifier, int32, |unifier, fields| {
             let add_ty = unifier.add_ty(TypeEnum::TFunc(
                 FunSignature {
                     args: vec![FuncArg { name: "other".into(), ty: int32, default_value: None }],
@@ -179,8 +179,8 @@ impl TestEnvironment {
                 }
                 .into(),
             ));
-            fields.borrow_mut().insert("__add__".into(), (add_ty, false));
-        }
+            fields.insert("__add__".into(), (add_ty, false));
+        });
         let int64 = unifier.add_ty(TypeEnum::TObj {
             obj_id: DefinitionId(1),
             fields: HashMap::new().into(),
@@ -230,6 +230,7 @@ impl TestEnvironment {
                     ancestors: Default::default(),
                     resolver: None,
                     constructor: None,
+                    loc: None
                 })
                 .into(),
             );
@@ -238,7 +239,7 @@ impl TestEnvironment {
 
         let primitives = PrimitiveStore { int32, int64, float, bool, none, range, str, exception };
 
-        let (v0, id) = unifier.get_fresh_var();
+        let (v0, id) = unifier.get_dummy_var();
 
         let foo_ty = unifier.add_ty(TypeEnum::TObj {
             obj_id: DefinitionId(defs + 1),
@@ -255,6 +256,7 @@ impl TestEnvironment {
                 ancestors: Default::default(),
                 resolver: None,
                 constructor: None,
+                loc: None,
             })
             .into(),
         );
@@ -293,6 +295,7 @@ impl TestEnvironment {
                 ancestors: Default::default(),
                 resolver: None,
                 constructor: None,
+                loc: None
             })
             .into(),
         );
@@ -322,6 +325,7 @@ impl TestEnvironment {
                 ancestors: Default::default(),
                 resolver: None,
                 constructor: None,
+                loc: None
             })
             .into(),
         );
@@ -416,7 +420,7 @@ impl TestEnvironment {
         c = 1.234
         d = b(c)
     "},
-    [("a", "fn[[x=float, y=float], float]"), ("b", "fn[[x=float], float]"), ("c", "float"), ("d", "float")].iter().cloned().collect(),
+    [("a", "fn[[x:float, y:float], float]"), ("b", "fn[[x:float], float]"), ("c", "float"), ("d", "float")].iter().cloned().collect(),
     &[]
     ; "lambda test")]
 #[test_case(indoc! {"
@@ -425,7 +429,7 @@ impl TestEnvironment {
         a = b
         c = b(1)
     "},
-    [("a", "fn[[x=int32], int32]"), ("b", "fn[[x=int32], int32]"), ("c", "int32")].iter().cloned().collect(),
+    [("a", "fn[[x:int32], int32]"), ("b", "fn[[x:int32], int32]"), ("c", "int32")].iter().cloned().collect(),
     &[]
     ; "lambda test 2")]
 #[test_case(indoc! {"
@@ -441,8 +445,8 @@ impl TestEnvironment {
         b(123)
 
     "},
-    [("a", "fn[[x=bool], bool]"), ("b", "fn[[x=int32], int32]"), ("c", "bool"),
-     ("d", "int32"), ("foo1", "Foo[1->bool]"), ("foo2", "Foo[1->int32]")].iter().cloned().collect(),
+    [("a", "fn[[x:bool], bool]"), ("b", "fn[[x:int32], int32]"), ("c", "bool"),
+     ("d", "int32"), ("foo1", "Foo[bool]"), ("foo2", "Foo[int32]")].iter().cloned().collect(),
     &[]
     ; "obj test")]
 #[test_case(indoc! {"
@@ -485,33 +489,37 @@ fn test_basic(source: &str, mapping: HashMap<&str, &str>, virtuals: &[(&str, &st
     inferencer.check_block(&statements, &mut defined_identifiers).unwrap();
 
     for (k, v) in inferencer.variable_mapping.iter() {
-        let name = inferencer.unifier.stringify(
+        let name = inferencer.unifier.internal_stringify(
             *v,
             &mut |v| (*id_to_name.get(&v).unwrap()).into(),
             &mut |v| format!("v{}", v),
+            &mut None
         );
         println!("{}: {}", k, name);
     }
     for (k, v) in mapping.iter() {
         let ty = inferencer.variable_mapping.get(&(*k).into()).unwrap();
-        let name = inferencer.unifier.stringify(
+        let name = inferencer.unifier.internal_stringify(
             *ty,
             &mut |v| (*id_to_name.get(&v).unwrap()).into(),
             &mut |v| format!("v{}", v),
+            &mut None
         );
         assert_eq!(format!("{}: {}", k, v), format!("{}: {}", k, name));
     }
     assert_eq!(inferencer.virtual_checks.len(), virtuals.len());
     for ((a, b, _), (x, y)) in zip(inferencer.virtual_checks.iter(), virtuals) {
-        let a = inferencer.unifier.stringify(
+        let a = inferencer.unifier.internal_stringify(
             *a,
             &mut |v| (*id_to_name.get(&v).unwrap()).into(),
             &mut |v| format!("v{}", v),
+            &mut None
         );
-        let b = inferencer.unifier.stringify(
+        let b = inferencer.unifier.internal_stringify(
             *b,
             &mut |v| (*id_to_name.get(&v).unwrap()).into(),
             &mut |v| format!("v{}", v),
+            &mut None
         );
 
         assert_eq!(&a, x);
@@ -627,19 +635,21 @@ fn test_primitive_magic_methods(source: &str, mapping: HashMap<&str, &str>) {
     inferencer.check_block(&statements, &mut defined_identifiers).unwrap();
 
     for (k, v) in inferencer.variable_mapping.iter() {
-        let name = inferencer.unifier.stringify(
+        let name = inferencer.unifier.internal_stringify(
             *v,
             &mut |v| (*id_to_name.get(&v).unwrap()).into(),
             &mut |v| format!("v{}", v),
+            &mut None
         );
         println!("{}: {}", k, name);
     }
     for (k, v) in mapping.iter() {
         let ty = inferencer.variable_mapping.get(&(*k).into()).unwrap();
-        let name = inferencer.unifier.stringify(
+        let name = inferencer.unifier.internal_stringify(
             *ty,
             &mut |v| (*id_to_name.get(&v).unwrap()).into(),
             &mut |v| format!("v{}", v),
+            &mut None
         );
         assert_eq!(format!("{}: {}", k, v), format!("{}: {}", k, name));
     }

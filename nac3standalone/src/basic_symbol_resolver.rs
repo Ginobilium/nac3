@@ -63,8 +63,8 @@ impl SymbolResolver for Resolver {
         unimplemented!()
     }
 
-    fn get_identifier_def(&self, id: StrRef) -> Option<DefinitionId> {
-        self.0.id_to_def.lock().get(&id).cloned()
+    fn get_identifier_def(&self, id: StrRef) -> Result<DefinitionId, String> {
+        self.0.id_to_def.lock().get(&id).cloned().ok_or_else(|| "Undefined identifier".to_string())
     }
 
     fn get_string_id(&self, s: &str) -> i32 {

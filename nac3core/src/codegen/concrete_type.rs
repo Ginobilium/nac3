@@ -157,7 +157,6 @@ impl ConcreteTypeStore {
                 TypeEnum::TObj { obj_id, fields, params } => ConcreteTypeEnum::TObj {
                     obj_id: *obj_id,
                     fields: fields
-                        .borrow()
                         .iter()
                         .filter_map(|(name, ty)| {
                             // here we should not have type vars, but some partial instantiated
@@ -171,7 +170,6 @@ impl ConcreteTypeStore {
                         })
                         .collect(),
                     params: params
-                        .borrow()
                         .iter()
                         .map(|(id, ty)| {
                             (*id, self.from_unifier_type(unifier, primitives, *ty, cache))
@@ -182,7 +180,6 @@ impl ConcreteTypeStore {
                     ty: self.from_unifier_type(unifier, primitives, *ty, cache),
                 },
                 TypeEnum::TFunc(signature) => {
-                    let signature = signature.borrow();
                     self.from_signature(unifier, primitives, &*signature, cache)
                 }
                 _ => unreachable!(),
@@ -210,7 +207,7 @@ impl ConcreteTypeStore {
             return if let Some(ty) = ty {
                 *ty
             } else {
-                *ty = Some(unifier.get_fresh_var().0);
+                *ty = Some(unifier.get_dummy_var().0);
                 ty.unwrap()
             };
         }

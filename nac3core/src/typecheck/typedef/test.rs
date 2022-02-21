@@ -1,4 +1,5 @@
 use super::*;
+use super::super::magic_methods::with_fields;
 use indoc::indoc;
 use itertools::Itertools;
 use std::collections::HashMap;
@@ -7,7 +8,6 @@ use test_case::test_case;
 impl Unifier {
     /// Check whether two types are equal.
     fn eq(&mut self, a: Type, b: Type) -> bool {
-        use TypeVarMeta::*;
         if a == b {
             return true;
         }
@@ -21,13 +21,13 @@ impl Unifier {
 
         match (&*ty_a, &*ty_b) {
             (
-                TypeEnum::TVar { meta: Generic, id: id1, .. },
-                TypeEnum::TVar { meta: Generic, id: id2, .. },
+                TypeEnum::TVar { fields: None, id: id1, .. },
+                TypeEnum::TVar { fields: None, id: id2, .. },
             ) => id1 == id2,
             (
-                TypeEnum::TVar { meta: Sequence(map1), .. },
-                TypeEnum::TVar { meta: Sequence(map2), .. },
-            ) => self.map_eq(&map1.borrow(), &map2.borrow()),
+                TypeEnum::TVar { fields: Some(map1), .. },
+                TypeEnum::TVar { fields: Some(map2), .. },
+            ) => self.map_eq2(map1, map2),
             (TypeEnum::TTuple { ty: ty1 }, TypeEnum::TTuple { ty: ty2 }) => {
                 ty1.len() == ty2.len()
                     && ty1.iter().zip(ty2.iter()).all(|(t1, t2)| self.eq(*t1, *t2))
@@ -37,13 +37,9 @@ impl Unifier {
                 self.eq(*ty1, *ty2)
             }
             (
-                TypeEnum::TVar { meta: Record(fields1), .. },
-                TypeEnum::TVar { meta: Record(fields2), .. },
-            ) => self.map_eq2(&fields1.borrow(), &fields2.borrow()),
-            (
                 TypeEnum::TObj { obj_id: id1, params: params1, .. },
                 TypeEnum::TObj { obj_id: id2, params: params2, .. },
-            ) => id1 == id2 && self.map_eq(&params1.borrow(), &params2.borrow()),
+            ) => id1 == id2 && self.map_eq(params1, params2),
             // TCall and TFunc are not yet implemented
             _ => false,
         }
@@ -64,19 +60,15 @@ impl Unifier {
         true
     }
 
-    fn map_eq2<K>(
-        &mut self,
-        map1: &Mapping<K, (Type, bool)>,
-        map2: &Mapping<K, (Type, bool)>,
-    ) -> bool
+    fn map_eq2<K>(&mut self, map1: &Mapping<K, RecordField>, map2: &Mapping<K, RecordField>) -> bool
     where
         K: std::hash::Hash + std::cmp::Eq + std::clone::Clone,
     {
         if map1.len() != map2.len() {
             return false;
         }
-        for (k, (ty1, m1)) in map1.iter() {
-            if !map2.get(k).map(|(ty2, m2)| m1 == m2 && self.eq(*ty1, *ty2)).unwrap_or(false) {
+        for (k, v) in map1.iter() {
+            if !map2.get(k).map(|v1| self.eq(v.ty, v1.ty)).unwrap_or(false) {
                 return false;
             }
         }
@@ -98,27 +90,27 @@ impl TestEnvironment {
             "int".into(),
             unifier.add_ty(TypeEnum::TObj {
                 obj_id: DefinitionId(0),
-                fields: HashMap::new().into(),
-                params: HashMap::new().into(),
+                fields: HashMap::new(),
+                params: HashMap::new(),
             }),
         );
         type_mapping.insert(
             "float".into(),
             unifier.add_ty(TypeEnum::TObj {
                 obj_id: DefinitionId(1),
-                fields: HashMap::new().into(),
-                params: HashMap::new().into(),
+                fields: HashMap::new(),
+                params: HashMap::new(),
             }),
         );
         type_mapping.insert(
             "bool".into(),
             unifier.add_ty(TypeEnum::TObj {
                 obj_id: DefinitionId(2),
-                fields: HashMap::new().into(),
-                params: HashMap::new().into(),
+                fields: HashMap::new(),
+                params: HashMap::new(),
             }),
         );
-        let (v0, id) = unifier.get_fresh_var();
+        let (v0, id) = unifier.get_dummy_var();
         type_mapping.insert(
             "Foo".into(),
             unifier.add_ty(TypeEnum::TObj {
@@ -126,9 +118,8 @@ impl TestEnvironment {
                 fields: [("a".into(), (v0, true))]
                     .iter()
                     .cloned()
-                    .collect::<HashMap<_, _>>()
-                    .into(),
-                params: [(id, v0)].iter().cloned().collect::<HashMap<_, _>>().into(),
+                    .collect::<HashMap<_, _>>(),
+                params: [(id, v0)].iter().cloned().collect::<HashMap<_, _>>(),
             }),
         );
 
@@ -174,7 +165,7 @@ impl TestEnvironment {
                     let eq = s.find('=').unwrap();
                     let key = s[1..eq].into();
                     let result = self.internal_parse(&s[eq + 1..], mapping);
-                    fields.insert(key, (result.0, true));
+                    fields.insert(key, RecordField::new(result.0, true, None));
                     s = result.1;
                 }
                 (self.unifier.add_record(fields), &s[1..])
@@ -187,7 +178,6 @@ impl TestEnvironment {
                     let mut ty = *self.type_mapping.get(x).unwrap();
                     let te = self.unifier.get_ty(ty);
                     if let TypeEnum::TObj { params, .. } = &*te.as_ref() {
-                        let params = params.borrow();
                         if !params.is_empty() {
                             assert!(&s[0..1] == "[");
                             let mut p = Vec::new();
@@ -208,6 +198,10 @@ impl TestEnvironment {
                 (ty, s)
             }
         }
+    }
+
+    fn unify(&mut self, typ1: Type, typ2: Type) -> Result<(), String> {
+        self.unifier.unify(typ1, typ2).map_err(|e| e.to_display(&self.unifier).to_string())
     }
 }
 
@@ -258,7 +252,7 @@ fn test_unify(
         let mut env = TestEnvironment::new();
         let mut mapping = HashMap::new();
         for i in 1..=variable_count {
-            let v = env.unifier.get_fresh_var();
+            let v = env.unifier.get_dummy_var();
             mapping.insert(format!("v{}", i), v.0);
         }
         // unification may have side effect when we do type resolution, so freeze the types
@@ -276,6 +270,7 @@ fn test_unify(
             println!("{} = {}", a, b);
             let t1 = env.parse(a, &mapping);
             let t2 = env.parse(b, &mapping);
+            println!("a = {}, b = {}", env.unifier.stringify(t1), env.unifier.stringify(t2));
             assert!(env.unifier.eq(t1, t2));
         }
     }
@@ -286,7 +281,7 @@ fn test_unify(
         ("v1", "tuple[int]"),
         ("v2", "list[int]"),
     ],
-    (("v1", "v2"), "Cannot unify list[0] with tuple[0]")
+    (("v1", "v2"), "Incompatible types: list[0] and tuple[0]")
     ; "type mismatch"
 )]
 #[test_case(2,
@@ -294,7 +289,7 @@ fn test_unify(
         ("v1", "tuple[int]"),
         ("v2", "tuple[float]"),
     ],
-    (("v1", "v2"), "Cannot unify 0 with 1")
+    (("v1", "v2"), "Incompatible types: 0 and 1")
     ; "tuple parameter mismatch"
 )]
 #[test_case(2,
@@ -302,7 +297,7 @@ fn test_unify(
         ("v1", "tuple[int,int]"),
         ("v2", "tuple[int]"),
     ],
-    (("v1", "v2"), "Cannot unify tuples with length 2 and 1")
+    (("v1", "v2"), "Tuple length mismatch: got tuple[0, 0] and tuple[0]")
     ; "tuple length mismatch"
 )]
 #[test_case(3,
@@ -310,7 +305,7 @@ fn test_unify(
         ("v1", "Record[a=float,b=int]"),
         ("v2", "Foo[v3]"),
     ],
-    (("v1", "v2"), "No such attribute b")
+    (("v1", "v2"), "`3[var4]::b` field does not exist")
     ; "record obj merge"
 )]
 /// Test cases for invalid unifications.
@@ -322,7 +317,7 @@ fn test_invalid_unification(
     let mut env = TestEnvironment::new();
     let mut mapping = HashMap::new();
     for i in 1..=variable_count {
-        let v = env.unifier.get_fresh_var();
+        let v = env.unifier.get_dummy_var();
         mapping.insert(format!("v{}", i), v.0);
     }
     // unification may have side effect when we do type resolution, so freeze the types
@@ -338,7 +333,7 @@ fn test_invalid_unification(
     for (a, b) in pairs {
         env.unifier.unify(a, b).unwrap();
     }
-    assert_eq!(env.unifier.unify(t1, t2), Err(errornous_pair.1.to_string()));
+    assert_eq!(env.unify(t1, t2), Err(errornous_pair.1.to_string()));
 }
 
 #[test]
@@ -348,16 +343,17 @@ fn test_recursive_subst() {
     let foo_id = *env.type_mapping.get("Foo").unwrap();
     let foo_ty = env.unifier.get_ty(foo_id);
     let mapping: HashMap<_, _>;
-    if let TypeEnum::TObj { fields, params, .. } = &*foo_ty {
-        fields.borrow_mut().insert("rec".into(), (foo_id, true));
-        mapping = params.borrow().iter().map(|(id, _)| (*id, int)).collect();
+    with_fields(&mut env.unifier, foo_id, |_unifier, fields| {
+        fields.insert("rec".into(), (foo_id, true));
+    });
+    if let TypeEnum::TObj { params, .. } = &*foo_ty {
+        mapping = params.iter().map(|(id, _)| (*id, int)).collect();
     } else {
         unreachable!()
     }
     let instantiated = env.unifier.subst(foo_id, &mapping).unwrap();
     let instantiated_ty = env.unifier.get_ty(instantiated);
     if let TypeEnum::TObj { fields, .. } = &*instantiated_ty {
-        let fields = fields.borrow();
         assert!(env.unifier.unioned(fields.get(&"a".into()).unwrap().0, int));
         assert!(env.unifier.unioned(fields.get(&"rec".into()).unwrap().0, instantiated));
     } else {
@@ -370,32 +366,31 @@ fn test_virtual() {
     let mut env = TestEnvironment::new();
     let int = env.parse("int", &HashMap::new());
     let fun = env.unifier.add_ty(TypeEnum::TFunc(
-        FunSignature { args: vec![], ret: int, vars: HashMap::new() }.into(),
+        FunSignature { args: vec![], ret: int, vars: HashMap::new() },
     ));
     let bar = env.unifier.add_ty(TypeEnum::TObj {
         obj_id: DefinitionId(5),
         fields: [("f".into(), (fun, false)), ("a".into(), (int, false))]
             .iter()
             .cloned()
-            .collect::<HashMap<StrRef, _>>()
-            .into(),
-        params: HashMap::new().into(),
+            .collect::<HashMap<StrRef, _>>(),
+        params: HashMap::new(),
     });
-    let v0 = env.unifier.get_fresh_var().0;
-    let v1 = env.unifier.get_fresh_var().0;
+    let v0 = env.unifier.get_dummy_var().0;
+    let v1 = env.unifier.get_dummy_var().0;
 
     let a = env.unifier.add_ty(TypeEnum::TVirtual { ty: bar });
     let b = env.unifier.add_ty(TypeEnum::TVirtual { ty: v0 });
-    let c = env.unifier.add_record([("f".into(), (v1, false))].iter().cloned().collect());
+    let c = env.unifier.add_record([("f".into(), RecordField::new(v1, false, None))].iter().cloned().collect());
     env.unifier.unify(a, b).unwrap();
     env.unifier.unify(b, c).unwrap();
     assert!(env.unifier.eq(v1, fun));
 
-    let d = env.unifier.add_record([("a".into(), (v1, true))].iter().cloned().collect());
-    assert_eq!(env.unifier.unify(b, d), Err("Cannot access field a for virtual type".to_string()));
+    let d = env.unifier.add_record([("a".into(), RecordField::new(v1, true, None))].iter().cloned().collect());
+    assert_eq!(env.unify(b, d), Err("`virtual[5]::a` field does not exist".to_string()));
 
-    let d = env.unifier.add_record([("b".into(), (v1, true))].iter().cloned().collect());
-    assert_eq!(env.unifier.unify(b, d), Err("No such attribute b".to_string()));
+    let d = env.unifier.add_record([("b".into(), RecordField::new(v1, true, None))].iter().cloned().collect());
+    assert_eq!(env.unify(b, d), Err("`virtual[5]::b` field does not exist".to_string()));
 }
 
 #[test]
@@ -409,107 +404,107 @@ fn test_typevar_range() {
 
     // unification between v and int
     // where v in (int, bool)
-    let v = env.unifier.get_fresh_var_with_range(&[int, boolean]).0;
+    let v = env.unifier.get_fresh_var_with_range(&[int, boolean], None, None).0;
     env.unifier.unify(int, v).unwrap();
 
     // unification between v and list[int]
     // where v in (int, bool)
-    let v = env.unifier.get_fresh_var_with_range(&[int, boolean]).0;
+    let v = env.unifier.get_fresh_var_with_range(&[int, boolean], None, None).0;
     assert_eq!(
-        env.unifier.unify(int_list, v),
-        Err("Cannot unify variable 3 with list[0] due to incompatible value range".to_string())
+        env.unify(int_list, v),
+        Err("Expected any one of these types: 0, 2, but got list[0]".to_string())
     );
 
     // unification between v and float
     // where v in (int, bool)
-    let v = env.unifier.get_fresh_var_with_range(&[int, boolean]).0;
+    let v = env.unifier.get_fresh_var_with_range(&[int, boolean], None, None).0;
     assert_eq!(
-        env.unifier.unify(float, v),
-        Err("Cannot unify variable 4 with 1 due to incompatible value range".to_string())
+        env.unify(float, v),
+        Err("Expected any one of these types: 0, 2, but got 1".to_string())
     );
 
-    let v1 = env.unifier.get_fresh_var_with_range(&[int, boolean]).0;
+    let v1 = env.unifier.get_fresh_var_with_range(&[int, boolean], None, None).0;
     let v1_list = env.unifier.add_ty(TypeEnum::TList { ty: v1 });
-    let v = env.unifier.get_fresh_var_with_range(&[int, v1_list]).0;
+    let v = env.unifier.get_fresh_var_with_range(&[int, v1_list], None, None).0;
     // unification between v and int
     // where v in (int, list[v1]), v1 in (int, bool)
     env.unifier.unify(int, v).unwrap();
 
-    let v = env.unifier.get_fresh_var_with_range(&[int, v1_list]).0;
+    let v = env.unifier.get_fresh_var_with_range(&[int, v1_list], None, None).0;
     // unification between v and list[int]
     // where v in (int, list[v1]), v1 in (int, bool)
     env.unifier.unify(int_list, v).unwrap();
 
-    let v = env.unifier.get_fresh_var_with_range(&[int, v1_list]).0;
+    let v = env.unifier.get_fresh_var_with_range(&[int, v1_list], None, None).0;
     // unification between v and list[float]
     // where v in (int, list[v1]), v1 in (int, bool)
     assert_eq!(
-        env.unifier.unify(float_list, v),
-        Err("Cannot unify variable 8 with list[1] due to incompatible value range".to_string())
+        env.unify(float_list, v),
+        Err("Expected any one of these types: 0, list[var5], but got list[1]\n\nNotes:\n    var5 ∈ {0, 2}".to_string())
     );
 
-    let a = env.unifier.get_fresh_var_with_range(&[int, float]).0;
-    let b = env.unifier.get_fresh_var_with_range(&[boolean, float]).0;
+    let a = env.unifier.get_fresh_var_with_range(&[int, float], None, None).0;
+    let b = env.unifier.get_fresh_var_with_range(&[boolean, float], None, None).0;
     env.unifier.unify(a, b).unwrap();
     env.unifier.unify(a, float).unwrap();
 
-    let a = env.unifier.get_fresh_var_with_range(&[int, float]).0;
-    let b = env.unifier.get_fresh_var_with_range(&[boolean, float]).0;
+    let a = env.unifier.get_fresh_var_with_range(&[int, float], None, None).0;
+    let b = env.unifier.get_fresh_var_with_range(&[boolean, float], None, None).0;
     env.unifier.unify(a, b).unwrap();
     assert_eq!(
-        env.unifier.unify(a, int),
-        Err("Cannot unify variable 12 with 0 due to incompatible value range".into())
+        env.unify(a, int),
+        Err("Expected any one of these types: 1, but got 0".into())
     );
 
-    let a = env.unifier.get_fresh_var_with_range(&[int, float]).0;
-    let b = env.unifier.get_fresh_var_with_range(&[boolean, float]).0;
+    let a = env.unifier.get_fresh_var_with_range(&[int, float], None, None).0;
+    let b = env.unifier.get_fresh_var_with_range(&[boolean, float], None, None).0;
     let a_list = env.unifier.add_ty(TypeEnum::TList { ty: a });
-    let a_list = env.unifier.get_fresh_var_with_range(&[a_list]).0;
+    let a_list = env.unifier.get_fresh_var_with_range(&[a_list], None, None).0;
     let b_list = env.unifier.add_ty(TypeEnum::TList { ty: b });
-    let b_list = env.unifier.get_fresh_var_with_range(&[b_list]).0;
+    let b_list = env.unifier.get_fresh_var_with_range(&[b_list], None, None).0;
     env.unifier.unify(a_list, b_list).unwrap();
     let float_list = env.unifier.add_ty(TypeEnum::TList { ty: float });
     env.unifier.unify(a_list, float_list).unwrap();
     // previous unifications should not affect a and b
     env.unifier.unify(a, int).unwrap();
 
-    let a = env.unifier.get_fresh_var_with_range(&[int, float]).0;
-    let b = env.unifier.get_fresh_var_with_range(&[boolean, float]).0;
+    let a = env.unifier.get_fresh_var_with_range(&[int, float], None, None).0;
+    let b = env.unifier.get_fresh_var_with_range(&[boolean, float], None, None).0;
     let a_list = env.unifier.add_ty(TypeEnum::TList { ty: a });
     let b_list = env.unifier.add_ty(TypeEnum::TList { ty: b });
     env.unifier.unify(a_list, b_list).unwrap();
     let int_list = env.unifier.add_ty(TypeEnum::TList { ty: int });
     assert_eq!(
-        env.unifier.unify(a_list, int_list),
-        Err("Cannot unify variable 19 with 0 due to incompatible value range".into())
+        env.unify(a_list, int_list),
+        Err("Expected any one of these types: 1, but got 0".into())
     );
 
-    let a = env.unifier.get_fresh_var_with_range(&[int, float]).0;
-    let b = env.unifier.get_fresh_var().0;
+    let a = env.unifier.get_fresh_var_with_range(&[int, float], None, None).0;
+    let b = env.unifier.get_dummy_var().0;
     let a_list = env.unifier.add_ty(TypeEnum::TList { ty: a });
-    let a_list = env.unifier.get_fresh_var_with_range(&[a_list]).0;
+    let a_list = env.unifier.get_fresh_var_with_range(&[a_list], None, None).0;
     let b_list = env.unifier.add_ty(TypeEnum::TList { ty: b });
     env.unifier.unify(a_list, b_list).unwrap();
     assert_eq!(
-        env.unifier.unify(b, boolean),
-        Err("Cannot unify variable 21 with 2 due to incompatible value range".into())
+        env.unify(b, boolean),
+        Err("Expected any one of these types: 0, 1, but got 2".into())
     );
 }
 
 #[test]
 fn test_rigid_var() {
     let mut env = TestEnvironment::new();
-    let a = env.unifier.get_fresh_rigid_var().0;
-    let b = env.unifier.get_fresh_rigid_var().0;
-    let x = env.unifier.get_fresh_var().0;
+    let a = env.unifier.get_fresh_rigid_var(None, None).0;
+    let b = env.unifier.get_fresh_rigid_var(None, None).0;
+    let x = env.unifier.get_dummy_var().0;
     let list_a = env.unifier.add_ty(TypeEnum::TList { ty: a });
     let list_x = env.unifier.add_ty(TypeEnum::TList { ty: x });
     let int = env.parse("int", &HashMap::new());
     let list_int = env.parse("list[int]", &HashMap::new());
 
-    assert_eq!(env.unifier.unify(a, b), Err("Cannot unify var3 with var2".to_string()));
+    assert_eq!(env.unify(a, b), Err("Incompatible types: var3 and var2".to_string()));
     env.unifier.unify(list_a, list_x).unwrap();
-    assert_eq!(env.unifier.unify(list_x, list_int), Err("Cannot unify 0 with var2".to_string()));
+    assert_eq!(env.unify(list_x, list_int), Err("Incompatible types: 0 and var2".to_string()));
 
     env.unifier.replace_rigid_var(a, int);
     env.unifier.unify(list_x, list_int).unwrap();
@@ -526,13 +521,13 @@ fn test_instantiation() {
     let obj_map: HashMap<_, _> =
         [(0usize, "int"), (1, "float"), (2, "bool")].iter().cloned().collect();
 
-    let v = env.unifier.get_fresh_var_with_range(&[int, boolean]).0;
+    let v = env.unifier.get_fresh_var_with_range(&[int, boolean], None, None).0;
     let list_v = env.unifier.add_ty(TypeEnum::TList { ty: v });
-    let v1 = env.unifier.get_fresh_var_with_range(&[list_v, int]).0;
-    let v2 = env.unifier.get_fresh_var_with_range(&[list_int, float]).0;
-    let t = env.unifier.get_fresh_rigid_var().0;
+    let v1 = env.unifier.get_fresh_var_with_range(&[list_v, int], None, None).0;
+    let v2 = env.unifier.get_fresh_var_with_range(&[list_int, float], None, None).0;
+    let t = env.unifier.get_dummy_var().0;
     let tuple = env.unifier.add_ty(TypeEnum::TTuple { ty: vec![v, v1, v2] });
-    let v3 = env.unifier.get_fresh_var_with_range(&[tuple, t]).0;
+    let v3 = env.unifier.get_fresh_var_with_range(&[tuple, t], None, None).0;
     // t = TypeVar('t')
     // v = TypeVar('v', int, bool)
     // v1 = TypeVar('v1', 'list[v]', int)
@@ -561,9 +556,9 @@ fn test_instantiation() {
     let types = types
         .iter()
         .map(|ty| {
-            env.unifier.stringify(*ty, &mut |i| obj_map.get(&i).unwrap().to_string(), &mut |i| {
+            env.unifier.internal_stringify(*ty, &mut |i| obj_map.get(&i).unwrap().to_string(), &mut |i| {
                 format!("v{}", i)
-            })
+            }, &mut None)
         })
         .sorted()
         .collect_vec();

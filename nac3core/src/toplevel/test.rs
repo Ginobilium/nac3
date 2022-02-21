@@ -61,8 +61,8 @@ impl SymbolResolver for Resolver {
         unimplemented!()
     }
 
-    fn get_identifier_def(&self, id: StrRef) -> Option<DefinitionId> {
-        self.0.id_to_def.lock().get(&id).cloned()
+    fn get_identifier_def(&self, id: StrRef) -> Result<DefinitionId, String> {
+        self.0.id_to_def.lock().get(&id).cloned().ok_or("Unknown identifier".to_string())
     }
 
     fn get_string_id(&self, _: &str) -> i32 {
@@ -129,9 +129,9 @@ fn test_simple_register(source: Vec<&str>) {
         "},
     ],
     vec![
-        "fn[[a=0], 0]",
-        "fn[[a=2], 4]",
-        "fn[[b=1], 0]",
+        "fn[[a:0], 0]",
+        "fn[[a:2], 4]",
+        "fn[[b:1], 0]",
     ],
     vec![
         "fun",
@@ -172,7 +172,7 @@ fn test_simple_function_analyze(source: Vec<&str>, tys: Vec<&str>, names: Vec<&s
             let ty_str =
                 composer
                     .unifier
-                    .stringify(*signature, &mut |id| id.to_string(), &mut |id| id.to_string());
+                    .internal_stringify(*signature, &mut |id| id.to_string(), &mut |id| id.to_string(), &mut None);
             assert_eq!(ty_str, tys[i]);
             assert_eq!(name, names[i]);
         }
@@ -752,7 +752,7 @@ fn make_internal_resolver_with_tvar(
             .into_iter()
             .map(|(name, range)| {
                 (name, {
-                    let (ty, id) = unifier.get_fresh_var_with_range(range.as_slice());
+                    let (ty, id) = unifier.get_fresh_var_with_range(range.as_slice(), None, None);
                     if print {
                         println!("{}: {:?}, tvar{}", name, ty, id);
                     }
@@ -779,9 +779,9 @@ impl<'a> Fold<Option<Type>> for TypeToStringFolder<'a> {
     type Error = String;
     fn map_user(&mut self, user: Option<Type>) -> Result<Self::TargetU, Self::Error> {
         Ok(if let Some(ty) = user {
-            self.unifier.stringify(ty, &mut |id| format!("class{}", id.to_string()), &mut |id| {
+            self.unifier.internal_stringify(ty, &mut |id| format!("class{}", id.to_string()), &mut |id| {
                 format!("tvar{}", id.to_string())
-            })
+            }, &mut None)
         } else {
             "None".into()
         })

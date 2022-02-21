@@ -4,7 +4,6 @@ use crate::{
     symbol_resolver::SymbolValue,
 };
 use inkwell::{FloatPredicate, IntPredicate};
-use std::cell::RefCell;
 
 type BuiltinInfo = (
     Vec<(Arc<RwLock<TopLevelDef>>, Option<Stmt>)>,
@@ -18,7 +17,7 @@ pub fn get_builtins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
     let boolean = primitives.0.bool;
     let range = primitives.0.range;
     let string = primitives.0.str;
-    let num_ty = primitives.1.get_fresh_var_with_range(&[int32, int64, float, boolean]);
+    let num_ty = primitives.1.get_fresh_var_with_range(&[int32, int64, float, boolean], Some("N".into()), None);
     let var_map: HashMap<_, _> = vec![(num_ty.1, num_ty.0)].into_iter().collect();
 
     let exception_fields = vec![
@@ -34,62 +33,66 @@ pub fn get_builtins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
     ];
     let div_by_zero = primitives.1.add_ty(TypeEnum::TObj {
         obj_id: DefinitionId(10),
-        fields: RefCell::new(exception_fields.iter().map(|(a, b, c)| (*a, (*b, *c))).collect()),
+        fields: exception_fields.iter().map(|(a, b, c)| (*a, (*b, *c))).collect(),
         params: Default::default()
     });
     let index_error = primitives.1.add_ty(TypeEnum::TObj {
         obj_id: DefinitionId(11),
-        fields: RefCell::new(exception_fields.iter().map(|(a, b, c)| (*a, (*b, *c))).collect()),
+        fields: exception_fields.iter().map(|(a, b, c)| (*a, (*b, *c))).collect(),
         params: Default::default()
     });
     let exn_cons_args = vec![
         FuncArg { name: "msg".into(), ty: string,
-            default_value: Some(SymbolValue::Str("".into()))},
+        default_value: Some(SymbolValue::Str("".into()))},
         FuncArg { name: "param0".into(), ty: int64,
-            default_value: Some(SymbolValue::I64(0))},
+        default_value: Some(SymbolValue::I64(0))},
         FuncArg { name: "param1".into(), ty: int64,
-            default_value: Some(SymbolValue::I64(0))},
+        default_value: Some(SymbolValue::I64(0))},
         FuncArg { name: "param2".into(), ty: int64,
-            default_value: Some(SymbolValue::I64(0))},
+        default_value: Some(SymbolValue::I64(0))},
     ];
-    let div_by_zero_signature = primitives.1.add_ty(TypeEnum::TFunc(RefCell::new(FunSignature {
+    let div_by_zero_signature = primitives.1.add_ty(TypeEnum::TFunc(FunSignature {
         args: exn_cons_args.clone(),
         ret: div_by_zero,
         vars: Default::default()
-    })));
-    let index_error_signature = primitives.1.add_ty(TypeEnum::TFunc(RefCell::new(FunSignature {
+    }));
+    let index_error_signature = primitives.1.add_ty(TypeEnum::TFunc(FunSignature {
         args: exn_cons_args,
         ret: index_error,
         vars: Default::default()
-    })));
+    }));
     let top_level_def_list = vec![
         Arc::new(RwLock::new(TopLevelComposer::make_top_level_class_def(
-            0,
-            None,
-            "int32".into(),
-            None,
+                    0,
+                    None,
+                    "int32".into(),
+                    None,
+                    None,
         ))),
         Arc::new(RwLock::new(TopLevelComposer::make_top_level_class_def(
-            1,
-            None,
-            "int64".into(),
-            None,
+                    1,
+                    None,
+                    "int64".into(),
+                    None,
+                    None,
         ))),
         Arc::new(RwLock::new(TopLevelComposer::make_top_level_class_def(
-            2,
-            None,
-            "float".into(),
-            None,
+                    2,
+                    None,
+                    "float".into(),
+                    None,
+                    None,
         ))),
-        Arc::new(RwLock::new(TopLevelComposer::make_top_level_class_def(3, None, "bool".into(), None))),
-        Arc::new(RwLock::new(TopLevelComposer::make_top_level_class_def(4, None, "none".into(), None))),
+        Arc::new(RwLock::new(TopLevelComposer::make_top_level_class_def(3, None, "bool".into(), None, None))),
+        Arc::new(RwLock::new(TopLevelComposer::make_top_level_class_def(4, None, "none".into(), None, None))),
         Arc::new(RwLock::new(TopLevelComposer::make_top_level_class_def(
-            5,
-            None,
-            "range".into(),
-            None,
+                    5,
+                    None,
+                    "range".into(),
+                    None,
+                    None,
         ))),
-        Arc::new(RwLock::new(TopLevelComposer::make_top_level_class_def(6, None, "str".into(), None))),
+        Arc::new(RwLock::new(TopLevelComposer::make_top_level_class_def(6, None, "str".into(), None, None))),
         Arc::new(RwLock::new(TopLevelDef::Class {
             name: "Exception".into(),
             object_id: DefinitionId(7),
@@ -99,6 +102,7 @@ pub fn get_builtins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
             ancestors: vec![],
             constructor: None,
             resolver: None,
+            loc: None,
         })),
         Arc::new(RwLock::new(TopLevelDef::Function {
             name: "ZeroDivisionError.__init__".into(),
@@ -108,7 +112,8 @@ pub fn get_builtins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
             instance_to_symbol: Default::default(),
             instance_to_stmt: Default::default(),
             resolver: None,
-            codegen_callback: Some(Arc::new(GenCall::new(Box::new(exn_constructor))))
+            codegen_callback: Some(Arc::new(GenCall::new(Box::new(exn_constructor)))),
+            loc: None,
         })),
         Arc::new(RwLock::new(TopLevelDef::Function {
             name: "IndexError.__init__".into(),
@@ -118,7 +123,8 @@ pub fn get_builtins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
             instance_to_symbol: Default::default(),
             instance_to_stmt: Default::default(),
             resolver: None,
-            codegen_callback: Some(Arc::new(GenCall::new(Box::new(exn_constructor))))
+            codegen_callback: Some(Arc::new(GenCall::new(Box::new(exn_constructor)))),
+            loc: None,
         })),
         Arc::new(RwLock::new(TopLevelDef::Class {
             name: "ZeroDivisionError".into(),
@@ -132,6 +138,7 @@ pub fn get_builtins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
             ],
             constructor: Some(div_by_zero_signature),
             resolver: None,
+            loc: None,
         })),
         Arc::new(RwLock::new(TopLevelDef::Class {
             name: "IndexError".into(),
@@ -145,161 +152,165 @@ pub fn get_builtins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
             ],
             constructor: Some(index_error_signature),
             resolver: None,
+            loc: None,
         })),
         Arc::new(RwLock::new(TopLevelDef::Function {
             name: "int32".into(),
             simple_name: "int32".into(),
-            signature: primitives.1.add_ty(TypeEnum::TFunc(RefCell::new(FunSignature {
-                args: vec![FuncArg { name: "_".into(), ty: num_ty.0, default_value: None }],
+            signature: primitives.1.add_ty(TypeEnum::TFunc(FunSignature {
+                args: vec![FuncArg { name: "n".into(), ty: num_ty.0, default_value: None }],
                 ret: int32,
                 vars: var_map.clone(),
-            }))),
+            })),
             var_id: Default::default(),
             instance_to_symbol: Default::default(),
             instance_to_stmt: Default::default(),
             resolver: None,
             codegen_callback: Some(Arc::new(GenCall::new(Box::new(
-                |ctx, _, fun, args, generator| {
-                    let int32 = ctx.primitives.int32;
-                    let int64 = ctx.primitives.int64;
-                    let float = ctx.primitives.float;
-                    let boolean = ctx.primitives.bool;
-                    let arg_ty = fun.0.args[0].ty;
-                    let arg = args[0].1.clone().to_basic_value_enum(ctx, generator);
-                    if ctx.unifier.unioned(arg_ty, boolean) {
-                        Some(
-                            ctx.builder
-                                .build_int_z_extend(
-                                    arg.into_int_value(),
-                                    ctx.ctx.i32_type(),
-                                    "zext",
-                                )
-                                .into(),
-                        )
-                    } else if ctx.unifier.unioned(arg_ty, int32) {
-                        Some(arg)
-                    } else if ctx.unifier.unioned(arg_ty, int64) {
-                        Some(
-                            ctx.builder
-                                .build_int_truncate(
-                                    arg.into_int_value(),
-                                    ctx.ctx.i32_type(),
-                                    "trunc",
-                                )
-                                .into(),
-                        )
-                    } else if ctx.unifier.unioned(arg_ty, float) {
-                        let val = ctx
-                            .builder
-                            .build_float_to_signed_int(
-                                arg.into_float_value(),
-                                ctx.ctx.i32_type(),
-                                "fptosi",
-                            )
-                            .into();
-                        Some(val)
-                    } else {
-                        unreachable!()
-                    }
-                },
+                            |ctx, _, fun, args, generator| {
+                                let int32 = ctx.primitives.int32;
+                                let int64 = ctx.primitives.int64;
+                                let float = ctx.primitives.float;
+                                let boolean = ctx.primitives.bool;
+                                let arg_ty = fun.0.args[0].ty;
+                                let arg = args[0].1.clone().to_basic_value_enum(ctx, generator);
+                                Ok(if ctx.unifier.unioned(arg_ty, boolean) {
+                                    Some(
+                                        ctx.builder
+                                        .build_int_z_extend(
+                                            arg.into_int_value(),
+                                            ctx.ctx.i32_type(),
+                                            "zext",
+                                        )
+                                        .into(),
+                                    )
+                                } else if ctx.unifier.unioned(arg_ty, int32) {
+                                    Some(arg)
+                                } else if ctx.unifier.unioned(arg_ty, int64) {
+                                    Some(
+                                        ctx.builder
+                                        .build_int_truncate(
+                                            arg.into_int_value(),
+                                            ctx.ctx.i32_type(),
+                                            "trunc",
+                                        )
+                                        .into(),
+                                    )
+                                } else if ctx.unifier.unioned(arg_ty, float) {
+                                    let val = ctx
+                                        .builder
+                                        .build_float_to_signed_int(
+                                            arg.into_float_value(),
+                                            ctx.ctx.i32_type(),
+                                            "fptosi",
+                                        )
+                                        .into();
+                                    Some(val)
+                                } else {
+                                    unreachable!()
+                                })
+                            },
             )))),
+            loc: None,
         })),
         Arc::new(RwLock::new(TopLevelDef::Function {
             name: "int64".into(),
             simple_name: "int64".into(),
-            signature: primitives.1.add_ty(TypeEnum::TFunc(RefCell::new(FunSignature {
-                args: vec![FuncArg { name: "_".into(), ty: num_ty.0, default_value: None }],
+            signature: primitives.1.add_ty(TypeEnum::TFunc(FunSignature {
+                args: vec![FuncArg { name: "n".into(), ty: num_ty.0, default_value: None }],
                 ret: int64,
                 vars: var_map.clone(),
-            }))),
+            })),
             var_id: Default::default(),
             instance_to_symbol: Default::default(),
             instance_to_stmt: Default::default(),
             resolver: None,
             codegen_callback: Some(Arc::new(GenCall::new(Box::new(
-                |ctx, _, fun, args, generator| {
-                    let int32 = ctx.primitives.int32;
-                    let int64 = ctx.primitives.int64;
-                    let float = ctx.primitives.float;
-                    let boolean = ctx.primitives.bool;
-                    let arg_ty = fun.0.args[0].ty;
-                    let arg = args[0].1.clone().to_basic_value_enum(ctx, generator);
-                    if ctx.unifier.unioned(arg_ty, boolean)
-                        || ctx.unifier.unioned(arg_ty, int32)
-                    {
-                        Some(
-                            ctx.builder
-                                .build_int_z_extend(
-                                    arg.into_int_value(),
-                                    ctx.ctx.i64_type(),
-                                    "zext",
-                                )
-                                .into(),
-                        )
-                    } else if ctx.unifier.unioned(arg_ty, int64) {
-                        Some(arg)
-                    } else if ctx.unifier.unioned(arg_ty, float) {
-                        let val = ctx
-                            .builder
-                            .build_float_to_signed_int(
-                                arg.into_float_value(),
-                                ctx.ctx.i64_type(),
-                                "fptosi",
-                            )
-                            .into();
-                        Some(val)
-                    } else {
-                        unreachable!()
-                    }
-                },
+                            |ctx, _, fun, args, generator| {
+                                let int32 = ctx.primitives.int32;
+                                let int64 = ctx.primitives.int64;
+                                let float = ctx.primitives.float;
+                                let boolean = ctx.primitives.bool;
+                                let arg_ty = fun.0.args[0].ty;
+                                let arg = args[0].1.clone().to_basic_value_enum(ctx, generator);
+                                Ok(if ctx.unifier.unioned(arg_ty, boolean)
+                                    || ctx.unifier.unioned(arg_ty, int32)
+                                {
+                                    Some(
+                                        ctx.builder
+                                        .build_int_z_extend(
+                                            arg.into_int_value(),
+                                            ctx.ctx.i64_type(),
+                                            "zext",
+                                        )
+                                        .into(),
+                                    )
+                                } else if ctx.unifier.unioned(arg_ty, int64) {
+                                    Some(arg)
+                                } else if ctx.unifier.unioned(arg_ty, float) {
+                                    let val = ctx
+                                        .builder
+                                        .build_float_to_signed_int(
+                                            arg.into_float_value(),
+                                            ctx.ctx.i64_type(),
+                                            "fptosi",
+                                        )
+                                        .into();
+                                    Some(val)
+                                } else {
+                                    unreachable!()
+                                })
+                            },
             )))),
+            loc: None,
         })),
         Arc::new(RwLock::new(TopLevelDef::Function {
             name: "float".into(),
             simple_name: "float".into(),
-            signature: primitives.1.add_ty(TypeEnum::TFunc(RefCell::new(FunSignature {
-                args: vec![FuncArg { name: "_".into(), ty: num_ty.0, default_value: None }],
+            signature: primitives.1.add_ty(TypeEnum::TFunc(FunSignature {
+                args: vec![FuncArg { name: "n".into(), ty: num_ty.0, default_value: None }],
                 ret: float,
                 vars: var_map.clone(),
-            }))),
+            })),
             var_id: Default::default(),
             instance_to_symbol: Default::default(),
             instance_to_stmt: Default::default(),
             resolver: None,
             codegen_callback: Some(Arc::new(GenCall::new(Box::new(
-                |ctx, _, fun, args, generator| {
-                    let int32 = ctx.primitives.int32;
-                    let int64 = ctx.primitives.int64;
-                    let boolean = ctx.primitives.bool;
-                    let float = ctx.primitives.float;
-                    let arg_ty = fun.0.args[0].ty;
-                    let arg = args[0].1.clone().to_basic_value_enum(ctx, generator);
-                    if ctx.unifier.unioned(arg_ty, boolean)
-                        || ctx.unifier.unioned(arg_ty, int32)
-                        || ctx.unifier.unioned(arg_ty, int64)
-                    {
-                        let arg = arg.into_int_value();
-                        let val = ctx
-                            .builder
-                            .build_signed_int_to_float(arg, ctx.ctx.f64_type(), "sitofp")
-                            .into();
-                        Some(val)
-                    } else if ctx.unifier.unioned(arg_ty, float) {
-                        Some(arg)
-                    } else {
-                        unreachable!()
-                    }
-                },
+                            |ctx, _, fun, args, generator| {
+                                let int32 = ctx.primitives.int32;
+                                let int64 = ctx.primitives.int64;
+                                let boolean = ctx.primitives.bool;
+                                let float = ctx.primitives.float;
+                                let arg_ty = fun.0.args[0].ty;
+                                let arg = args[0].1.clone().to_basic_value_enum(ctx, generator);
+                                Ok(if ctx.unifier.unioned(arg_ty, boolean)
+                                    || ctx.unifier.unioned(arg_ty, int32)
+                                        || ctx.unifier.unioned(arg_ty, int64)
+                                {
+                                    let arg = arg.into_int_value();
+                                    let val = ctx
+                                        .builder
+                                        .build_signed_int_to_float(arg, ctx.ctx.f64_type(), "sitofp")
+                                        .into();
+                                    Some(val)
+                                } else if ctx.unifier.unioned(arg_ty, float) {
+                                    Some(arg)
+                                } else {
+                                    unreachable!()
+                                })
+                            },
             )))),
+            loc: None,
         })),
         Arc::new(RwLock::new(TopLevelDef::Function {
             name: "round".into(),
             simple_name: "round".into(),
-            signature: primitives.1.add_ty(TypeEnum::TFunc(RefCell::new(FunSignature {
-                args: vec![FuncArg { name: "_".into(), ty: float, default_value: None }],
+            signature: primitives.1.add_ty(TypeEnum::TFunc(FunSignature {
+                args: vec![FuncArg { name: "n".into(), ty: float, default_value: None }],
                 ret: int32,
                 vars: Default::default(),
-            }))),
+            })),
             var_id: Default::default(),
             instance_to_symbol: Default::default(),
             instance_to_stmt: Default::default(),
@@ -318,25 +329,26 @@ pub fn get_builtins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
                     .try_as_basic_value()
                     .left()
                     .unwrap();
-                Some(
+                Ok(Some(
                     ctx.builder
-                        .build_float_to_signed_int(
-                            val.into_float_value(),
-                            ctx.ctx.i32_type(),
-                            "fptosi",
-                        )
-                        .into(),
-                )
+                    .build_float_to_signed_int(
+                        val.into_float_value(),
+                        ctx.ctx.i32_type(),
+                        "fptosi",
+                    )
+                    .into(),
+                ))
             })))),
+            loc: None,
         })),
         Arc::new(RwLock::new(TopLevelDef::Function {
             name: "round64".into(),
             simple_name: "round64".into(),
-            signature: primitives.1.add_ty(TypeEnum::TFunc(RefCell::new(FunSignature {
-                args: vec![FuncArg { name: "_".into(), ty: float, default_value: None }],
+            signature: primitives.1.add_ty(TypeEnum::TFunc(FunSignature {
+                args: vec![FuncArg { name: "n".into(), ty: float, default_value: None }],
                 ret: int64,
                 vars: Default::default(),
-            }))),
+            })),
             var_id: Default::default(),
             instance_to_symbol: Default::default(),
             instance_to_stmt: Default::default(),
@@ -355,21 +367,22 @@ pub fn get_builtins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
                     .try_as_basic_value()
                     .left()
                     .unwrap();
-                Some(
+                Ok(Some(
                     ctx.builder
-                        .build_float_to_signed_int(
-                            val.into_float_value(),
-                            ctx.ctx.i64_type(),
-                            "fptosi",
-                        )
-                        .into(),
-                )
+                    .build_float_to_signed_int(
+                        val.into_float_value(),
+                        ctx.ctx.i64_type(),
+                        "fptosi",
+                    )
+                    .into(),
+                ))
             })))),
+            loc: None,
         })),
         Arc::new(RwLock::new(TopLevelDef::Function {
             name: "range".into(),
             simple_name: "range".into(),
-            signature: primitives.1.add_ty(TypeEnum::TFunc(RefCell::new(FunSignature {
+            signature: primitives.1.add_ty(TypeEnum::TFunc(FunSignature {
                 args: vec![
                     FuncArg { name: "start".into(), ty: int32, default_value: None },
                     FuncArg {
@@ -386,7 +399,7 @@ pub fn get_builtins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
                 ],
                 ret: range,
                 vars: Default::default(),
-            }))),
+            })),
             var_id: Default::default(),
             instance_to_symbol: Default::default(),
             instance_to_stmt: Default::default(),
@@ -438,33 +451,35 @@ pub fn get_builtins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
                     ctx.builder.build_store(b, stop);
                     ctx.builder.build_store(c, step);
                 }
-                Some(ptr.into())
+                Ok(Some(ptr.into()))
             })))),
+            loc: None,
         })),
         Arc::new(RwLock::new(TopLevelDef::Function {
             name: "str".into(),
             simple_name: "str".into(),
-            signature: primitives.1.add_ty(TypeEnum::TFunc(RefCell::new(FunSignature {
-                args: vec![FuncArg { name: "_".into(), ty: string, default_value: None }],
+            signature: primitives.1.add_ty(TypeEnum::TFunc(FunSignature {
+                args: vec![FuncArg { name: "s".into(), ty: string, default_value: None }],
                 ret: string,
                 vars: Default::default(),
-            }))),
+            })),
             var_id: Default::default(),
             instance_to_symbol: Default::default(),
             instance_to_stmt: Default::default(),
             resolver: None,
             codegen_callback: Some(Arc::new(GenCall::new(Box::new(|ctx, _, _, args, generator| {
-                Some(args[0].1.clone().to_basic_value_enum(ctx, generator))
+                Ok(Some(args[0].1.clone().to_basic_value_enum(ctx, generator)))
             })))),
+            loc: None,
         })),
         Arc::new(RwLock::new(TopLevelDef::Function {
             name: "bool".into(),
             simple_name: "bool".into(),
-            signature: primitives.1.add_ty(TypeEnum::TFunc(RefCell::new(FunSignature {
-                args: vec![FuncArg { name: "_".into(), ty: num_ty.0, default_value: None }],
+            signature: primitives.1.add_ty(TypeEnum::TFunc(FunSignature {
+                args: vec![FuncArg { name: "n".into(), ty: num_ty.0, default_value: None }],
                 ret: primitives.0.bool,
                 vars: var_map,
-            }))),
+            })),
             var_id: Default::default(),
             instance_to_symbol: Default::default(),
             instance_to_stmt: Default::default(),
@@ -477,7 +492,7 @@ pub fn get_builtins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
                     let boolean = ctx.primitives.bool;
                     let arg_ty = fun.0.args[0].ty;
                     let arg = args[0].1.clone().to_basic_value_enum(ctx, generator);
-                    if ctx.unifier.unioned(arg_ty, boolean) {
+                    Ok(if ctx.unifier.unioned(arg_ty, boolean) {
                         Some(arg)
                     } else if ctx.unifier.unioned(arg_ty, int32) {
                         Some(ctx.builder.build_int_compare(
@@ -505,18 +520,19 @@ pub fn get_builtins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
                         Some(val)
                     } else {
                         unreachable!()
-                    }
+                    })
                 },
             )))),
+            loc: None,
         })),
         Arc::new(RwLock::new(TopLevelDef::Function {
             name: "floor".into(),
             simple_name: "floor".into(),
-            signature: primitives.1.add_ty(TypeEnum::TFunc(RefCell::new(FunSignature {
-                args: vec![FuncArg { name: "_".into(), ty: float, default_value: None }],
+            signature: primitives.1.add_ty(TypeEnum::TFunc(FunSignature {
+                args: vec![FuncArg { name: "n".into(), ty: float, default_value: None }],
                 ret: int32,
                 vars: Default::default(),
-            }))),
+            })),
             var_id: Default::default(),
             instance_to_symbol: Default::default(),
             instance_to_stmt: Default::default(),
@@ -535,7 +551,7 @@ pub fn get_builtins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
                     .try_as_basic_value()
                     .left()
                     .unwrap();
-                Some(
+                Ok(Some(
                     ctx.builder
                         .build_float_to_signed_int(
                             val.into_float_value(),
@@ -543,17 +559,18 @@ pub fn get_builtins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
                             "fptosi",
                         )
                         .into(),
-                )
+                ))
             })))),
+            loc: None,
         })),
         Arc::new(RwLock::new(TopLevelDef::Function {
             name: "floor64".into(),
             simple_name: "floor64".into(),
-            signature: primitives.1.add_ty(TypeEnum::TFunc(RefCell::new(FunSignature {
-                args: vec![FuncArg { name: "_".into(), ty: float, default_value: None }],
+            signature: primitives.1.add_ty(TypeEnum::TFunc(FunSignature {
+                args: vec![FuncArg { name: "n".into(), ty: float, default_value: None }],
                 ret: int64,
                 vars: Default::default(),
-            }))),
+            })),
             var_id: Default::default(),
             instance_to_symbol: Default::default(),
             instance_to_stmt: Default::default(),
@@ -572,7 +589,7 @@ pub fn get_builtins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
                     .try_as_basic_value()
                     .left()
                     .unwrap();
-                Some(
+                Ok(Some(
                     ctx.builder
                         .build_float_to_signed_int(
                             val.into_float_value(),
@@ -580,17 +597,18 @@ pub fn get_builtins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
                             "fptosi",
                         )
                         .into(),
-                )
+                ))
             })))),
+            loc: None,
         })),
         Arc::new(RwLock::new(TopLevelDef::Function {
             name: "ceil".into(),
             simple_name: "ceil".into(),
-            signature: primitives.1.add_ty(TypeEnum::TFunc(RefCell::new(FunSignature {
-                args: vec![FuncArg { name: "_".into(), ty: float, default_value: None }],
+            signature: primitives.1.add_ty(TypeEnum::TFunc(FunSignature {
+                args: vec![FuncArg { name: "n".into(), ty: float, default_value: None }],
                 ret: int32,
                 vars: Default::default(),
-            }))),
+            })),
             var_id: Default::default(),
             instance_to_symbol: Default::default(),
             instance_to_stmt: Default::default(),
@@ -609,7 +627,7 @@ pub fn get_builtins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
                     .try_as_basic_value()
                     .left()
                     .unwrap();
-                Some(
+                Ok(Some(
                     ctx.builder
                         .build_float_to_signed_int(
                             val.into_float_value(),
@@ -617,17 +635,18 @@ pub fn get_builtins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
                             "fptosi",
                         )
                         .into(),
-                )
+                ))
             })))),
+            loc: None,
         })),
         Arc::new(RwLock::new(TopLevelDef::Function {
             name: "ceil64".into(),
             simple_name: "ceil64".into(),
-            signature: primitives.1.add_ty(TypeEnum::TFunc(RefCell::new(FunSignature {
-                args: vec![FuncArg { name: "_".into(), ty: float, default_value: None }],
+            signature: primitives.1.add_ty(TypeEnum::TFunc(FunSignature {
+                args: vec![FuncArg { name: "n".into(), ty: float, default_value: None }],
                 ret: int64,
                 vars: Default::default(),
-            }))),
+            })),
             var_id: Default::default(),
             instance_to_symbol: Default::default(),
             instance_to_stmt: Default::default(),
@@ -646,7 +665,7 @@ pub fn get_builtins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
                     .try_as_basic_value()
                     .left()
                     .unwrap();
-                Some(
+                Ok(Some(
                     ctx.builder
                         .build_float_to_signed_int(
                             val.into_float_value(),
@@ -654,25 +673,26 @@ pub fn get_builtins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
                             "fptosi",
                         )
                         .into(),
-                )
+                ))
             })))),
+            loc: None,
         })),
         Arc::new(RwLock::new({
-            let list_var = primitives.1.get_fresh_var();
+            let list_var = primitives.1.get_fresh_var(Some("L".into()), None);
             let list = primitives.1.add_ty(TypeEnum::TList { ty: list_var.0 });
-            let arg_ty = primitives.1.get_fresh_var_with_range(&[list, primitives.0.range]);
+            let arg_ty = primitives.1.get_fresh_var_with_range(&[list, primitives.0.range], Some("I".into()), None);
             TopLevelDef::Function {
                 name: "len".into(),
                 simple_name: "len".into(),
-                signature: primitives.1.add_ty(TypeEnum::TFunc(RefCell::new(FunSignature {
+                signature: primitives.1.add_ty(TypeEnum::TFunc(FunSignature {
                     args: vec![FuncArg {
-                        name: "_".into(),
+                        name: "ls".into(),
                         ty: arg_ty.0,
                         default_value: None
                     }],
                     ret: int32,
                     vars: vec![(list_var.1, list_var.0), (arg_ty.1, arg_ty.0)].into_iter().collect(),
-                }))),
+                })),
                 var_id: vec![arg_ty.1],
                 instance_to_symbol: Default::default(),
                 instance_to_stmt: Default::default(),
@@ -682,7 +702,7 @@ pub fn get_builtins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
                         let range_ty = ctx.primitives.range;
                         let arg_ty = fun.0.args[0].ty;
                         let arg = args[0].1.clone().to_basic_value_enum(ctx, generator);
-                        if ctx.unifier.unioned(arg_ty, range_ty) {
+                        Ok(if ctx.unifier.unioned(arg_ty, range_ty) {
                             let arg = arg.into_pointer_value();
                             let (start, end, step) = destructure_range(ctx, arg);
                             Some(calculate_len_for_slice_range(ctx, start, end, step).into())
@@ -695,9 +715,10 @@ pub fn get_builtins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
                             } else {
                                 Some(len.into())
                             }
-                        }
+                        })
                     },
                 )))),
+                loc: None,
             }
         }))
     ];

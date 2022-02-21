@@ -1,6 +1,3 @@
-use std::cell::RefCell;
-
-use crate::typecheck::typedef::TypeVarMeta;
 use super::*;
 
 #[derive(Clone, Debug)]
@@ -23,7 +20,7 @@ impl TypeAnnotation {
     pub fn stringify(&self, unifier: &mut Unifier) -> String {
         use TypeAnnotation::*;
         match self {
-            Primitive(ty) | TypeVar(ty) => unifier.default_stringify(*ty),
+            Primitive(ty) | TypeVar(ty) => unifier.stringify(*ty),
             CustomClass { id, params } => {
                 let class_name = match unifier.top_level {
                     Some(ref top) => if let TopLevelDef::Class { name, .. } = &*top.definitions.read()[id.0].read() {
@@ -65,7 +62,7 @@ pub fn parse_ast_to_type_annotation_kinds<T>(
             Ok(TypeAnnotation::Primitive(primitives.str))
         } else if id == &"Exception".into() {
             Ok(TypeAnnotation::CustomClass { id: DefinitionId(7), params: Default::default() })
-        } else if let Some(obj_id) = resolver.get_identifier_def(*id) {
+        } else if let Ok(obj_id) = resolver.get_identifier_def(*id) {
             let type_vars = {
                 let def_read = top_level_defs[obj_id.0].try_read();
                 if let Some(def_read) = def_read {
@@ -92,6 +89,8 @@ pub fn parse_ast_to_type_annotation_kinds<T>(
             Ok(TypeAnnotation::CustomClass { id: obj_id, params: vec![] })
         } else if let Ok(ty) = resolver.get_symbol_type(unifier, top_level_defs, primitives, *id) {
             if let TypeEnum::TVar { .. } = unifier.get_ty(ty).as_ref() {
+                let var = unifier.get_fresh_var(Some(*id), Some(expr.location)).0;
+                unifier.unify(var, ty).unwrap();
                 Ok(TypeAnnotation::TypeVar(ty))
             } else {
                 Err(format!(
@@ -113,8 +112,7 @@ pub fn parse_ast_to_type_annotation_kinds<T>(
                 return Err(format!("keywords cannot be class name (at {})", expr.location));
             }
         let obj_id = resolver
-            .get_identifier_def(*id)
-            .ok_or_else(|| "unknown class name".to_string())?;
+            .get_identifier_def(*id)?;
         let type_vars = {
             let def_read = top_level_defs[obj_id.0].try_read();
             if let Some(def_read) = def_read {
@@ -293,14 +291,14 @@ pub fn get_type_from_type_annotation_kinds(
                         // TODO: if allow type var to be applied(now this disallowed in the parse_to_type_annotation), need more check
                         let mut result: HashMap<u32, Type> = HashMap::new();
                         for (tvar, p) in type_vars.iter().zip(param_ty) {
-                            if let TypeEnum::TVar { id, range, meta: TypeVarMeta::Generic } =
+                            if let TypeEnum::TVar { id, range, fields: None, name, loc } =
                                 unifier.get_ty(*tvar).as_ref()
                             {
                                 let ok: bool = {
                                     // create a temp type var and unify to check compatibility
                                     p == *tvar || {
                                         let temp =
-                                            unifier.get_fresh_var_with_range(range.borrow().as_slice());
+                                            unifier.get_fresh_var_with_range(range.as_slice(), *name, *loc);
                                         unifier.unify(temp.0, p).is_ok()
                                     }
                                 };
@@ -309,10 +307,11 @@ pub fn get_type_from_type_annotation_kinds(
                                 } else {
                                     return Err(format!(
                                         "cannot apply type {} to type variable with id {:?}",
-                                        unifier.stringify(
+                                        unifier.internal_stringify(
                                             p,
                                             &mut |id| format!("class{}", id),
-                                            &mut |id| format!("tvar{}", id)
+                                            &mut |id| format!("tvar{}", id),
+                                            &mut None
                                         ),
                                         *id
                                     ));
@@ -338,7 +337,7 @@ pub fn get_type_from_type_annotation_kinds(
 
                     Ok(unifier.add_ty(TypeEnum::TObj {
                         obj_id: *obj_id,
-                        fields: RefCell::new(tobj_fields),
+                        fields: tobj_fields,
                         params: subst.into(),
                     }))
                 }
@@ -438,8 +437,8 @@ pub fn check_overload_type_annotation_compatible(
             let b = unifier.get_ty(*b);
             let b = b.deref();
             if let (
-                TypeEnum::TVar { id: a, meta: TypeVarMeta::Generic, .. },
-                TypeEnum::TVar { id: b, meta: TypeVarMeta::Generic, .. },
+                TypeEnum::TVar { id: a, fields: None, .. },
+                TypeEnum::TVar { id: b, fields: None, .. },
             ) = (a, b)
             {
                 a == b

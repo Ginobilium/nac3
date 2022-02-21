@@ -1,4 +1,13 @@
 from min_artiq import *
+from numpy import int32, int64
+
+@extern
+def output_int(x: int32):
+    ...
+
+
+class InexistingException(Exception):
+    pass
 
 @nac3
 class Demo:
@@ -10,6 +19,16 @@ class Demo:
         self.core = Core()
         self.led0 = TTLOut(self.core, 18)
         self.led1 = TTLOut(self.core, 19)
+
+    @kernel
+    def test(self):
+        a = (1, True)
+        a[0]()
+
+    @kernel
+    def test2(self):
+        a = (1, True)
+        output_int(int32(a))
 
     @kernel
     def run(self):

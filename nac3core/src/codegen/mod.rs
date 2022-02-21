@@ -206,15 +206,25 @@ impl WorkerRegistry {
         let passes = PassManager::create(&module);
         pass_builder.populate_function_pass_manager(&passes);
 
+        let mut errors = Vec::new();
         while let Some(task) = self.receiver.recv().unwrap() {
             let tmp_module = context.create_module("tmp");
-            let result = gen_func(&context, generator, self, builder, tmp_module, task);
-            builder = result.0;
-            passes.run_on(&result.2);
-            module.link_in_module(result.1).unwrap();
-            // module = result.1;
+            match gen_func(&context, generator, self, builder, tmp_module, task) {
+                Ok(result) => {
+                    builder = result.0;
+                    passes.run_on(&result.2);
+                    module.link_in_module(result.1).unwrap();
+                }
+                Err((old_builder, e)) => {
+                    builder = old_builder;
+                    errors.push(e);
+                }
+            }
             *self.task_count.lock() -= 1;
             self.wait_condvar.notify_all();
+        }
+        if !errors.is_empty() {
+            panic!("Codegen error: {}", errors.iter().join("\n----------\n"));
         }
 
         let result = module.verify();
@@ -267,7 +277,6 @@ fn get_llvm_type<'ctx>(
                 let ty = if let TopLevelDef::Class { name, fields: fields_list, .. } = &*definition.read()
                 {
                     let struct_type = ctx.opaque_struct_type(&name.to_string());
-                    let fields = fields.borrow();
                     let fields = fields_list
                         .iter()
                         .map(|f| get_llvm_type(ctx, generator, unifier, top_level, type_cache, fields[&f.0].0))
@@ -309,7 +318,7 @@ pub fn gen_func<'ctx, G: CodeGenerator>(
     builder: Builder<'ctx>,
     module: Module<'ctx>,
     task: CodeGenTask,
-) -> (Builder<'ctx>, Module<'ctx>, FunctionValue<'ctx>) {
+) -> Result<(Builder<'ctx>, Module<'ctx>, FunctionValue<'ctx>), (Builder<'ctx>, String)> {
     let top_level_ctx = registry.top_level_ctx.clone();
     let static_value_store = registry.static_value_store.clone();
     let (mut unifier, primitives) = {
@@ -478,8 +487,12 @@ pub fn gen_func<'ctx, G: CodeGenerator>(
         static_value_store,
     };
 
+    let mut err = None;
     for stmt in task.body.iter() {
-        generator.gen_stmt(&mut code_gen_context, stmt);
+        if let Err(e) = generator.gen_stmt(&mut code_gen_context, stmt) {
+            err = Some(e);
+            break;
+        }
         if code_gen_context.is_terminated() {
             break;
         }
@@ -490,6 +503,9 @@ pub fn gen_func<'ctx, G: CodeGenerator>(
     }
 
     let CodeGenContext { builder, module, .. } = code_gen_context;
+    if let Some(e) = err {
+        return Err((builder, e));
+    }
 
-    (builder, module, fn_val)
+    Ok((builder, module, fn_val))
 }

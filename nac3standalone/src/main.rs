@@ -86,7 +86,7 @@ fn main() {
                                 get_type_from_type_annotation_kinds(def_list, unifier, primitives, &ty)
                             })
                             .collect::<Result<Vec<_>, _>>()?;
-                        Ok(unifier.get_fresh_var_with_range(&constraints).0)
+                        Ok(unifier.get_fresh_var_with_range(&constraints, None, None).0)
                     } else {
                         Err(format!("expression {:?} cannot be handled as a TypeVar in global scope", var))
                     }
@@ -219,7 +219,7 @@ fn main() {
         let mut instance =
             defs[resolver
                 .get_identifier_def("run".into())
-                .unwrap_or_else(|| panic!("cannot find run() entry point")).0
+                .unwrap_or_else(|_| panic!("cannot find run() entry point")).0
             ].write();
         if let TopLevelDef::Function {
             instance_to_stmt,

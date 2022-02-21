@@ -3,7 +3,7 @@ use std::convert::{From, TryInto};
 use std::iter::once;
 use std::{cell::RefCell, sync::Arc};
 
-use super::typedef::{Call, FunSignature, FuncArg, Type, TypeEnum, Unifier};
+use super::typedef::{Call, FunSignature, FuncArg, Type, TypeEnum, Unifier, RecordField};
 use super::{magic_methods::*, typedef::CallId};
 use crate::{symbol_resolver::SymbolResolver, toplevel::TopLevelContext};
 use itertools::izip;
@@ -147,7 +147,9 @@ impl<'a> fold::Fold<()> for Inferencer<'a> {
                                     self.defined_identifiers.insert(name);
                                 }
                                 if let Some(old_typ) = self.variable_mapping.insert(name, typ) {
-                                    self.unifier.unify(old_typ, typ)?;
+                                    let loc = handler.location;
+                                    self.unifier.unify(old_typ, typ).map_err(|e| e.at(Some(loc))
+                                        .to_display(self.unifier).to_string())?;
                                 }
                             }
                             let mut type_ = naive_folder.fold_expr(*type_)?;
@@ -249,7 +251,8 @@ impl<'a> fold::Fold<()> for Inferencer<'a> {
                                 }
                             })
                             .collect();
-                        let targets = targets?;
+                        let loc = node.location;
+                        let targets = targets.map_err(|e| e.at(Some(loc)).to_display(self.unifier).to_string())?;
                         return Ok(Located {
                             location: node.location,
                             node: ast::StmtKind::Assign {
@@ -310,11 +313,9 @@ impl<'a> fold::Fold<()> for Inferencer<'a> {
                     // if we can simply unify without creating new types...
                     let mut fast_path = false;
                     if let TypeEnum::TObj { fields, .. } = &*self.unifier.get_ty(ty) {
-                        let fields = fields.borrow();
                         fast_path = true;
                         if let Some(enter) = fields.get(&"__enter__".into()).cloned() {
                             if let TypeEnum::TFunc(signature) = &*self.unifier.get_ty(enter.0) {
-                                let signature = signature.borrow();
                                 if !signature.args.is_empty() {
                                     return report_error(
                                         "__enter__ method should take no argument other than self",
@@ -343,7 +344,6 @@ impl<'a> fold::Fold<()> for Inferencer<'a> {
                         }
                         if let Some(exit) = fields.get(&"__exit__".into()).cloned() {
                             if let TypeEnum::TFunc(signature) = &*self.unifier.get_ty(exit.0) {
-                                let signature = signature.borrow();
                                 if !signature.args.is_empty() {
                                     return report_error(
                                         "__exit__ method should take no argument other than self",
@@ -361,24 +361,24 @@ impl<'a> fold::Fold<()> for Inferencer<'a> {
                         }
                     }
                     if !fast_path {
-                        let enter = TypeEnum::TFunc(RefCell::new(FunSignature {
+                        let enter = TypeEnum::TFunc(FunSignature {
                             args: vec![],
                             ret: item.optional_vars.as_ref().map_or_else(
-                                || self.unifier.get_fresh_var().0,
+                                || self.unifier.get_dummy_var().0,
                                 |var| var.custom.unwrap(),
                             ),
                             vars: Default::default(),
-                        }));
+                        });
                         let enter = self.unifier.add_ty(enter);
-                        let exit = TypeEnum::TFunc(RefCell::new(FunSignature {
+                        let exit = TypeEnum::TFunc(FunSignature {
                             args: vec![],
-                            ret: self.unifier.get_fresh_var().0,
+                            ret: self.unifier.get_dummy_var().0,
                             vars: Default::default(),
-                        }));
+                        });
                         let exit = self.unifier.add_ty(exit);
                         let mut fields = HashMap::new();
-                        fields.insert("__enter__".into(), (enter, false));
-                        fields.insert("__exit__".into(), (exit, false));
+                        fields.insert("__enter__".into(), RecordField::new(enter, false, None));
+                        fields.insert("__exit__".into(), RecordField::new(exit, false, None));
                         let record = self.unifier.add_record(fields);
                         self.unify(ty, record, &stmt.location)?;
                     }
@@ -455,8 +455,8 @@ impl<'a> fold::Fold<()> for Inferencer<'a> {
             ast::ExprKind::Compare { left, ops, comparators } => {
                 Some(self.infer_compare(left, ops, comparators)?)
             }
-            ast::ExprKind::Subscript { value, slice, .. } => {
-                Some(self.infer_subscript(value.as_ref(), slice.as_ref())?)
+            ast::ExprKind::Subscript { value, slice, ctx, .. } => {
+                Some(self.infer_subscript(value.as_ref(), slice.as_ref(), ctx)?)
             }
             ast::ExprKind::IfExp { test, body, orelse } => {
                 Some(self.infer_if_expr(test, body.as_ref(), orelse.as_ref())?)
@@ -477,11 +477,11 @@ impl<'a> Inferencer<'a> {
     /// Constrain a <: b
     /// Currently implemented as unification
     fn constrain(&mut self, a: Type, b: Type, location: &Location) -> Result<(), String> {
-        self.unifier.unify(a, b).map_err(|old| format!("{} at {}", old, location))
+        self.unify(a, b, location)
     }
 
     fn unify(&mut self, a: Type, b: Type, location: &Location) -> Result<(), String> {
-        self.unifier.unify(a, b).map_err(|old| format!("{} at {}", old, location))
+        self.unifier.unify(a, b).map_err(|e| e.at(Some(*location)).to_display(self.unifier).to_string())
     }
 
     fn infer_pattern(&mut self, pattern: &ast::Expr<()>) -> Result<(), String> {
@@ -511,17 +511,17 @@ impl<'a> Inferencer<'a> {
         ret: Option<Type>,
     ) -> InferenceResult {
         if let TypeEnum::TObj { params: class_params, fields, .. } = &*self.unifier.get_ty(obj) {
-            if class_params.borrow().is_empty() {
-                if let Some(ty) = fields.borrow().get(&method) {
+            if class_params.is_empty() {
+                if let Some(ty) = fields.get(&method) {
                     let ty = ty.0;
                     if let TypeEnum::TFunc(sign) = &*self.unifier.get_ty(ty) {
-                        let sign = sign.borrow();
                         if sign.vars.is_empty() {
                             let call = Call {
                                 posargs: params,
                                 kwargs: HashMap::new(),
                                 ret: sign.ret,
                                 fun: RefCell::new(None),
+                                loc: Some(location),
                             };
                             if let Some(ret) = ret {
                                 self.unifier.unify(sign.ret, ret).unwrap();
@@ -534,25 +534,26 @@ impl<'a> Inferencer<'a> {
                                 .rev()
                                 .collect();
                             self.unifier
-                                .unify_call(&call, ty, &sign, &required)
-                                .map_err(|old| format!("{} at {}", old, location))?;
+                                .unify_call(&call, ty, sign, &required)
+                                .map_err(|e| e.at(Some(location)).to_display(self.unifier).to_string())?;
                             return Ok(sign.ret);
                         }
                     }
                 }
             }
         }
-        let ret = ret.unwrap_or_else(|| self.unifier.get_fresh_var().0);
+        let ret = ret.unwrap_or_else(|| self.unifier.get_dummy_var().0);
 
         let call = self.unifier.add_call(Call {
             posargs: params,
             kwargs: HashMap::new(),
             ret,
             fun: RefCell::new(None),
+            loc: Some(location),
         });
         self.calls.insert(location.into(), call);
-        let call = self.unifier.add_ty(TypeEnum::TCall(vec![call].into()));
-        let fields = once((method, (call, false))).collect();
+        let call = self.unifier.add_ty(TypeEnum::TCall(vec![call]));
+        let fields = once((method.into(), RecordField::new(call, false, Some(location)))).collect();
         let record = self.unifier.add_record(fields);
         self.constrain(obj, record, &location)?;
         Ok(ret)
@@ -585,10 +586,10 @@ impl<'a> Inferencer<'a> {
             }
         }
         let fn_args: Vec<_> =
-            args.args.iter().map(|v| (v.node.arg, self.unifier.get_fresh_var().0)).collect();
+            args.args.iter().map(|v| (v.node.arg, self.unifier.get_fresh_var(Some(v.node.arg), Some(v.location)).0)).collect();
         let mut variable_mapping = self.variable_mapping.clone();
         variable_mapping.extend(fn_args.iter().cloned());
-        let ret = self.unifier.get_fresh_var().0;
+        let ret = self.unifier.get_dummy_var().0;
 
         let mut new_context = Inferencer {
             function_data: self.function_data,
@@ -620,7 +621,7 @@ impl<'a> Inferencer<'a> {
         Ok(Located {
             location,
             node: ExprKind::Lambda { args: args.into(), body: body.into() },
-            custom: Some(self.unifier.add_ty(TypeEnum::TFunc(fun.into()))),
+            custom: Some(self.unifier.add_ty(TypeEnum::TFunc(fun))),
         })
     }
 
@@ -725,7 +726,7 @@ impl<'a> Inferencer<'a> {
                             &arg,
                         )?
                     } else {
-                        self.unifier.get_fresh_var().0
+                        self.unifier.get_dummy_var().0
                     };
                     self.virtual_checks.push((arg0.custom.unwrap(), ty, func_location));
                     let custom = Some(self.unifier.add_ty(TypeEnum::TVirtual { ty }));
@@ -774,7 +775,6 @@ impl<'a> Inferencer<'a> {
             .collect::<Result<Vec<_>, _>>()?;
 
         if let TypeEnum::TFunc(sign) = &*self.unifier.get_ty(func.custom.unwrap()) {
-            let sign = sign.borrow();
             if sign.vars.is_empty() {
                 let call = Call {
                     posargs: args.iter().map(|v| v.custom.unwrap()).collect(),
@@ -784,6 +784,7 @@ impl<'a> Inferencer<'a> {
                         .collect(),
                     fun: RefCell::new(None),
                     ret: sign.ret,
+                    loc: Some(location)
                 };
                 let required: Vec<_> = sign
                     .args
@@ -793,8 +794,8 @@ impl<'a> Inferencer<'a> {
                     .rev()
                     .collect();
                 self.unifier
-                    .unify_call(&call, func.custom.unwrap(), &sign, &required)
-                    .map_err(|old| format!("{} at {}", old, location))?;
+                    .unify_call(&call, func.custom.unwrap(), sign, &required)
+                    .map_err(|e| e.at(Some(location)).to_display(self.unifier).to_string())?;
                 return Ok(Located {
                     location,
                     custom: Some(sign.ret),
@@ -803,7 +804,7 @@ impl<'a> Inferencer<'a> {
             }
         }
 
-        let ret = self.unifier.get_fresh_var().0;
+        let ret = self.unifier.get_dummy_var().0;
         let call = self.unifier.add_call(Call {
             posargs: args.iter().map(|v| v.custom.unwrap()).collect(),
             kwargs: keywords
@@ -812,9 +813,10 @@ impl<'a> Inferencer<'a> {
                 .collect(),
             fun: RefCell::new(None),
             ret,
+            loc: Some(location)
         });
         self.calls.insert(location.into(), call);
-        let call = self.unifier.add_ty(TypeEnum::TCall(vec![call].into()));
+        let call = self.unifier.add_ty(TypeEnum::TCall(vec![call]));
         self.unify(func.custom.unwrap(), call, &func.location)?;
 
         Ok(Located { location, custom: Some(ret), node: ExprKind::Call { func, args, keywords } })
@@ -831,7 +833,7 @@ impl<'a> Inferencer<'a> {
                 .resolver
                 .get_symbol_type(unifier, &self.top_level.definitions.read(), self.primitives, id)
                 .unwrap_or_else(|_| {
-                    let ty = unifier.get_fresh_var().0;
+                    let ty = unifier.get_dummy_var().0;
                     variable_mapping.insert(id, ty);
                     ty
                 }))
@@ -867,7 +869,7 @@ impl<'a> Inferencer<'a> {
     }
 
     fn infer_list(&mut self, elts: &[ast::Expr<Option<Type>>]) -> InferenceResult {
-        let (ty, _) = self.unifier.get_fresh_var();
+        let ty = self.unifier.get_dummy_var().0;
         for t in elts.iter() {
             self.unify(ty, t.custom.unwrap(), &t.location)?;
         }
@@ -888,7 +890,6 @@ impl<'a> Inferencer<'a> {
         let ty = value.custom.unwrap();
         if let TypeEnum::TObj { fields, .. } = &*self.unifier.get_ty(ty) {
             // just a fast path
-            let fields = fields.borrow();
             match (fields.get(&attr), ctx == &ExprContext::Store) {
                 (Some((ty, true)), _) => Ok(*ty),
                 (Some((ty, false)), false) => Ok(*ty),
@@ -898,8 +899,9 @@ impl<'a> Inferencer<'a> {
                 (None, _) => report_error(&format!("No such field {}", attr), value.location),
             }
         } else {
-            let (attr_ty, _) = self.unifier.get_fresh_var();
-            let fields = once((attr, (attr_ty, ctx == &ExprContext::Store))).collect();
+            let attr_ty = self.unifier.get_dummy_var().0;
+            let fields = once((attr.into(), RecordField::new(
+                        attr_ty, ctx == &ExprContext::Store, Some(value.location)))).collect();
             let record = self.unifier.add_record(fields);
             self.constrain(value.custom.unwrap(), record, &value.location)?;
             Ok(attr_ty)
@@ -965,8 +967,9 @@ impl<'a> Inferencer<'a> {
         &mut self,
         value: &ast::Expr<Option<Type>>,
         slice: &ast::Expr<Option<Type>>,
+        ctx: &ExprContext,
     ) -> InferenceResult {
-        let ty = self.unifier.get_fresh_var().0;
+        let ty = self.unifier.get_dummy_var().0;
         match &slice.node {
             ast::ExprKind::Slice { lower, upper, step } => {
                 for v in [lower.as_ref(), upper.as_ref(), step.as_ref()].iter().flatten() {
@@ -983,8 +986,9 @@ impl<'a> Inferencer<'a> {
                     None => None,
                 };
                 let ind = ind.ok_or_else(|| "Index must be int32".to_string())?;
-                let map = once((ind, ty)).collect();
-                let seq = self.unifier.add_sequence(map);
+                let map = once((ind.into(), RecordField::new(
+                        ty, ctx == &ExprContext::Store, Some(value.location)))).collect();
+                let seq = self.unifier.add_record(map);
                 self.constrain(value.custom.unwrap(), seq, &value.location)?;
                 Ok(ty)
             }
@@ -1005,9 +1009,7 @@ impl<'a> Inferencer<'a> {
         orelse: &ast::Expr<Option<Type>>,
     ) -> InferenceResult {
         self.constrain(test.custom.unwrap(), self.primitives.bool, &test.location)?;
-        let ty = self.unifier.get_fresh_var().0;
-        self.constrain(body.custom.unwrap(), ty, &body.location)?;
-        self.constrain(orelse.custom.unwrap(), ty, &orelse.location)?;
-        Ok(ty)
+        self.constrain(body.custom.unwrap(), orelse.custom.unwrap(), &body.location)?;
+        Ok(body.custom.unwrap())
     }
 }

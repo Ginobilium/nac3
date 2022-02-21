@@ -15,7 +15,6 @@ use pyo3::{
     PyAny, PyObject, PyResult, Python,
 };
 use std::{
-    cell::RefCell,
     collections::{HashMap, HashSet},
     sync::Arc,
 };
@@ -208,7 +207,7 @@ impl InnerResolver {
             ty = match unifier.unify(ty, b) {
                 Ok(_) => ty,
                 Err(e) => return Ok(Err(format!(
-                    "inhomogeneous type ({}) at element #{} of the list", e, i
+                    "inhomogeneous type ({}) at element #{} of the list", e.to_display(unifier).to_string(), i
                 )))
             };
         }
@@ -246,7 +245,7 @@ impl InnerResolver {
             Ok(Ok((primitives.exception, true)))
         }else if ty_id == self.primitive_ids.list {
             // do not handle type var param and concrete check here
-            let var = unifier.get_fresh_var().0;
+            let var = unifier.get_dummy_var().0;
             let list = unifier.add_ty(TypeEnum::TList { ty: var });
             Ok(Ok((list, false)))
         } else if ty_id == self.primitive_ids.tuple {
@@ -266,8 +265,7 @@ impl InnerResolver {
                 Ok(Ok({
                     let ty = TypeEnum::TObj {
                         obj_id: *object_id,
-                        params: RefCell::new({
-                            type_vars
+                        params: type_vars
                                 .iter()
                                 .map(|x| {
                                     if let TypeEnum::TVar { id, .. } = &*unifier.get_ty(*x) {
@@ -276,16 +274,15 @@ impl InnerResolver {
                                         unreachable!()
                                     }
                                 })
-                                .collect()
-                        }),
-                        fields: RefCell::new({
+                                .collect(),
+                        fields: {
                             let mut res = methods
                                 .iter()
                                 .map(|(iden, ty, _)| (*iden, (*ty, false)))
                                 .collect::<HashMap<_, _>>();
                             res.extend(fields.clone().into_iter().map(|x| (x.0, (x.1, x.2))));
                             res
-                        }),
+                        },
                     };
                     // here also false, later instantiation use python object to check compatible
                     (unifier.add_ty(ty), false)
@@ -295,6 +292,7 @@ impl InnerResolver {
                 unreachable!("function type is not supported, should not be queried")
             }
         } else if ty_ty_id == self.primitive_ids.typevar {
+            let name: &str = pyty.getattr("__name__").unwrap().extract().unwrap();
             let constraint_types = {
                 let constraints = pyty.getattr("__constraints__").unwrap();
                 let mut result: Vec<Type> = vec![];
@@ -322,7 +320,7 @@ impl InnerResolver {
                 }
                 result
             };
-            let res = unifier.get_fresh_var_with_range(&constraint_types).0;
+            let res = unifier.get_fresh_var_with_range(&constraint_types, Some(name.into()), None).0;
             Ok(Ok((res, true)))
         } else if ty_ty_id == self.primitive_ids.generic_alias.0
             || ty_ty_id == self.primitive_ids.generic_alias.1
@@ -388,7 +386,6 @@ impl InnerResolver {
                 }
                 TypeEnum::TObj { params, obj_id, .. } => {
                     let subst = {
-                        let params = &*params.borrow();
                         if params.len() != args.len() {
                             return Ok(Err(format!(
                                 "for class #{}, expect {} type parameters, got {}.",
@@ -456,14 +453,16 @@ impl InnerResolver {
             Ok(Ok((
                 {
                     let ty = TypeEnum::TVirtual {
-                        ty: unifier.get_fresh_var().0,
+                        ty: unifier.get_dummy_var().0,
                     };
                     unifier.add_ty(ty)
                 },
                 false,
             )))
         } else {
-            Ok(Err("unknown type".into()))
+            let str_fn = pyo3::types::PyModule::import(py, "builtins").unwrap().getattr("repr").unwrap();
+            let str_repr: String = str_fn.call1((pyty,)).unwrap().extract().unwrap();
+            Ok(Err(format!("{} is not supported in nac3 (did you forgot to put @nac3 annotation?)", str_repr)))
         }
     }
 
@@ -510,8 +509,8 @@ impl InnerResolver {
                 if len == 0 {
                     assert!(matches!(
                         &*unifier.get_ty(extracted_ty),
-                        TypeEnum::TVar { meta: nac3core::typecheck::typedef::TypeVarMeta::Generic, range, .. }
-                            if range.borrow().is_empty()
+                        TypeEnum::TVar { fields: None, range, .. }
+                            if range.is_empty()
                     ));
                     Ok(Ok(extracted_ty))
                 } else {
@@ -520,7 +519,7 @@ impl InnerResolver {
                     match actual_ty {
                         Ok(t) => match unifier.unify(*ty, t) {
                             Ok(_) => Ok(Ok(unifier.add_ty(TypeEnum::TList{ ty: *ty }))),
-                            Err(e) => Ok(Err(format!("type error ({}) for the list", e))),
+                            Err(e) => Ok(Err(format!("type error ({}) for the list", e.to_display(unifier).to_string()))),
                         }
                         Err(e) => Ok(Err(e)),
                     }
@@ -537,19 +536,18 @@ impl InnerResolver {
             }
             (TypeEnum::TObj { params, fields, .. }, false) => {
                 let var_map = params
-                    .borrow()
                     .iter()
                     .map(|(id_var, ty)| {
-                        if let TypeEnum::TVar { id, range, .. } = &*unifier.get_ty(*ty) {
+                        if let TypeEnum::TVar { id, range, name, loc, .. } = &*unifier.get_ty(*ty) {
                             assert_eq!(*id, *id_var);
-                            (*id, unifier.get_fresh_var_with_range(&range.borrow()).0)
+                            (*id, unifier.get_fresh_var_with_range(range, *name, *loc).0)
                         } else {
                             unreachable!()
                         }
                     })
                     .collect::<HashMap<_, _>>();
                 // loop through non-function fields of the class to get the instantiated value
-                for field in fields.borrow().iter() {
+                for field in fields.iter() {
                     let name: String = (*field.0).into();
                     if let TypeEnum::TFunc(..) = &*unifier.get_ty(field.1 .0) {
                         continue;
@@ -566,7 +564,7 @@ impl InnerResolver {
                         if let Err(e) = unifier.unify(ty, field_ty) {
                             // field type mismatch
                             return Ok(Err(format!(
-                                "error when getting type of field `{}` ({})", name, e
+                                "error when getting type of field `{}` ({})", name, e.to_display(unifier).to_string()
                             )));
                         }
                     }
@@ -988,18 +986,19 @@ impl SymbolResolver for Resolver {
         })
     }
 
-    fn get_identifier_def(&self, id: StrRef) -> Option<DefinitionId> {
+    fn get_identifier_def(&self, id: StrRef) -> Result<DefinitionId, String> {
         {
             let id_to_def = self.0.id_to_def.read();
-            id_to_def.get(&id).cloned()
+            id_to_def.get(&id).cloned().ok_or_else(|| "".to_string())
         }
-        .or_else(|| {
-            let py_id = self.0.name_to_pyid.get(&id);
-            let result = py_id.and_then(|id| self.0.pyid_to_def.read().get(id).copied());
-            if let Some(result) = &result {
-                self.0.id_to_def.write().insert(id, *result);
-            }
-            result
+        .or_else(|_| {
+            let py_id = self.0.name_to_pyid.get(&id).ok_or(format!("Undefined identifier `{}`", id))?;
+            let result = self.0.pyid_to_def.read().get(py_id).copied().ok_or(format!(
+                "`{}` is not registered in nac3, did you forgot to add @nac3?",
+                id
+            ))?;
+            self.0.id_to_def.write().insert(id, result);
+            Ok(result)
         })
     }
 

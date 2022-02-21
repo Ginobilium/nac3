@@ -46,6 +46,17 @@ impl<V> UnificationTable<V> {
         }
     }
 
+    pub fn probe_value_immutable(&self, key: UnificationKey) -> &V {
+        let mut root = key.0;
+        let mut parent = self.parents[root];
+        while root != parent {
+            root = parent;
+            // parent = root.parent
+            parent = self.parents[parent];
+        }
+        self.values[parent].as_ref().unwrap()
+    }
+
     pub fn probe_value(&mut self, a: UnificationKey) -> &V {
         let index = self.find(a);
         self.values[index].as_ref().unwrap()

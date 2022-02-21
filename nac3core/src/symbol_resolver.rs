@@ -1,6 +1,6 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, fmt::Display};
 use std::fmt::Debug;
-use std::{cell::RefCell, sync::Arc};
+use std::sync::Arc;
 
 use crate::{
     codegen::CodeGenContext,
@@ -16,7 +16,7 @@ use crate::{
 use crate::typecheck::typedef::TypeEnum;
 use inkwell::values::{BasicValueEnum, FloatValue, IntValue, PointerValue};
 use itertools::{chain, izip};
-use nac3parser::ast::{Expr, StrRef};
+use nac3parser::ast::{Expr, Location, StrRef};
 use parking_lot::RwLock;
 
 #[derive(Clone, PartialEq, Debug)]
@@ -27,6 +27,25 @@ pub enum SymbolValue {
     Double(f64),
     Bool(bool),
     Tuple(Vec<SymbolValue>),
+}
+
+impl Display for SymbolValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SymbolValue::I32(i) => write!(f, "{}", i),
+            SymbolValue::I64(i) => write!(f, "int64({})", i),
+            SymbolValue::Str(s) => write!(f, "\"{}\"", s),
+            SymbolValue::Double(d) => write!(f, "{}", d),
+            SymbolValue::Bool(b) => if *b {
+                write!(f, "True")
+            } else {
+                write!(f, "False")
+            },
+            SymbolValue::Tuple(t) => {
+                write!(f, "({})", t.iter().map(|v| format!("{}", v)).collect::<Vec<_>>().join(", "))
+            }
+        }
+    }
 }
 
 pub trait StaticValue {
@@ -105,7 +124,7 @@ pub trait SymbolResolver {
     ) -> Result<Type, String>;
 
     // get the top-level definition of identifiers
-    fn get_identifier_def(&self, str: StrRef) -> Option<DefinitionId>;
+    fn get_identifier_def(&self, str: StrRef) -> Result<DefinitionId, String>;
 
     fn get_symbol_value<'ctx, 'a>(
         &self,
@@ -154,7 +173,7 @@ pub fn parse_type_annotation<T>(
     let str_id = ids[8];
     let exn_id = ids[9];
 
-    let name_handling = |id: &StrRef, unifier: &mut Unifier| {
+    let name_handling = |id: &StrRef, loc: Location, unifier: &mut Unifier| {
         if *id == int32_id {
             Ok(primitives.int32)
         } else if *id == int64_id {
@@ -171,37 +190,37 @@ pub fn parse_type_annotation<T>(
             Ok(primitives.exception)
         } else {
             let obj_id = resolver.get_identifier_def(*id);
-            if let Some(obj_id) = obj_id {
-                let def = top_level_defs[obj_id.0].read();
-                if let TopLevelDef::Class { fields, methods, type_vars, .. } = &*def {
-                    if !type_vars.is_empty() {
-                        return Err(format!(
-                            "Unexpected number of type parameters: expected {} but got 0",
-                            type_vars.len()
-                        ));
-                    }
-                    let fields = RefCell::new(
-                        chain(
+            match obj_id {
+                Ok(obj_id) => {
+                    let def = top_level_defs[obj_id.0].read();
+                    if let TopLevelDef::Class { fields, methods, type_vars, .. } = &*def {
+                        if !type_vars.is_empty() {
+                            return Err(format!(
+                                "Unexpected number of type parameters: expected {} but got 0",
+                                type_vars.len()
+                            ));
+                        }
+                        let fields = chain(
                             fields.iter().map(|(k, v, m)| (*k, (*v, *m))),
                             methods.iter().map(|(k, v, _)| (*k, (*v, false))),
-                        )
-                        .collect(),
-                    );
-                    Ok(unifier.add_ty(TypeEnum::TObj {
-                        obj_id,
-                        fields,
-                        params: Default::default(),
-                    }))
-                } else {
-                    Err("Cannot use function name as type".into())
+                        ).collect();
+                        Ok(unifier.add_ty(TypeEnum::TObj {
+                            obj_id,
+                            fields,
+                            params: Default::default(),
+                        }))
+                    } else {
+                        Err(format!("Cannot use function name as type at {}", loc))
+                    }
                 }
-            } else {
-                // it could be a type variable
-                let ty = resolver.get_symbol_type(unifier, top_level_defs, primitives, *id)?;
-                if let TypeEnum::TVar { .. } = &*unifier.get_ty(ty) {
-                    Ok(ty)
-                } else {
-                    Err(format!("Unknown type annotation {}", id))
+                Err(e) => {
+                    let ty = resolver.get_symbol_type(unifier, top_level_defs, primitives, *id)
+                        .map_err(|_| format!("Unknown type annotation at {}: {}", loc, e))?;
+                    if let TypeEnum::TVar { .. } = &*unifier.get_ty(ty) {
+                        Ok(ty)
+                    } else {
+                        Err(format!("Unknown type annotation {} at {}", id, loc))
+                    }
                 }
             }
         }
@@ -238,8 +257,7 @@ pub fn parse_type_annotation<T>(
             };
 
             let obj_id = resolver
-                .get_identifier_def(*id)
-                .ok_or_else(|| format!("Unknown type annotation {}", id))?;
+                .get_identifier_def(*id)?;
             let def = top_level_defs[obj_id.0].read();
             if let TopLevelDef::Class { fields, methods, type_vars, .. } = &*def {
                 if types.len() != type_vars.len() {
@@ -271,8 +289,8 @@ pub fn parse_type_annotation<T>(
                 }));
                 Ok(unifier.add_ty(TypeEnum::TObj {
                     obj_id,
-                    fields: fields.into(),
-                    params: subst.into(),
+                    fields,
+                    params: subst,
                 }))
             } else {
                 Err("Cannot use function name as type".into())
@@ -281,7 +299,7 @@ pub fn parse_type_annotation<T>(
     };
 
     match &expr.node {
-        Name { id, .. } => name_handling(id, unifier),
+        Name { id, .. } => name_handling(id, expr.location, unifier),
         Subscript { value, slice, .. } => {
             if let Name { id, .. } = &value.node {
                 subscript_name_handle(id, slice, unifier)
@@ -310,7 +328,7 @@ impl dyn SymbolResolver + Send + Sync {
         unifier: &mut Unifier,
         ty: Type,
     ) -> String {
-        unifier.stringify(
+        unifier.internal_stringify(
             ty,
             &mut |id| {
                 if let TopLevelDef::Class { name, .. } = &*top_level_defs[id].read() {
@@ -320,6 +338,7 @@ impl dyn SymbolResolver + Send + Sync {
                 }
             },
             &mut |id| format!("var{}", id),
+            &mut None
         )
     }
 }

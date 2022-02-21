@@ -203,7 +203,7 @@ impl Nac3 {
         let fun_ty = if method_name.is_empty() {
             base_ty
         } else if let TypeEnum::TObj { fields, .. } = &*unifier.get_ty(base_ty) {
-            match fields.borrow().get(&(*method_name).into()) {
+            match fields.get(&(*method_name).into()) {
                 Some(t) => t.0,
                 None => return Some(
                     format!("object launching kernel does not have method `{}`", method_name)
@@ -213,8 +213,7 @@ impl Nac3 {
             return Some("cannot launch kernel by calling a non-callable".into())
         };
 
-        if let TypeEnum::TFunc(sig) = &*unifier.get_ty(fun_ty) {
-            let FunSignature { args, .. } = &*sig.borrow();
+        if let TypeEnum::TFunc(FunSignature { args, .. }) = &*unifier.get_ty(fun_ty) {
             if arg_names.len() > args.len() {
                 return Some(format!(
                     "launching kernel function with too many arguments (expect {}, found {})",
@@ -243,7 +242,7 @@ impl Nac3 {
                 };
                 if let Err(e) = unifier.unify(in_ty, *ty) {
                     return Some(format!(
-                        "type error ({}) at parameter #{} when calling kernel function", e, i
+                        "type error ({}) at parameter #{} when calling kernel function", e.to_display(unifier).to_string(), i
                     ));
                 }
             }
@@ -281,7 +280,7 @@ impl Nac3 {
                     vars: HashMap::new(),
                 },
                 Arc::new(GenCall::new(Box::new(move |ctx, _, _, _, _| {
-                    Some(time_fns.emit_now_mu(ctx))
+                    Ok(Some(time_fns.emit_now_mu(ctx)))
                 }))),
             ),
             (
@@ -298,7 +297,7 @@ impl Nac3 {
                 Arc::new(GenCall::new(Box::new(move |ctx, _, _, args, generator| {
                     let arg = args[0].1.clone().to_basic_value_enum(ctx, generator);
                     time_fns.emit_at_mu(ctx, arg);
-                    None
+                    Ok(None)
                 }))),
             ),
             (
@@ -315,7 +314,7 @@ impl Nac3 {
                 Arc::new(GenCall::new(Box::new(move |ctx, _, _, args, generator| {
                     let arg = args[0].1.clone().to_basic_value_enum(ctx, generator);
                     time_fns.emit_delay_mu(ctx, arg);
-                    None
+                    Ok(None)
                 }))),
             ),
         ];
@@ -536,7 +535,7 @@ impl Nac3 {
             let (name, def_id, ty) = composer
                 .register_top_level(stmt.clone(), Some(resolver.clone()), path.clone())
                 .map_err(|e| {
-                    exceptions::PyRuntimeError::new_err(format!("nac3 compilation failure: {}", e))
+                    exceptions::PyRuntimeError::new_err(format!("nac3 compilation failure\n----------\n{}", e))
                 })?;
 
             match &stmt.node {
@@ -637,7 +636,7 @@ impl Nac3 {
             // report error of __modinit__ separately
             if !e.contains("__nac3_synthesized_modinit__") {
                 return Err(exceptions::PyRuntimeError::new_err(
-                    format!("nac3 compilation failure: {}", e)
+                    format!("nac3 compilation failure: \n----------\n{}", e)
                 ));
             } else {
                 let msg = Self::report_modinit(

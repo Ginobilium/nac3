@@ -28,7 +28,7 @@ pub trait CodeGenerator {
         obj: Option<(Type, ValueEnum<'ctx>)>,
         fun: (&FunSignature, DefinitionId),
         params: Vec<(Option<StrRef>, ValueEnum<'ctx>)>,
-    ) -> Option<BasicValueEnum<'ctx>>
+    ) -> Result<Option<BasicValueEnum<'ctx>>, String>
     where
         Self: Sized,
     {
@@ -45,7 +45,7 @@ pub trait CodeGenerator {
         signature: &FunSignature,
         def: &TopLevelDef,
         params: Vec<(Option<StrRef>, ValueEnum<'ctx>)>,
-    ) -> BasicValueEnum<'ctx>
+    ) -> Result<BasicValueEnum<'ctx>, String>
     where
         Self: Sized,
     {
@@ -65,7 +65,7 @@ pub trait CodeGenerator {
         obj: Option<(Type, ValueEnum<'ctx>)>,
         fun: (&FunSignature, &mut TopLevelDef, String),
         id: usize,
-    ) -> String {
+    ) -> Result<String, String> {
         gen_func_instance(ctx, obj, fun, id)
     }
 
@@ -74,7 +74,7 @@ pub trait CodeGenerator {
         &mut self,
         ctx: &mut CodeGenContext<'ctx, 'a>,
         expr: &Expr<Option<Type>>,
-    ) -> Option<ValueEnum<'ctx>>
+    ) -> Result<Option<ValueEnum<'ctx>>, String>
     where
         Self: Sized,
     {
@@ -87,7 +87,7 @@ pub trait CodeGenerator {
         &mut self,
         ctx: &mut CodeGenContext<'ctx, 'a>,
         ty: BasicTypeEnum<'ctx>,
-    ) -> PointerValue<'ctx> {
+    ) -> Result<PointerValue<'ctx>, String> {
         gen_var(ctx, ty)
     }
 
@@ -96,7 +96,7 @@ pub trait CodeGenerator {
         &mut self,
         ctx: &mut CodeGenContext<'ctx, 'a>,
         pattern: &Expr<Option<Type>>,
-    ) -> PointerValue<'ctx>
+    ) -> Result<PointerValue<'ctx>, String>
     where
         Self: Sized,
     {
@@ -109,7 +109,8 @@ pub trait CodeGenerator {
         ctx: &mut CodeGenContext<'ctx, 'a>,
         target: &Expr<Option<Type>>,
         value: ValueEnum<'ctx>,
-    ) where
+    ) -> Result<(), String>
+    where
         Self: Sized,
     {
         gen_assign(self, ctx, target, value)
@@ -118,44 +119,49 @@ pub trait CodeGenerator {
     /// Generate code for a while expression.
     /// Return true if the while loop must early return
     fn gen_while<'ctx, 'a>(&mut self, ctx: &mut CodeGenContext<'ctx, 'a>, stmt: &Stmt<Option<Type>>)
+        -> Result<(), String>
     where
         Self: Sized,
     {
-        gen_while(self, ctx, stmt);
+        gen_while(self, ctx, stmt)
     }
 
     /// Generate code for a while expression.
     /// Return true if the while loop must early return
     fn gen_for<'ctx, 'a>(&mut self, ctx: &mut CodeGenContext<'ctx, 'a>, stmt: &Stmt<Option<Type>>)
+        -> Result<(), String>
     where
         Self: Sized,
     {
-        gen_for(self, ctx, stmt);
+        gen_for(self, ctx, stmt)
     }
 
     /// Generate code for an if expression.
     /// Return true if the statement must early return
     fn gen_if<'ctx, 'a>(&mut self, ctx: &mut CodeGenContext<'ctx, 'a>, stmt: &Stmt<Option<Type>>)
+        -> Result<(), String>
     where
         Self: Sized,
     {
-        gen_if(self, ctx, stmt);
+        gen_if(self, ctx, stmt)
     }
 
     fn gen_with<'ctx, 'a>(&mut self, ctx: &mut CodeGenContext<'ctx, 'a>, stmt: &Stmt<Option<Type>>)
+        -> Result<(), String>
     where
         Self: Sized,
     {
-        gen_with(self, ctx, stmt);
+        gen_with(self, ctx, stmt)
     }
 
     /// Generate code for a statement
     /// Return true if the statement must early return
     fn gen_stmt<'ctx, 'a>(&mut self, ctx: &mut CodeGenContext<'ctx, 'a>, stmt: &Stmt<Option<Type>>)
+        -> Result<(), String>
     where
         Self: Sized,
     {
-        gen_stmt(self, ctx, stmt);
+        gen_stmt(self, ctx, stmt)
     }
 }
 

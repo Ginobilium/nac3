@@ -18,14 +18,14 @@ impl TopLevelDef {
                 let fields_str = fields
                     .iter()
                     .map(|(n, ty, _)| {
-                        (n.to_string(), unifier.default_stringify(*ty))
+                        (n.to_string(), unifier.stringify(*ty))
                     })
                     .collect_vec();
 
                 let methods_str = methods
                     .iter()
                     .map(|(n, ty, id)| {
-                        (n.to_string(), unifier.default_stringify(*ty), *id)
+                        (n.to_string(), unifier.stringify(*ty), *id)
                     })
                     .collect_vec();
                 format!(
@@ -34,13 +34,13 @@ impl TopLevelDef {
                     ancestors.iter().map(|ancestor| ancestor.stringify(unifier)).collect_vec(),
                     fields_str.iter().map(|(a, _)| a).collect_vec(),
                     methods_str.iter().map(|(a, b, _)| (a, b)).collect_vec(),
-                    type_vars.iter().map(|id| unifier.default_stringify(*id)).collect_vec(),
+                    type_vars.iter().map(|id| unifier.stringify(*id)).collect_vec(),
                 )
             }
             TopLevelDef::Function { name, signature, var_id, .. } => format!(
                 "Function {{\nname: {:?},\nsig: {:?},\nvar_id: {:?}\n}}",
                 name,
-                unifier.default_stringify(*signature),
+                unifier.stringify(*signature),
                 {
                     // preserve the order for debug output and test
                     let mut r = var_id.clone();
@@ -117,6 +117,7 @@ impl TopLevelComposer {
         resolver: Option<Arc<dyn SymbolResolver + Send + Sync>>,
         name: StrRef,
         constructor: Option<Type>,
+        loc: Option<Location>
     ) -> TopLevelDef {
         TopLevelDef::Class {
             name,
@@ -127,6 +128,7 @@ impl TopLevelComposer {
             ancestors: Default::default(),
             constructor,
             resolver,
+            loc,
         }
     }
 
@@ -136,6 +138,7 @@ impl TopLevelComposer {
         simple_name: StrRef,
         ty: Type,
         resolver: Option<Arc<dyn SymbolResolver + Send + Sync>>,
+        loc: Option<Location>
     ) -> TopLevelDef {
         TopLevelDef::Function {
             name,
@@ -146,6 +149,7 @@ impl TopLevelComposer {
             instance_to_stmt: Default::default(),
             resolver,
             codegen_callback: None,
+            loc,
         }
     }
 
@@ -244,12 +248,8 @@ impl TopLevelComposer {
         let this = this.as_ref();
         let other = unifier.get_ty(other);
         let other = other.as_ref();
-        if let (TypeEnum::TFunc(this_sig), TypeEnum::TFunc(other_sig)) = (this, other) {
-            let (this_sig, other_sig) = (&*this_sig.borrow(), &*other_sig.borrow());
-            let (
-                FunSignature { args: this_args, ret: this_ret, vars: _this_vars },
-                FunSignature { args: other_args, ret: other_ret, vars: _other_vars },
-            ) = (this_sig, other_sig);
+        if let (TypeEnum::TFunc(FunSignature { args: this_args, ret: this_ret, ..}),
+                TypeEnum::TFunc(FunSignature { args: other_args, ret: other_ret, .. })) = (this, other) {
             // check args
             let args_ok = this_args
                 .iter()

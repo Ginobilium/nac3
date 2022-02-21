@@ -17,7 +17,7 @@ use crate::{
 };
 use inkwell::values::BasicValueEnum;
 use itertools::{izip, Itertools};
-use nac3parser::ast::{self, Stmt, StrRef};
+use nac3parser::ast::{self, Location, Stmt, StrRef};
 use parking_lot::RwLock;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Hash, Debug)]
@@ -39,7 +39,7 @@ type GenCallCallback = Box<
             (&FunSignature, DefinitionId),
             Vec<(Option<StrRef>, ValueEnum<'ctx>)>,
             &mut dyn CodeGenerator,
-        ) -> Option<BasicValueEnum<'ctx>>
+        ) -> Result<Option<BasicValueEnum<'ctx>>, String>
         + Send
         + Sync,
 >;
@@ -60,7 +60,7 @@ impl GenCall {
         fun: (&FunSignature, DefinitionId),
         args: Vec<(Option<StrRef>, ValueEnum<'ctx>)>,
         generator: &mut dyn CodeGenerator,
-    ) -> Option<BasicValueEnum<'ctx>> {
+    ) -> Result<Option<BasicValueEnum<'ctx>>, String> {
         (self.fp)(ctx, obj, fun, args, generator)
     }
 }
@@ -99,6 +99,8 @@ pub enum TopLevelDef {
         resolver: Option<Arc<dyn SymbolResolver + Send + Sync>>,
         // constructor type
         constructor: Option<Type>,
+        // definition location
+        loc: Option<Location>,
     },
     Function {
         // prefix for symbol, should be unique globally
@@ -124,6 +126,8 @@ pub enum TopLevelDef {
         resolver: Option<Arc<dyn SymbolResolver + Send + Sync>>,
         // custom codegen callback
         codegen_callback: Option<Arc<GenCall>>,
+        // definition location
+        loc: Option<Location>,
     },
 }
 
