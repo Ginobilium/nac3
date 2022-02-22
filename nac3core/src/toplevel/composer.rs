@@ -464,7 +464,7 @@ impl TopLevelComposer {
             }
         }
         if !errors.is_empty() {
-            return Err(errors.iter().join("\n----------\n"));
+            return Err(errors.into_iter().sorted().join("\n----------\n"));
         }
         Ok(())
     }
@@ -560,7 +560,7 @@ impl TopLevelComposer {
             }
         }
         if !errors.is_empty() {
-            return Err(errors.iter().join("\n----------\n"));
+            return Err(errors.into_iter().sorted().join("\n----------\n"));
         }
 
         // second, get all ancestors
@@ -591,7 +591,7 @@ impl TopLevelComposer {
             }
         }
         if !errors.is_empty() {
-            return Err(errors.iter().join("\n----------\n"));
+            return Err(errors.into_iter().sorted().join("\n----------\n"));
         }
 
         // insert the ancestors to the def list
@@ -674,7 +674,7 @@ impl TopLevelComposer {
             }
         }
         if !errors.is_empty() {
-            return Err(errors.iter().join("\n----------\n"));
+            return Err(errors.into_iter().sorted().join("\n----------\n"));
         }
 
         // handle the inheritanced methods and fields
@@ -727,7 +727,7 @@ impl TopLevelComposer {
             }
         }
         if !errors.is_empty() {
-            return Err(errors.iter().join("\n----------\n"));
+            return Err(errors.into_iter().sorted().join("\n----------\n"));
         }
 
         Ok(())
@@ -953,7 +953,7 @@ impl TopLevelComposer {
             }
         }
         if !errors.is_empty() {
-            return Err(errors.iter().join("\n----------\n"));
+            return Err(errors.into_iter().sorted().join("\n----------\n"));
         }
         Ok(())
     }
@@ -1555,7 +1555,7 @@ impl TopLevelComposer {
             }
         }
         if !errors.is_empty() {
-            return Err(errors.iter().join("\n---------\n"));
+            return Err(errors.into_iter().sorted().join("\n---------\n"));
         }
 
         for (i, signature, id) in constructors.into_iter() {
@@ -1851,7 +1851,7 @@ impl TopLevelComposer {
             }
         }
         if !errors.is_empty() {
-            return Err(errors.iter().join("\n----------\n"));
+            return Err(errors.into_iter().sorted().join("\n----------\n"));
         }
         Ok(())
     }

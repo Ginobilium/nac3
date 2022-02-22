@@ -20,7 +20,7 @@ use inkwell::{
 use itertools::Itertools;
 use nac3parser::ast::{Stmt, StrRef};
 use parking_lot::{Condvar, Mutex};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,
@@ -206,7 +206,7 @@ impl WorkerRegistry {
         let passes = PassManager::create(&module);
         pass_builder.populate_function_pass_manager(&passes);
 
-        let mut errors = Vec::new();
+        let mut errors = HashSet::new();
         while let Some(task) = self.receiver.recv().unwrap() {
             let tmp_module = context.create_module("tmp");
             match gen_func(&context, generator, self, builder, tmp_module, task) {
@@ -217,14 +217,14 @@ impl WorkerRegistry {
                 }
                 Err((old_builder, e)) => {
                     builder = old_builder;
-                    errors.push(e);
+                    errors.insert(e);
                 }
             }
             *self.task_count.lock() -= 1;
             self.wait_condvar.notify_all();
         }
         if !errors.is_empty() {
-            panic!("Codegen error: {}", errors.iter().join("\n----------\n"));
+            panic!("Codegen error: {}", errors.into_iter().sorted().join("\n----------\n"));
         }
 
         let result = module.verify();
