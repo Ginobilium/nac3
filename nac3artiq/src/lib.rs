@@ -371,7 +371,7 @@ impl Nac3 {
                 .extract()
                 .unwrap(),
             exception: id_fn
-                .call1((builtins_mod.getattr("tuple").unwrap(),))
+                .call1((builtins_mod.getattr("Exception").unwrap(),))
                 .unwrap()
                 .extract()
                 .unwrap(),

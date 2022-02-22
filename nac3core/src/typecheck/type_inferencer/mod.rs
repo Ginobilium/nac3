@@ -925,7 +925,10 @@ impl<'a> Inferencer<'a> {
                 (Some((_, false)), true) => {
                     report_error(&format!("Field {} should be immutable", attr), value.location)
                 }
-                (None, _) => report_error(&format!("No such field {}", attr), value.location),
+                (None, _) => {
+                    let t = self.unifier.stringify(ty);
+                    report_error(&format!("`{}::{}` field/method does not exist", t, attr), value.location)
+                },
             }
         } else {
             let attr_ty = self.unifier.get_dummy_var().0;

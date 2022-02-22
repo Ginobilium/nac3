@@ -155,7 +155,7 @@ impl<'a> Display for DisplayTypeError<'a> {
             }
             NoSuchField(name, t) => {
                 let t = self.unifier.stringify_with_notes(*t, &mut notes);
-                write!(f, "`{}::{}` field does not exist", t, name)
+                write!(f, "`{}::{}` field/method does not exist", t, name)
             }
             TupleIndexOutOfBounds { index, len } => {
                 write!(
