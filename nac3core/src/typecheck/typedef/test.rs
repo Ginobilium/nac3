@@ -302,7 +302,7 @@ fn test_unify(
         ("v1", "Record[a=float,b=int]"),
         ("v2", "Foo[v3]"),
     ],
-    (("v1", "v2"), "`3[1]::b` field/method does not exist")
+    (("v1", "v2"), "`3[var4]::b` field/method does not exist")
     ; "record obj merge"
 )]
 /// Test cases for invalid unifications.
