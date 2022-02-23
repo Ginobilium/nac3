@@ -43,7 +43,7 @@ pub extern "C" fn print_int64(x: i64) {
 }
 
 #[no_mangle]
-pub extern "C" fn __artiq_personality(_state: u32, _exception_object: u32, _context: u32) -> u32 {
+pub extern "C" fn __nac3_personality(_state: u32, _exception_object: u32, _context: u32) -> u32 {
     unimplemented!();
 }
 
