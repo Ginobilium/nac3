@@ -302,7 +302,7 @@ fn test_unify(
         ("v1", "Record[a=float,b=int]"),
         ("v2", "Foo[v3]"),
     ],
-    (("v1", "v2"), "`3[var4]::b` field does not exist")
+    (("v1", "v2"), "`3[1]::b` field/method does not exist")
     ; "record obj merge"
 )]
 /// Test cases for invalid unifications.
@@ -390,12 +390,12 @@ fn test_virtual() {
     let d = env
         .unifier
         .add_record([("a".into(), RecordField::new(v1, true, None))].iter().cloned().collect());
-    assert_eq!(env.unify(b, d), Err("`virtual[5]::a` field does not exist".to_string()));
+    assert_eq!(env.unify(b, d), Err("`virtual[5]::a` field/method does not exist".to_string()));
 
     let d = env
         .unifier
         .add_record([("b".into(), RecordField::new(v1, true, None))].iter().cloned().collect());
-    assert_eq!(env.unify(b, d), Err("`virtual[5]::b` field does not exist".to_string()));
+    assert_eq!(env.unify(b, d), Err("`virtual[5]::b` field/method does not exist".to_string()));
 }
 
 #[test]
