@@ -426,16 +426,16 @@ pub fn get_builtins<'ctx, 'a, G: CodeGenerator>(
 ) -> FunctionValue<'ctx> {
     ctx.module.get_function(symbol).unwrap_or_else(|| {
         let ty = match symbol {
-            "__artiq_raise" => ctx
+            "__nac3_raise" => ctx
                 .ctx
                 .void_type()
                 .fn_type(&[ctx.get_llvm_type(generator, ctx.primitives.exception).into()], false),
-            "__artiq_resume" => ctx.ctx.void_type().fn_type(&[], false),
-            "__artiq_end_catch" => ctx.ctx.void_type().fn_type(&[], false),
+            "__nac3_resume" => ctx.ctx.void_type().fn_type(&[], false),
+            "__nac3_end_catch" => ctx.ctx.void_type().fn_type(&[], false),
             _ => unimplemented!(),
         };
         let fun = ctx.module.add_function(symbol, ty, None);
-        if symbol == "__artiq_raise" || symbol == "__artiq_resume" {
+        if symbol == "__nac3_raise" || symbol == "__nac3_resume" {
             fun.add_attribute(
                 AttributeLoc::Function,
                 ctx.ctx.create_enum_attribute(Attribute::get_named_enum_kind_id("noreturn"), 1),
@@ -557,11 +557,11 @@ pub fn gen_raise<'ctx, 'a, G: CodeGenerator>(
             ctx.builder.build_store(name_ptr, fun_name);
         }
 
-        let raise = get_builtins(generator, ctx, "__artiq_raise");
+        let raise = get_builtins(generator, ctx, "__nac3_raise");
         let exception = *exception;
         ctx.build_call_or_invoke(raise, &[exception], "raise");
     } else {
-        let resume = get_builtins(generator, ctx, "__artiq_resume");
+        let resume = get_builtins(generator, ctx, "__nac3_resume");
         ctx.build_call_or_invoke(resume, &[], "resume");
     }
     ctx.builder.build_unreachable();
@@ -706,8 +706,8 @@ pub fn gen_try<'ctx, 'a, G: CodeGenerator>(
             &mut redirect_lambda
                 as &mut dyn FnMut(&mut CodeGenContext<'ctx, 'a>, BasicBlock<'ctx>, BasicBlock<'ctx>)
         };
-        let resume = get_builtins(generator, ctx, "__artiq_resume");
-        let end_catch = get_builtins(generator, ctx, "__artiq_end_catch");
+        let resume = get_builtins(generator, ctx, "__nac3_resume");
+        let end_catch = get_builtins(generator, ctx, "__nac3_end_catch");
         if let Some((continue_target, break_target)) = ctx.loop_target.take() {
             let break_proxy = ctx.ctx.append_basic_block(current_fun, "try.break");
             let continue_proxy = ctx.ctx.append_basic_block(current_fun, "try.continue");

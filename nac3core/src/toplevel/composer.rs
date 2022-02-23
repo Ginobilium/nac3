@@ -145,7 +145,7 @@ impl TopLevelComposer {
                 self.unifier.get_shared_unifier(),
                 self.primitives_ty,
             )])),
-            personality_symbol: Some("__artiq_personality".into()),
+            personality_symbol: Some("__nac3_personality".into()),
         }
     }
 
