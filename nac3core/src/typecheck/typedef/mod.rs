@@ -161,6 +161,7 @@ pub struct Unifier {
     pub(super) calls: Vec<Rc<Call>>,
     var_id: u32,
     unify_cache: HashSet<(Type, Type)>,
+    snapshot: Option<(usize, u32)>
 }
 
 impl Default for Unifier {
@@ -178,6 +179,7 @@ impl Unifier {
             calls: Vec::new(),
             unify_cache: HashSet::new(),
             top_level: None,
+            snapshot: None,
         }
     }
 
@@ -198,6 +200,7 @@ impl Unifier {
             calls: lock.2.iter().map(|v| Rc::new(v.clone())).collect_vec(),
             top_level: None,
             unify_cache: HashSet::new(),
+            snapshot: None,
         }
     }
 
@@ -383,6 +386,19 @@ impl Unifier {
         }
     }
 
+    fn restore_snapshot(&mut self) {
+        if let Some(snapshot) = self.snapshot.take() {
+            self.unification_table.restore_snapshot(snapshot);
+        }
+    }
+
+    fn discard_snapshot(&mut self, snapshot: (usize, u32)) {
+        if self.snapshot == Some(snapshot) {
+            self.unification_table.discard_snapshot(snapshot);
+            self.snapshot = None;
+        }
+    }
+
     pub fn unify_call(
         &mut self,
         call: &Call,
@@ -390,6 +406,11 @@ impl Unifier {
         signature: &FunSignature,
         required: &[StrRef],
     ) -> Result<(), TypeError> {
+        let snapshot = self.unification_table.get_snapshot();
+        if self.snapshot.is_none() {
+            self.snapshot = Some(snapshot);
+        }
+
         let Call { posargs, kwargs, ret, fun, loc } = call;
         let instantiated = self.instantiate_fun(b, &*signature);
         let r = self.get_ty(instantiated);
@@ -414,6 +435,7 @@ impl Unifier {
             required.pop();
             let (name, expected) = all_names.pop().unwrap();
             self.unify_impl(expected, *t, false).map_err(|_| {
+                self.restore_snapshot();
                 TypeError::new(TypeErrorKind::IncorrectArgType { name, expected, got: *t }, *loc)
             })?;
         }
@@ -424,34 +446,51 @@ impl Unifier {
             let i = all_names
                 .iter()
                 .position(|v| &v.0 == k)
-                .ok_or_else(|| TypeError::new(TypeErrorKind::UnknownArgName(*k), *loc))?;
+                .ok_or_else(|| {
+                    self.restore_snapshot();
+                    TypeError::new(TypeErrorKind::UnknownArgName(*k), *loc)
+                })?;
             let (name, expected) = all_names.remove(i);
             self.unify_impl(expected, *t, false).map_err(|_| {
+                self.restore_snapshot();
                 TypeError::new(TypeErrorKind::IncorrectArgType { name, expected, got: *t }, *loc)
             })?;
         }
         if !required.is_empty() {
+            self.restore_snapshot();
             return Err(TypeError::new(
                 TypeErrorKind::MissingArgs(required.iter().join(", ")),
                 *loc,
             ));
         }
         self.unify_impl(*ret, signature.ret, false).map_err(|mut err| {
+            self.restore_snapshot();
             if err.loc.is_none() {
                 err.loc = *loc;
             }
             err
         })?;
         *fun.borrow_mut() = Some(instantiated);
+
+        self.discard_snapshot(snapshot);
         Ok(())
     }
 
     pub fn unify(&mut self, a: Type, b: Type) -> Result<(), TypeError> {
+        let snapshot = self.unification_table.get_snapshot();
+        if self.snapshot.is_none() {
+            self.snapshot = Some(snapshot);
+        }
         self.unify_cache.clear();
         if self.unification_table.unioned(a, b) {
             Ok(())
         } else {
-            self.unify_impl(a, b, false)
+            let result = self.unify_impl(a, b, false);
+            if result.is_err() {
+                self.restore_snapshot();
+            }
+            self.discard_snapshot(snapshot);
+            result
         }
     }
 

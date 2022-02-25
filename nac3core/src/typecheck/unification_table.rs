@@ -10,6 +10,27 @@ pub struct UnificationTable<V> {
     parents: Vec<usize>,
     ranks: Vec<u32>,
     values: Vec<Option<V>>,
+    log: Vec<Action<V>>,
+    generation: u32,
+}
+
+#[derive(Clone, Debug)]
+enum Action<V> {
+    Parent {
+        key: usize,
+        original_parent: usize,
+    },
+    Value {
+        key: usize,
+        original_value: Option<V>,
+    },
+    Rank {
+        key: usize,
+        original_rank: u32,
+    },
+    Marker {
+        generation: u32,
+    }
 }
 
 impl<V> Default for UnificationTable<V> {
@@ -20,7 +41,7 @@ impl<V> Default for UnificationTable<V> {
 
 impl<V> UnificationTable<V> {
     pub fn new() -> UnificationTable<V> {
-        UnificationTable { parents: Vec::new(), ranks: Vec::new(), values: Vec::new() }
+        UnificationTable { parents: Vec::new(), ranks: Vec::new(), values: Vec::new(), log: Vec::new(), generation: 0 }
     }
 
     pub fn new_key(&mut self, v: V) -> UnificationKey {
@@ -42,6 +63,7 @@ impl<V> UnificationTable<V> {
         }
         self.parents[b] = a;
         if self.ranks[a] == self.ranks[b] {
+            self.log.push(Action::Rank { key: a, original_rank: self.ranks[a] });
             self.ranks[a] += 1;
         }
     }
@@ -64,7 +86,8 @@ impl<V> UnificationTable<V> {
 
     pub fn set_value(&mut self, a: UnificationKey, v: V) {
         let index = self.find(a);
-        self.values[index] = Some(v);
+        let original_value = self.values[index].replace(v);
+        self.log.push(Action::Value { key: index, original_value });
     }
 
     pub fn unioned(&mut self, a: UnificationKey, b: UnificationKey) -> bool {
@@ -82,12 +105,47 @@ impl<V> UnificationTable<V> {
             // a = parent.parent
             let a = self.parents[parent];
             // root.parent = parent.parent
+            self.log.push(Action::Parent { key: root, original_parent: a });
             self.parents[root] = a;
             root = parent;
             // parent = root.parent
             parent = a;
         }
         parent
+    }
+
+    pub fn get_snapshot(&mut self) -> (usize, u32) {
+        let generation = self.generation;
+        self.log.push(Action::Marker { generation });
+        self.generation += 1;
+        (self.log.len(), generation)
+    }
+
+    pub fn restore_snapshot(&mut self, snapshot: (usize, u32)) {
+        let (log_len, generation) = snapshot;
+        assert!(self.log.len() >= log_len, "snapshot restoration error");
+        assert!(matches!(self.log[log_len - 1], Action::Marker { generation: gen } if gen == generation), "snapshot restoration error");
+        for action in self.log.drain(log_len - 1..).rev() {
+            match action {
+                Action::Parent { key, original_parent } => {
+                    self.parents[key] = original_parent;
+                }
+                Action::Value { key, original_value } => {
+                    self.values[key] = original_value;
+                }
+                Action::Rank { key, original_rank } => {
+                    self.ranks[key] = original_rank;
+                }
+                Action::Marker { .. } => {}
+            }
+        }
+    }
+
+    pub fn discard_snapshot(&mut self, snapshot: (usize, u32)) {
+        let (log_len, generation) = snapshot;
+        assert!(self.log.len() >= log_len, "snapshot discard error");
+        assert!(matches!(self.log[log_len - 1], Action::Marker { generation: gen } if generation == gen), "snapshot discard error");
+        self.log.truncate(log_len - 1);
     }
 }
 
@@ -100,11 +158,11 @@ where
             .enumerate()
             .map(|(i, (v, p))| if *p == i { v.as_ref().map(|v| v.as_ref().clone()) } else { None })
             .collect();
-        UnificationTable { parents: self.parents.clone(), ranks: self.ranks.clone(), values }
+        UnificationTable { parents: self.parents.clone(), ranks: self.ranks.clone(), values, log: Vec::new(), generation: 0 }
     }
 
     pub fn from_send(table: &UnificationTable<V>) -> UnificationTable<Rc<V>> {
         let values = table.values.iter().cloned().map(|v| v.map(Rc::new)).collect();
-        UnificationTable { parents: table.parents.clone(), ranks: table.ranks.clone(), values }
+        UnificationTable { parents: table.parents.clone(), ranks: table.ranks.clone(), values, log: Vec::new(), generation: 0 }
     }
 }
