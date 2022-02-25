@@ -71,8 +71,6 @@ pub struct CodeGenContext<'ctx, 'a> {
     // return target bb, just emit ret if no such target
     pub return_target: Option<BasicBlock<'ctx>>,
     pub return_buffer: Option<PointerValue<'ctx>>,
-    // outer finally block function
-    pub outer_final: Option<(PointerValue<'ctx>, Vec<BasicBlock<'ctx>>, Vec<BasicBlock<'ctx>>)>,
     // outer catch clauses
     pub outer_catch_clauses:
         Option<(Vec<Option<BasicValueEnum<'ctx>>>, BasicBlock<'ctx>, PhiValue<'ctx>)>,
@@ -498,7 +496,6 @@ pub fn gen_func<'ctx, G: CodeGenerator>(
         return_target: None,
         return_buffer,
         unwind_target: None,
-        outer_final: None,
         outer_catch_clauses: None,
         const_strings: Default::default(),
         registry,

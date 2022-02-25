@@ -407,8 +407,9 @@ pub fn final_proxy<'ctx, 'a>(
     ctx: &mut CodeGenContext<'ctx, 'a>,
     target: BasicBlock<'ctx>,
     block: BasicBlock<'ctx>,
+    final_data: &mut (PointerValue, Vec<BasicBlock<'ctx>>, Vec<BasicBlock<'ctx>>),
 ) {
-    let (final_state, final_targets, final_paths) = ctx.outer_final.as_mut().unwrap();
+    let (final_state, final_targets, final_paths) = final_data;
     let prev = ctx.builder.get_insert_block().unwrap();
     ctx.builder.position_at_end(block);
     unsafe {
@@ -593,34 +594,32 @@ pub fn gen_try<'ctx, 'a, G: CodeGenerator>(
         let mut cleanup = None;
         let mut old_loop_target = None;
         let mut old_return = None;
-        let mut old_outer_final = None;
-        let has_cleanup = if !finalbody.is_empty() {
+        let mut final_data = None;
+        let has_cleanup = !finalbody.is_empty();
+        if has_cleanup {
             let final_state = generator.gen_var_alloc(ctx, ptr_type.into())?;
-            old_outer_final = ctx.outer_final.replace((final_state, Vec::new(), Vec::new()));
+            final_data = Some((final_state, Vec::new(), Vec::new()));
             if let Some((continue_target, break_target)) = ctx.loop_target {
                 let break_proxy = ctx.ctx.append_basic_block(current_fun, "try.break");
                 let continue_proxy = ctx.ctx.append_basic_block(current_fun, "try.continue");
-                final_proxy(ctx, break_target, break_proxy);
-                final_proxy(ctx, continue_target, continue_proxy);
+                final_proxy(ctx, break_target, break_proxy, final_data.as_mut().unwrap());
+                final_proxy(ctx, continue_target, continue_proxy, final_data.as_mut().unwrap());
                 old_loop_target = ctx.loop_target.replace((continue_proxy, break_proxy));
             }
             let return_proxy = ctx.ctx.append_basic_block(current_fun, "try.return");
             if let Some(return_target) = ctx.return_target {
-                final_proxy(ctx, return_target, return_proxy);
+                final_proxy(ctx, return_target, return_proxy, final_data.as_mut().unwrap());
             } else {
                 let return_target = ctx.ctx.append_basic_block(current_fun, "try.return_target");
                 ctx.builder.position_at_end(return_target);
                 let return_value = ctx.return_buffer.map(|v| ctx.builder.build_load(v, "$ret"));
                 ctx.builder.build_return(return_value.as_ref().map(|v| v as &dyn BasicValue));
                 ctx.builder.position_at_end(current_block);
-                final_proxy(ctx, return_target, return_proxy);
+                final_proxy(ctx, return_target, return_proxy, final_data.as_mut().unwrap());
             }
             old_return = ctx.return_target.replace(return_proxy);
             cleanup = Some(ctx.ctx.append_basic_block(current_fun, "try.cleanup"));
-            true
-        } else {
-            ctx.outer_final.is_some()
-        };
+        }
 
         let mut clauses = Vec::new();
         let mut found_catch_all = false;
@@ -691,7 +690,7 @@ pub fn gen_try<'ctx, 'a, G: CodeGenerator>(
         let mut final_proxy_lambda =
             |ctx: &mut CodeGenContext<'ctx, 'a>,
              target: BasicBlock<'ctx>,
-             block: BasicBlock<'ctx>| final_proxy(ctx, target, block);
+             block: BasicBlock<'ctx>| final_proxy(ctx, target, block, final_data.as_mut().unwrap());
         let mut redirect_lambda = |ctx: &mut CodeGenContext<'ctx, 'a>,
                                    target: BasicBlock<'ctx>,
                                    block: BasicBlock<'ctx>| {
@@ -699,7 +698,7 @@ pub fn gen_try<'ctx, 'a, G: CodeGenerator>(
             ctx.builder.build_unconditional_branch(target);
             ctx.builder.position_at_end(body);
         };
-        let redirect = if ctx.outer_final.is_some() {
+        let redirect = if has_cleanup {
             &mut final_proxy_lambda
                 as &mut dyn FnMut(&mut CodeGenContext<'ctx, 'a>, BasicBlock<'ctx>, BasicBlock<'ctx>)
         } else {
@@ -842,9 +841,6 @@ pub fn gen_try<'ctx, 'a, G: CodeGenerator>(
             }
             ctx.builder.position_at_end(tail);
         } else {
-            let final_branches = ctx.outer_final.take().unwrap();
-            ctx.outer_final = old_outer_final;
-
             // exception path
             let cleanup = cleanup.unwrap();
             ctx.builder.position_at_end(cleanup);
@@ -855,7 +851,7 @@ pub fn gen_try<'ctx, 'a, G: CodeGenerator>(
             }
 
             // normal path
-            let (final_state, mut final_targets, final_paths) = final_branches;
+            let (final_state, mut final_targets, final_paths) = final_data.unwrap();
             let tail = ctx.ctx.append_basic_block(current_fun, "try.tail");
             final_targets.push(tail);
             let finalizer = ctx.ctx.append_basic_block(current_fun, "try.finally");
