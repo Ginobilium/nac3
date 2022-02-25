@@ -61,6 +61,7 @@ impl<V> UnificationTable<V> {
         if self.ranks[a] < self.ranks[b] {
             std::mem::swap(&mut a, &mut b);
         }
+        self.log.push(Action::Parent { key: b, original_parent: a });
         self.parents[b] = a;
         if self.ranks[a] == self.ranks[b] {
             self.log.push(Action::Rank { key: a, original_rank: self.ranks[a] });

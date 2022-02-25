@@ -427,6 +427,7 @@ impl Unifier {
         let mut all_names: Vec<_> = signature.args.iter().map(|v| (v.name, v.ty)).rev().collect();
         for (i, t) in posargs.iter().enumerate() {
             if signature.args.len() <= i {
+                self.restore_snapshot();
                 return Err(TypeError::new(
                     TypeErrorKind::TooManyArguments { expected: signature.args.len(), got: i },
                     *loc,
@@ -483,6 +484,7 @@ impl Unifier {
         }
         self.unify_cache.clear();
         if self.unification_table.unioned(a, b) {
+            self.discard_snapshot(snapshot);
             Ok(())
         } else {
             let result = self.unify_impl(a, b, false);
