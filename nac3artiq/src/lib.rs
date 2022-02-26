@@ -797,13 +797,14 @@ extern "C" {
 }
 
 #[pymodule]
-fn nac3artiq(_py: Python, m: &PyModule) -> PyResult<()> {
+fn nac3artiq(py: Python, m: &PyModule) -> PyResult<()> {
     #[cfg(feature = "init-llvm-profile")]
     unsafe {
         __llvm_profile_initialize();
     }
 
     Target::initialize_all(&InitializationConfig::default());
+    m.add("CompileError", py.get_type::<CompileError>())?;
     m.add_class::<Nac3>()?;
     Ok(())
 }
