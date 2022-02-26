@@ -17,6 +17,7 @@ use nac3parser::{
 };
 use pyo3::prelude::*;
 use pyo3::{exceptions, types::PyBytes, types::PyDict, types::PySet};
+use pyo3::create_exception;
 
 use parking_lot::{Mutex, RwLock};
 
@@ -87,6 +88,8 @@ struct Nac3 {
     top_levels: Vec<TopLevelComponent>,
     string_store: Arc<RwLock<HashMap<String, i32>>>,
 }
+
+create_exception!(nac3artiq, CompileError, exceptions::PyException);
 
 impl Nac3 {
     fn register_module(
@@ -496,7 +499,7 @@ impl Nac3 {
             let (name, def_id, ty) = composer
                 .register_top_level(stmt.clone(), Some(resolver.clone()), path.clone())
                 .map_err(|e| {
-                    exceptions::PyRuntimeError::new_err(format!(
+                    CompileError::new_err(format!(
                         "nac3 compilation failure\n----------\n{}",
                         e
                     ))
@@ -582,7 +585,7 @@ impl Nac3 {
         if let Err(e) = composer.start_analysis(true) {
             // report error of __modinit__ separately
             if !e.contains("__nac3_synthesized_modinit__") {
-                return Err(exceptions::PyRuntimeError::new_err(format!(
+                return Err(CompileError::new_err(format!(
                     "nac3 compilation failure: \n----------\n{}",
                     e
                 )));
@@ -595,7 +598,7 @@ impl Nac3 {
                     &mut composer.unifier,
                     &self.primitive,
                 );
-                return Err(exceptions::PyRuntimeError::new_err(msg.unwrap()));
+                return Err(CompileError::new_err(msg.unwrap()));
             }
         }
         let top_level = Arc::new(composer.make_top_level_context());
@@ -695,10 +698,10 @@ impl Nac3 {
                 .unwrap();
 
             main.link_in_module(other)
-                .map_err(|err| exceptions::PyRuntimeError::new_err(err.to_string()))?;
+                .map_err(|err| CompileError::new_err(err.to_string()))?;
         }
         main.link_in_module(load_irrt(&context))
-            .map_err(|err| exceptions::PyRuntimeError::new_err(err.to_string()))?;
+            .map_err(|err| CompileError::new_err(err.to_string()))?;
 
         let mut function_iter = main.get_first_function();
         while let Some(func) = function_iter {
@@ -762,10 +765,10 @@ impl Nac3 {
 
         if let Ok(linker_status) = Command::new("ld.lld").args(linker_args).status() {
             if !linker_status.success() {
-                return Err(exceptions::PyRuntimeError::new_err("failed to start linker"));
+                return Err(CompileError::new_err("failed to start linker"));
             }
         } else {
-            return Err(exceptions::PyRuntimeError::new_err(
+            return Err(CompileError::new_err(
                 "linker returned non-zero status code",
             ));
         }
