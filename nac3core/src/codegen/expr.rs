@@ -526,6 +526,9 @@ pub fn gen_call<'ctx, 'a, G: CodeGenerator>(
                 }
                 // default value handling
                 for k in keys.into_iter() {
+                    if mapping.get(&k.name).is_some() {
+                        continue;
+                    }
                     mapping.insert(
                         k.name,
                         ctx.gen_symbol_val(generator, &k.default_value.unwrap()).into(),

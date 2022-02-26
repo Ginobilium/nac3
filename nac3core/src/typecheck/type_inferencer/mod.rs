@@ -809,7 +809,7 @@ impl<'a> Inferencer<'a> {
                     posargs: args.iter().map(|v| v.custom.unwrap()).collect(),
                     kwargs: keywords
                         .iter()
-                        .map(|v| (*v.node.arg.as_ref().unwrap(), v.custom.unwrap()))
+                        .map(|v| (*v.node.arg.as_ref().unwrap(), v.node.value.custom.unwrap()))
                         .collect(),
                     fun: RefCell::new(None),
                     ret: sign.ret,
