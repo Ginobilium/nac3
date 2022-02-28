@@ -469,6 +469,10 @@ impl InnerResolver {
         primitives: &PrimitiveStore,
     ) -> PyResult<Result<Type, String>> {
         let ty = self.helper.type_fn.call1(py, (obj,)).unwrap();
+        let ty_id: u64 = self.helper.id_fn.call1(py, (ty.clone(),))?.extract(py)?;
+        if let Some(ty) = self.pyid_to_type.read().get(&ty_id) {
+            return Ok(Ok(*ty))
+        }
         let (extracted_ty, inst_check) = match self.get_pyty_obj_type(
             py,
             {
@@ -527,6 +531,7 @@ impl InnerResolver {
                 Ok(types.map(|types| unifier.add_ty(TypeEnum::TTuple { ty: types })))
             }
             (TypeEnum::TObj { params, fields, .. }, false) => {
+                self.pyid_to_type.write().insert(ty_id, extracted_ty);
                 let var_map = params
                     .iter()
                     .map(|(id_var, ty)| {
