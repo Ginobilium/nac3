@@ -434,7 +434,6 @@ impl Nac3 {
         embedding_map: &PyAny,
         py: Python,
     ) -> PyResult<()> {
-        println!("start compilation");
         let (mut composer, _, _) = TopLevelComposer::new(
             self.builtins.clone(),
             ComposerConfig { kernel_ann: Some("Kernel"), kernel_invariant_ann: "KernelInvariant" },
@@ -651,7 +650,6 @@ impl Nac3 {
                 unreachable!()
             }
         };
-        println!("typecheck complete");
 
         let task = CodeGenTask {
             subst: Default::default(),
