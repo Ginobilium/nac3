@@ -1076,7 +1076,7 @@ impl TopLevelComposer {
                                         .as_ref()
                                         .ok_or_else(|| {
                                             format!(
-                                                "type annotation for `{}` at {} needed",
+                                                "type annotation needed for `{}` at {}",
                                                 x.node.arg, x.location
                                             )
                                         })?
