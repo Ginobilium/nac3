@@ -295,7 +295,7 @@ impl Nac3 {
                     vars: HashMap::new(),
                 },
                 Arc::new(GenCall::new(Box::new(move |ctx, _, _, args, generator| {
-                    let arg = args[0].1.clone().to_basic_value_enum(ctx, generator);
+                    let arg = args[0].1.clone().to_basic_value_enum(ctx, generator).unwrap();
                     time_fns.emit_at_mu(ctx, arg);
                     Ok(None)
                 }))),
@@ -312,7 +312,7 @@ impl Nac3 {
                     vars: HashMap::new(),
                 },
                 Arc::new(GenCall::new(Box::new(move |ctx, _, _, args, generator| {
-                    let arg = args[0].1.clone().to_basic_value_enum(ctx, generator);
+                    let arg = args[0].1.clone().to_basic_value_enum(ctx, generator).unwrap();
                     time_fns.emit_delay_mu(ctx, arg);
                     Ok(None)
                 }))),
@@ -434,6 +434,7 @@ impl Nac3 {
         embedding_map: &PyAny,
         py: Python,
     ) -> PyResult<()> {
+        println!("start compilation");
         let (mut composer, _, _) = TopLevelComposer::new(
             self.builtins.clone(),
             ComposerConfig { kernel_ann: Some("Kernel"), kernel_invariant_ann: "KernelInvariant" },
@@ -598,7 +599,7 @@ impl Nac3 {
                     &mut composer.unifier,
                     &self.primitive,
                 );
-                return Err(CompileError::new_err(msg.unwrap()));
+                return Err(CompileError::new_err(msg.unwrap_or(e)));
             }
         }
         let top_level = Arc::new(composer.make_top_level_context());
@@ -650,6 +651,7 @@ impl Nac3 {
                 unreachable!()
             }
         };
+        println!("typecheck complete");
 
         let task = CodeGenTask {
             subst: Default::default(),

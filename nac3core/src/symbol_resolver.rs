@@ -63,7 +63,7 @@ pub trait StaticValue {
         &self,
         ctx: &mut CodeGenContext<'ctx, 'a>,
         generator: &mut dyn CodeGenerator,
-    ) -> BasicValueEnum<'ctx>;
+    ) -> Result<BasicValueEnum<'ctx>, String>;
 
     fn get_field<'ctx, 'a>(
         &self,
@@ -107,10 +107,10 @@ impl<'ctx> ValueEnum<'ctx> {
         self,
         ctx: &mut CodeGenContext<'ctx, 'a>,
         generator: &mut dyn CodeGenerator,
-    ) -> BasicValueEnum<'ctx> {
+    ) -> Result<BasicValueEnum<'ctx>, String> {
         match self {
             ValueEnum::Static(v) => v.to_basic_value_enum(ctx, generator),
-            ValueEnum::Dynamic(v) => v,
+            ValueEnum::Dynamic(v) => Ok(v),
         }
     }
 }

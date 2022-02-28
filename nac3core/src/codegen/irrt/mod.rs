@@ -151,7 +151,7 @@ pub fn handle_slice_indices<'a, 'ctx, G: CodeGenerator>(
             let step = generator
                 .gen_expr(ctx, step)?
                 .unwrap()
-                .to_basic_value_enum(ctx, generator)
+                .to_basic_value_enum(ctx, generator)?
                 .into_int_value();
             let len_id = ctx.builder.build_int_sub(length, one, "lenmin1");
             let neg = ctx.builder.build_int_compare(IntPredicate::SLT, step, zero, "step_is_neg");
@@ -214,7 +214,7 @@ pub fn handle_slice_index_bound<'a, 'ctx, G: CodeGenerator>(
         ctx.module.add_function(SYMBOL, fn_t, None)
     });
 
-    let i = generator.gen_expr(ctx, i)?.unwrap().to_basic_value_enum(ctx, generator);
+    let i = generator.gen_expr(ctx, i)?.unwrap().to_basic_value_enum(ctx, generator)?;
     Ok(ctx
         .builder
         .build_call(func, &[i.into(), length.into()], "bounded_ind")

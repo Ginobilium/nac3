@@ -276,6 +276,7 @@ fn get_llvm_type<'ctx>(
                     &*definition.read()
                 {
                     let struct_type = ctx.opaque_struct_type(&name.to_string());
+                    type_cache.insert(unifier.get_representative(ty), struct_type.ptr_type(AddressSpace::Generic).into());
                     let fields = fields_list
                         .iter()
                         .map(|f| {
@@ -294,7 +295,7 @@ fn get_llvm_type<'ctx>(
                 } else {
                     unreachable!()
                 };
-                ty
+                return ty;
             }
             TTuple { ty } => {
                 // a struct with fields in the order present in the tuple

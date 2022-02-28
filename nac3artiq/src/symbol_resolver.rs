@@ -109,27 +109,26 @@ impl StaticValue for PythonValue {
         &self,
         ctx: &mut CodeGenContext<'ctx, 'a>,
         generator: &mut dyn CodeGenerator,
-    ) -> BasicValueEnum<'ctx> {
+    ) -> Result<BasicValueEnum<'ctx>, String> {
         if let Some(val) = self.resolver.id_to_primitive.read().get(&self.id) {
-            return match val {
+            return Ok(match val {
                 PrimitiveValue::I32(val) => ctx.ctx.i32_type().const_int(*val as u64, false).into(),
                 PrimitiveValue::I64(val) => ctx.ctx.i64_type().const_int(*val as u64, false).into(),
                 PrimitiveValue::F64(val) => ctx.ctx.f64_type().const_float(*val).into(),
                 PrimitiveValue::Bool(val) => {
                     ctx.ctx.bool_type().const_int(*val as u64, false).into()
                 }
-            };
+            });
         }
         if let Some(global) = ctx.module.get_global(&self.id.to_string()) {
-            return global.as_pointer_value().into();
+            return Ok(global.as_pointer_value().into());
         }
 
         Python::with_gil(|py| -> PyResult<BasicValueEnum<'ctx>> {
             self.resolver
                 .get_obj_value(py, self.value.as_ref(py), ctx, generator)
                 .map(Option::unwrap)
-        })
-        .unwrap()
+        }).map_err(|e| e.to_string())
     }
 
     fn get_field<'ctx, 'a>(
@@ -594,19 +593,23 @@ impl InnerResolver {
             self.helper.id_fn.call1(py, (self.helper.type_fn.call1(py, (obj,))?,))?.extract(py)?;
         let id: u64 = self.helper.id_fn.call1(py, (obj,))?.extract(py)?;
         if ty_id == self.primitive_ids.int || ty_id == self.primitive_ids.int32 {
-            let val: i32 = obj.extract()?;
+            let val: i32 = obj.extract().map_err(|_| super::CompileError::new_err(
+                    format!("{} is not in the range of int32", obj)))?;
             self.id_to_primitive.write().insert(id, PrimitiveValue::I32(val));
             Ok(Some(ctx.ctx.i32_type().const_int(val as u64, false).into()))
         } else if ty_id == self.primitive_ids.int64 {
-            let val: i64 = obj.extract()?;
+            let val: i64 = obj.extract().map_err(|_| super::CompileError::new_err(
+                    format!("{} is not in the range of int64", obj)))?;
             self.id_to_primitive.write().insert(id, PrimitiveValue::I64(val));
             Ok(Some(ctx.ctx.i64_type().const_int(val as u64, false).into()))
         } else if ty_id == self.primitive_ids.bool {
-            let val: bool = obj.extract()?;
+            let val: bool = obj.extract().map_err(|_| super::CompileError::new_err(
+                    format!("{} is not in the range of bool", obj)))?;
             self.id_to_primitive.write().insert(id, PrimitiveValue::Bool(val));
             Ok(Some(ctx.ctx.bool_type().const_int(val as u64, false).into()))
         } else if ty_id == self.primitive_ids.float {
-            let val: f64 = obj.extract()?;
+            let val: f64 = obj.extract().map_err(|_| super::CompileError::new_err(
+                    format!("{} is not in the range of float64", obj)))?;
             self.id_to_primitive.write().insert(id, PrimitiveValue::F64(val));
             Ok(Some(ctx.ctx.f64_type().const_float(val).into()))
         } else if ty_id == self.primitive_ids.list {
@@ -649,7 +652,8 @@ impl InnerResolver {
 
             let arr: Result<Option<Vec<_>>, _> = (0..len)
                 .map(|i| {
-                    obj.get_item(i).and_then(|elem| self.get_obj_value(py, elem, ctx, generator))
+                    obj.get_item(i).and_then(|elem| self.get_obj_value(py, elem, ctx, generator).map_err(
+                            |e| super::CompileError::new_err(format!("Error getting element {}: {}", i, e))))
                 })
                 .collect();
             let arr = arr?.unwrap();
@@ -699,7 +703,8 @@ impl InnerResolver {
             let elements: &PyTuple = obj.cast_as()?;
             let types: Result<Result<Vec<_>, _>, _> = elements
                 .iter()
-                .map(|elem| {
+                .enumerate()
+                .map(|(i, elem)| {
                     self.get_obj_type(
                         py,
                         elem,
@@ -707,6 +712,7 @@ impl InnerResolver {
                         &ctx.top_level.definitions.read(),
                         &ctx.primitives,
                     )
+                    .map_err(|e| super::CompileError::new_err(format!("Error getting element {}: {}", i, e)))
                     .map(|ty| ty.map(|ty| ctx.get_llvm_type(generator, ty)))
                 })
                 .collect();
@@ -725,7 +731,8 @@ impl InnerResolver {
             }
 
             let val: Result<Option<Vec<_>>, _> =
-                elements.iter().map(|elem| self.get_obj_value(py, elem, ctx, generator)).collect();
+                elements.iter().enumerate().map(|(i, elem)| self.get_obj_value(py, elem, ctx, generator).map_err(|e|
+                        super::CompileError::new_err(format!("Error getting element {}: {}", i, e)))).collect();
             let val = val?.unwrap();
             let val = ctx.ctx.const_struct(&val, false);
             let global = ctx.module.add_global(ty, Some(AddressSpace::Generic), &id_str);
@@ -764,7 +771,8 @@ impl InnerResolver {
                 let values: Result<Option<Vec<_>>, _> = fields
                     .iter()
                     .map(|(name, _, _)| {
-                        self.get_obj_value(py, obj.getattr(&name.to_string())?, ctx, generator)
+                        self.get_obj_value(py, obj.getattr(&name.to_string())?, ctx, generator).map_err(|e|
+                            super::CompileError::new_err(format!("Error getting field {}: {}", name, e)))
                     })
                     .collect();
                 let values = values?;
