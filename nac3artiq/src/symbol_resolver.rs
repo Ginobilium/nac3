@@ -454,7 +454,7 @@ impl InnerResolver {
                 pyo3::types::PyModule::import(py, "builtins").unwrap().getattr("repr").unwrap();
             let str_repr: String = str_fn.call1((pyty,)).unwrap().extract().unwrap();
             Ok(Err(format!(
-                "{} is not supported in nac3 (did you forgot to put @nac3 annotation?)",
+                "{} is not registered with NAC3 (@nac3 decorator missing?)",
                 str_repr
             )))
         }
@@ -931,7 +931,7 @@ impl SymbolResolver for Resolver {
             let py_id =
                 self.0.name_to_pyid.get(&id).ok_or(format!("Undefined identifier `{}`", id))?;
             let result = self.0.pyid_to_def.read().get(py_id).copied().ok_or(format!(
-                "`{}` is not registered in nac3, did you forgot to add @nac3?",
+                "`{}` is not registered with NAC3 (@nac3 decorator missing?)",
                 id
             ))?;
             self.0.id_to_def.write().insert(id, result);

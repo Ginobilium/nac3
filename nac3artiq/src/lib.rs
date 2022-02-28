@@ -500,7 +500,7 @@ impl Nac3 {
                 .register_top_level(stmt.clone(), Some(resolver.clone()), path.clone())
                 .map_err(|e| {
                     CompileError::new_err(format!(
-                        "nac3 compilation failure\n----------\n{}",
+                        "compilation failed\n----------\n{}",
                         e
                     ))
                 })?;
@@ -586,7 +586,7 @@ impl Nac3 {
             // report error of __modinit__ separately
             if !e.contains("__nac3_synthesized_modinit__") {
                 return Err(CompileError::new_err(format!(
-                    "nac3 compilation failure: \n----------\n{}",
+                    "compilation failed\n----------\n{}",
                     e
                 )));
             } else {
