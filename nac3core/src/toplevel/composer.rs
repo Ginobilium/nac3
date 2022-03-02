@@ -806,7 +806,7 @@ impl TopLevelComposer {
                                     .as_ref()
                                     .ok_or_else(|| {
                                         format!(
-                                            "function parameter `{}` at {} need type annotation",
+                                            "function parameter `{}` needs type annotation at {}",
                                             x.node.arg, x.location
                                         )
                                     })?
