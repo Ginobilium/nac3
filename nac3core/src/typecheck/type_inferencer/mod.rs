@@ -923,7 +923,7 @@ impl<'a> Inferencer<'a> {
                 (Some((ty, true)), _) => Ok(*ty),
                 (Some((ty, false)), false) => Ok(*ty),
                 (Some((_, false)), true) => {
-                    report_error(&format!("Field {} should be immutable", attr), value.location)
+                    report_error(&format!("Field `{}` is immutable", attr), value.location)
                 }
                 (None, _) => {
                     let t = self.unifier.stringify(ty);
