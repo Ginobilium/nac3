@@ -37,10 +37,13 @@ pub fn integer_power<'ctx, 'a>(
     ctx: &mut CodeGenContext<'ctx, 'a>,
     base: IntValue<'ctx>,
     exp: IntValue<'ctx>,
+    signed: bool,
 ) -> IntValue<'ctx> {
-    let symbol = match (base.get_type().get_bit_width(), exp.get_type().get_bit_width()) {
-        (32, 32) => "__nac3_int_exp_int32_t",
-        (64, 64) => "__nac3_int_exp_int64_t",
+    let symbol = match (base.get_type().get_bit_width(), exp.get_type().get_bit_width(), signed) {
+        (32, 32, true) => "__nac3_int_exp_int32_t",
+        (64, 64, true) => "__nac3_int_exp_int64_t",
+        (32, 32, false) => "__nac3_int_exp_uint32_t",
+        (64, 64, false) => "__nac3_int_exp_uint64_t",
         _ => unreachable!(),
     };
     let base_type = base.get_type();

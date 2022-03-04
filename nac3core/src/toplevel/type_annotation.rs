@@ -64,6 +64,10 @@ pub fn parse_ast_to_type_annotation_kinds<T>(
             Ok(TypeAnnotation::Primitive(primitives.int32))
         } else if id == &"int64".into() {
             Ok(TypeAnnotation::Primitive(primitives.int64))
+        } else if id == &"uint32".into() {
+            Ok(TypeAnnotation::Primitive(primitives.uint32))
+        } else if id == &"uint64".into() {
+            Ok(TypeAnnotation::Primitive(primitives.uint64))
         } else if id == &"float".into() {
             Ok(TypeAnnotation::Primitive(primitives.float))
         } else if id == &"bool".into() {

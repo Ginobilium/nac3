@@ -97,7 +97,17 @@ impl TopLevelComposer {
             .collect::<HashMap<_, _>>(),
             params: HashMap::new(),
         });
-        let primitives = PrimitiveStore { int32, int64, float, bool, none, range, str, exception };
+        let uint32 = unifier.add_ty(TypeEnum::TObj {
+            obj_id: DefinitionId(8),
+            fields: HashMap::new(),
+            params: HashMap::new(),
+        });
+        let uint64 = unifier.add_ty(TypeEnum::TObj {
+            obj_id: DefinitionId(9),
+            fields: HashMap::new(),
+            params: HashMap::new(),
+        });
+        let primitives = PrimitiveStore { int32, int64, float, bool, none, range, str, exception, uint32, uint64 };
         crate::typecheck::magic_methods::set_primitives_magic_methods(&primitives, &mut unifier);
         (primitives, unifier)
     }
@@ -399,6 +409,20 @@ impl TopLevelComposer {
                     Some("int64".to_string())
                 }
             }
+            SymbolValue::U32(..) => {
+                if matches!(ty, TypeAnnotation::Primitive(t) if *t == primitive.uint32) {
+                    None
+                } else {
+                    Some("uint32".to_string())
+                }
+            }
+            SymbolValue::U64(..) => {
+                if matches!(ty, TypeAnnotation::Primitive(t) if *t == primitive.uint64) {
+                    None
+                } else {
+                    Some("uint64".to_string())
+                }
+            }
             SymbolValue::Str(..) => {
                 if matches!(ty, TypeAnnotation::Primitive(t) if *t == primitive.str) {
                     None
@@ -469,6 +493,48 @@ pub fn parse_parameter_default_value(
                 match &args[0].node {
                     ast::ExprKind::Constant { value: Constant::Int(Some(v)), .. } =>
                         Ok(SymbolValue::I64(*v)),
+                    _ => Err(format!("only allow constant integer here at {}", default.location))
+                }
+            } else {
+                Err(format!("only allow constant integer here at {}", default.location))
+            }
+        }
+        ast::ExprKind::Call { func, args, .. } if {
+            match &func.node {
+                ast::ExprKind::Name { id, .. } => *id == "uint32".into(),
+                _ => false,
+            }
+        } => {
+            if args.len() == 1 {
+                match &args[0].node {
+                    ast::ExprKind::Constant { value: Constant::Int(Some(v)), .. } => {
+                        let v: Result<u32, _> = (*v).try_into();
+                        match v {
+                            Ok(v) => Ok(SymbolValue::U32(v)),
+                            _ => Err(format!("default param value out of range at {}", default.location))
+                        }
+                    }
+                    _ => Err(format!("only allow constant integer here at {}", default.location))
+                }
+            } else {
+                Err(format!("only allow constant integer here at {}", default.location))
+            }
+        }
+        ast::ExprKind::Call { func, args, .. } if {
+            match &func.node {
+                ast::ExprKind::Name { id, .. } => *id == "uint64".into(),
+                _ => false,
+            }
+        } => {
+            if args.len() == 1 {
+                match &args[0].node {
+                    ast::ExprKind::Constant { value: Constant::Int(Some(v)), .. } => {
+                        let v: Result<u64, _> = (*v).try_into();
+                        match v {
+                            Ok(v) => Ok(SymbolValue::U64(v)),
+                            _ => Err(format!("default param value out of range at {}", default.location))
+                        }
+                    }
                     _ => Err(format!("only allow constant integer here at {}", default.location))
                 }
             } else {

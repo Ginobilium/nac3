@@ -26,6 +26,8 @@ typedef unsigned _ExtInt(64) uint64_t;
 
 DEF_INT_EXP(int32_t)
 DEF_INT_EXP(int64_t)
+DEF_INT_EXP(uint32_t)
+DEF_INT_EXP(uint64_t)
 
 
 int32_t __nac3_slice_index_bound(int32_t i, const int32_t len) {

@@ -360,6 +360,8 @@ pub fn gen_func<'ctx, G: CodeGenerator>(
     let primitives = PrimitiveStore {
         int32: unifier.get_representative(primitives.int32),
         int64: unifier.get_representative(primitives.int64),
+        uint32: unifier.get_representative(primitives.uint32),
+        uint64: unifier.get_representative(primitives.uint64),
         float: unifier.get_representative(primitives.float),
         bool: unifier.get_representative(primitives.bool),
         none: unifier.get_representative(primitives.none),
@@ -371,6 +373,8 @@ pub fn gen_func<'ctx, G: CodeGenerator>(
     let mut type_cache: HashMap<_, _> = [
         (primitives.int32, context.i32_type().into()),
         (primitives.int64, context.i64_type().into()),
+        (primitives.uint32, context.i32_type().into()),
+        (primitives.uint64, context.i64_type().into()),
         (primitives.float, context.f64_type().into()),
         (primitives.bool, context.bool_type().into()),
         (primitives.str, {

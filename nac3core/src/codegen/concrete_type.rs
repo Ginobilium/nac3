@@ -28,6 +28,8 @@ pub struct ConcreteFuncArg {
 pub enum Primitive {
     Int32,
     Int64,
+    UInt32,
+    UInt64,
     Float,
     Bool,
     None,
@@ -72,6 +74,8 @@ impl ConcreteTypeStore {
                 ConcreteTypeEnum::TPrimitive(Primitive::Range),
                 ConcreteTypeEnum::TPrimitive(Primitive::Str),
                 ConcreteTypeEnum::TPrimitive(Primitive::Exception),
+                ConcreteTypeEnum::TPrimitive(Primitive::UInt32),
+                ConcreteTypeEnum::TPrimitive(Primitive::UInt64),
             ],
         }
     }
@@ -130,6 +134,10 @@ impl ConcreteTypeStore {
             ConcreteType(6)
         } else if unifier.unioned(ty, primitives.exception) {
             ConcreteType(7)
+        } else if unifier.unioned(ty, primitives.uint32) {
+            ConcreteType(8)
+        } else if unifier.unioned(ty, primitives.uint64) {
+            ConcreteType(9)
         } else if let Some(cty) = cache.get(&ty) {
             if let Some(cty) = cty {
                 *cty
@@ -223,6 +231,8 @@ impl ConcreteTypeStore {
                 let ty = match primitive {
                     Primitive::Int32 => primitives.int32,
                     Primitive::Int64 => primitives.int64,
+                    Primitive::UInt32 => primitives.uint32,
+                    Primitive::UInt64 => primitives.uint64,
                     Primitive::Float => primitives.float,
                     Primitive::Bool => primitives.bool,
                     Primitive::None => primitives.none,

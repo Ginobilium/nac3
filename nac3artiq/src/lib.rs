@@ -59,6 +59,8 @@ pub struct PrimitivePythonId {
     int: u64,
     int32: u64,
     int64: u64,
+    uint32: u64,
+    uint64: u64,
     float: u64,
     bool: u64,
     list: u64,
@@ -362,6 +364,8 @@ impl Nac3 {
             int: id_fn.call1((builtins_mod.getattr("int").unwrap(),)).unwrap().extract().unwrap(),
             int32: id_fn.call1((numpy_mod.getattr("int32").unwrap(),)).unwrap().extract().unwrap(),
             int64: id_fn.call1((numpy_mod.getattr("int64").unwrap(),)).unwrap().extract().unwrap(),
+            uint32: id_fn.call1((numpy_mod.getattr("uint32").unwrap(),)).unwrap().extract().unwrap(),
+            uint64: id_fn.call1((numpy_mod.getattr("uint64").unwrap(),)).unwrap().extract().unwrap(),
             bool: id_fn.call1((builtins_mod.getattr("bool").unwrap(),)).unwrap().extract().unwrap(),
             float: id_fn
                 .call1((builtins_mod.getattr("float").unwrap(),))

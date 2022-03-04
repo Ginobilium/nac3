@@ -23,6 +23,8 @@ use parking_lot::RwLock;
 pub enum SymbolValue {
     I32(i32),
     I64(i64),
+    U32(u32),
+    U64(u64),
     Str(String),
     Double(f64),
     Bool(bool),
@@ -34,6 +36,8 @@ impl Display for SymbolValue {
         match self {
             SymbolValue::I32(i) => write!(f, "{}", i),
             SymbolValue::I64(i) => write!(f, "int64({})", i),
+            SymbolValue::U32(i) => write!(f, "uint32({})", i),
+            SymbolValue::U64(i) => write!(f, "uint64({})", i),
             SymbolValue::Str(s) => write!(f, "\"{}\"", s),
             SymbolValue::Double(d) => write!(f, "{}", d),
             SymbolValue::Bool(b) => {
@@ -141,7 +145,7 @@ pub trait SymbolResolver {
 }
 
 thread_local! {
-    static IDENTIFIER_ID: [StrRef; 10] = [
+    static IDENTIFIER_ID: [StrRef; 12] = [
         "int32".into(),
         "int64".into(),
         "float".into(),
@@ -152,6 +156,8 @@ thread_local! {
         "tuple".into(),
         "str".into(),
         "Exception".into(),
+        "uint32".into(),
+        "uint64".into(),
     ];
 }
 
@@ -175,12 +181,18 @@ pub fn parse_type_annotation<T>(
     let tuple_id = ids[7];
     let str_id = ids[8];
     let exn_id = ids[9];
+    let uint32_id = ids[10];
+    let uint64_id = ids[11];
 
     let name_handling = |id: &StrRef, loc: Location, unifier: &mut Unifier| {
         if *id == int32_id {
             Ok(primitives.int32)
         } else if *id == int64_id {
             Ok(primitives.int64)
+        } else if *id == uint32_id {
+            Ok(primitives.uint32)
+        } else if *id == uint64_id {
+            Ok(primitives.uint64)
         } else if *id == float_id {
             Ok(primitives.float)
         } else if *id == bool_id {

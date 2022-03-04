@@ -62,6 +62,8 @@ impl TopLevelComposer {
             "tuple".into(),
             "int32".into(),
             "int64".into(),
+            "uint32".into(),
+            "uint64".into(),
             "float".into(),
             "bool".into(),
             "none".into(),

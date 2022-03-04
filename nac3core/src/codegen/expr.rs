@@ -94,6 +94,8 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
         match val {
             SymbolValue::I32(v) => self.ctx.i32_type().const_int(*v as u64, true).into(),
             SymbolValue::I64(v) => self.ctx.i64_type().const_int(*v as u64, true).into(),
+            SymbolValue::U32(v) => self.ctx.i32_type().const_int(*v as u64, false).into(),
+            SymbolValue::U64(v) => self.ctx.i64_type().const_int(*v as u64, false).into(),
             SymbolValue::Bool(v) => self.ctx.bool_type().const_int(*v as u64, true).into(),
             SymbolValue::Double(v) => self.ctx.f64_type().const_float(*v).into(),
             SymbolValue::Str(v) => {
@@ -152,9 +154,13 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
                 ty.const_int(if *v { 1 } else { 0 }, false).into()
             }
             Constant::Int(Some(val)) => {
-                let ty = if self.unifier.unioned(ty, self.primitives.int32) {
+                let ty = if self.unifier.unioned(ty, self.primitives.int32)
+                    || self.unifier.unioned(ty, self.primitives.uint32)
+                {
                     self.ctx.i32_type()
-                } else if self.unifier.unioned(ty, self.primitives.int64) {
+                } else if self.unifier.unioned(ty, self.primitives.int64)
+                    || self.unifier.unioned(ty, self.primitives.uint64)
+                {
                     self.ctx.i64_type()
                 } else {
                     unreachable!();
@@ -201,6 +207,7 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
         op: &Operator,
         lhs: BasicValueEnum<'ctx>,
         rhs: BasicValueEnum<'ctx>,
+        signed: bool
     ) -> BasicValueEnum<'ctx> {
         let (lhs, rhs) =
             if let (BasicValueEnum::IntValue(lhs), BasicValueEnum::IntValue(rhs)) = (lhs, rhs) {
@@ -208,26 +215,33 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
             } else {
                 unreachable!()
             };
-        match op {
-            Operator::Add => self.builder.build_int_add(lhs, rhs, "add").into(),
-            Operator::Sub => self.builder.build_int_sub(lhs, rhs, "sub").into(),
-            Operator::Mult => self.builder.build_int_mul(lhs, rhs, "mul").into(),
-            Operator::Div => {
-                let float = self.ctx.f64_type();
+        let float = self.ctx.f64_type();
+        match (op, signed) {
+            (Operator::Add, _) => self.builder.build_int_add(lhs, rhs, "add").into(),
+            (Operator::Sub, _) => self.builder.build_int_sub(lhs, rhs, "sub").into(),
+            (Operator::Mult, _) => self.builder.build_int_mul(lhs, rhs, "mul").into(),
+            (Operator::Div, true) => {
                 let left = self.builder.build_signed_int_to_float(lhs, float, "i2f");
                 let right = self.builder.build_signed_int_to_float(rhs, float, "i2f");
                 self.builder.build_float_div(left, right, "fdiv").into()
             }
-            Operator::Mod => self.builder.build_int_signed_rem(lhs, rhs, "mod").into(),
-            Operator::BitOr => self.builder.build_or(lhs, rhs, "or").into(),
-            Operator::BitXor => self.builder.build_xor(lhs, rhs, "xor").into(),
-            Operator::BitAnd => self.builder.build_and(lhs, rhs, "and").into(),
-            Operator::LShift => self.builder.build_left_shift(lhs, rhs, "lshift").into(),
-            Operator::RShift => self.builder.build_right_shift(lhs, rhs, true, "rshift").into(),
-            Operator::FloorDiv => self.builder.build_int_signed_div(lhs, rhs, "floordiv").into(),
-            Operator::Pow => integer_power(self, lhs, rhs).into(),
+            (Operator::Div, false) => {
+                let left = self.builder.build_unsigned_int_to_float(lhs, float, "i2f");
+                let right = self.builder.build_unsigned_int_to_float(rhs, float, "i2f");
+                self.builder.build_float_div(left, right, "fdiv").into()
+            }
+            (Operator::Mod, true) => self.builder.build_int_signed_rem(lhs, rhs, "mod").into(),
+            (Operator::Mod, false) => self.builder.build_int_unsigned_rem(lhs, rhs, "mod").into(),
+            (Operator::BitOr, _) => self.builder.build_or(lhs, rhs, "or").into(),
+            (Operator::BitXor, _) => self.builder.build_xor(lhs, rhs, "xor").into(),
+            (Operator::BitAnd, _) => self.builder.build_and(lhs, rhs, "and").into(),
+            (Operator::LShift, _) => self.builder.build_left_shift(lhs, rhs, "lshift").into(),
+            (Operator::RShift, _) => self.builder.build_right_shift(lhs, rhs, true, "rshift").into(),
+            (Operator::FloorDiv, true) => self.builder.build_int_signed_div(lhs, rhs, "floordiv").into(),
+            (Operator::FloorDiv, false) => self.builder.build_int_unsigned_div(lhs, rhs, "floordiv").into(),
+            (Operator::Pow, s) => integer_power(self, lhs, rhs, s).into(),
             // special implementation?
-            Operator::MatMult => unreachable!(),
+            (Operator::MatMult, _) => unreachable!(),
         }
     }
 
@@ -807,7 +821,9 @@ pub fn gen_binop_expr<'ctx, 'a, G: CodeGenerator>(
     // which would be unchanged until further unification, which we would never do
     // when doing code generation for function instances
     Ok(if ty1 == ty2 && [ctx.primitives.int32, ctx.primitives.int64].contains(&ty1) {
-        ctx.gen_int_ops(op, left, right)
+        ctx.gen_int_ops(op, left, right, true)
+    } else if ty1 == ty2 && [ctx.primitives.uint32, ctx.primitives.uint64].contains(&ty1) {
+        ctx.gen_int_ops(op, left, right, false)
     } else if ty1 == ty2 && ctx.primitives.float == ty1 {
         ctx.gen_float_ops(op, left, right)
     } else if ty1 == ctx.primitives.float && ty2 == ctx.primitives.int32 {

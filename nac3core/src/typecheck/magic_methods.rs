@@ -286,35 +286,32 @@ pub fn impl_eq(unifier: &mut Unifier, store: &PrimitiveStore, ty: Type) {
 }
 
 pub fn set_primitives_magic_methods(store: &PrimitiveStore, unifier: &mut Unifier) {
-    let PrimitiveStore { int32: int32_t, int64: int64_t, float: float_t, bool: bool_t, .. } =
-        *store;
-    /* int32 ======== */
-    impl_basic_arithmetic(unifier, store, int32_t, &[int32_t], int32_t);
-    impl_pow(unifier, store, int32_t, &[int32_t], int32_t);
-    impl_bitwise_arithmetic(unifier, store, int32_t);
-    impl_bitwise_shift(unifier, store, int32_t);
-    impl_div(unifier, store, int32_t, &[int32_t]);
-    impl_floordiv(unifier, store, int32_t, &[int32_t], int32_t);
-    impl_mod(unifier, store, int32_t, &[int32_t], int32_t);
-    impl_sign(unifier, store, int32_t);
-    impl_invert(unifier, store, int32_t);
-    impl_not(unifier, store, int32_t);
-    impl_comparison(unifier, store, int32_t, int32_t);
-    impl_eq(unifier, store, int32_t);
-
-    /* int64 ======== */
-    impl_basic_arithmetic(unifier, store, int64_t, &[int64_t], int64_t);
-    impl_pow(unifier, store, int64_t, &[int64_t], int64_t);
-    impl_bitwise_arithmetic(unifier, store, int64_t);
-    impl_bitwise_shift(unifier, store, int64_t);
-    impl_div(unifier, store, int64_t, &[int64_t]);
-    impl_floordiv(unifier, store, int64_t, &[int64_t], int64_t);
-    impl_mod(unifier, store, int64_t, &[int64_t], int64_t);
-    impl_sign(unifier, store, int64_t);
-    impl_invert(unifier, store, int64_t);
-    impl_not(unifier, store, int64_t);
-    impl_comparison(unifier, store, int64_t, int64_t);
-    impl_eq(unifier, store, int64_t);
+    let PrimitiveStore {
+        int32: int32_t,
+        int64: int64_t,
+        float: float_t,
+        bool: bool_t,
+        uint32: uint32_t,
+        uint64: uint64_t,
+        ..
+    } = *store;
+    /* int ======== */
+    for t in [int32_t, int64_t, uint32_t, uint64_t] {
+        impl_basic_arithmetic(unifier, store, t, &[t], t);
+        impl_pow(unifier, store, t, &[t], t);
+        impl_bitwise_arithmetic(unifier, store, t);
+        impl_bitwise_shift(unifier, store, t);
+        impl_div(unifier, store, t, &[t]);
+        impl_floordiv(unifier, store, t, &[t], t);
+        impl_mod(unifier, store, t, &[t], t);
+        impl_invert(unifier, store, t);
+        impl_not(unifier, store, t);
+        impl_comparison(unifier, store, t, t);
+        impl_eq(unifier, store, t);
+    }
+    for t in [int32_t, int64_t] {
+        impl_sign(unifier, store, t);
+    }
 
     /* float ======== */
     impl_basic_arithmetic(unifier, store, float_t, &[float_t], float_t);

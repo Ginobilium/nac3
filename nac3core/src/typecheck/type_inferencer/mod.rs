@@ -32,6 +32,8 @@ impl From<Location> for CodeLocation {
 pub struct PrimitiveStore {
     pub int32: Type,
     pub int64: Type,
+    pub uint32: Type,
+    pub uint64: Type,
     pub float: Type,
     pub bool: Type,
     pub none: Type,
@@ -779,8 +781,56 @@ impl<'a> Inferencer<'a> {
                         &args[0].node
                     {
                         let custom = Some(self.primitives.int64);
-                        if val.is_none() {
-                            return report_error("Integer out of bound", args[0].location);
+                        match val {
+                            Some(val) if {
+                                let v: Result<i64, _> = (*val).try_into();
+                                v.is_ok()
+                            } => {},
+                            _ => return report_error("Integer out of bound", args[0].location)
+                        }
+                        return Ok(Located {
+                            location: args[0].location,
+                            custom,
+                            node: ExprKind::Constant {
+                                value: ast::Constant::Int(*val),
+                                kind: kind.clone(),
+                            },
+                        });
+                    }
+                }
+                if id == "uint32".into() && args.len() == 1 {
+                    if let ExprKind::Constant { value: ast::Constant::Int(val), kind } =
+                        &args[0].node
+                    {
+                        let custom = Some(self.primitives.uint32);
+                        match val {
+                            Some(val) if {
+                                let v: Result<u32, _> = (*val).try_into();
+                                v.is_ok()
+                            } => {},
+                            _ => return report_error("Integer out of bound", args[0].location)
+                        }
+                        return Ok(Located {
+                            location: args[0].location,
+                            custom,
+                            node: ExprKind::Constant {
+                                value: ast::Constant::Int(*val),
+                                kind: kind.clone(),
+                            },
+                        });
+                    }
+                }
+                if id == "uint64".into() && args.len() == 1 {
+                    if let ExprKind::Constant { value: ast::Constant::Int(val), kind } =
+                    &args[0].node
+                    {
+                        let custom = Some(self.primitives.uint64);
+                        match val {
+                            Some(val) if {
+                                let v: Result<u64, _> = (*val).try_into();
+                                v.is_ok()
+                            } => {},
+                            _ => return report_error("Integer out of bound", args[0].location)
                         }
                         return Ok(Located {
                             location: args[0].location,
@@ -876,7 +926,7 @@ impl<'a> Inferencer<'a> {
                 match val {
                     Some(val) => {
                         let int32: Result<i32, _> = (*val).try_into();
-                        // int64 is handled separately in functions
+                        // int64 and unsigned integers are handled separately in functions
                         if int32.is_ok() {
                             Ok(self.primitives.int32)
                         } else {

@@ -24,6 +24,8 @@ use crate::PrimitivePythonId;
 pub enum PrimitiveValue {
     I32(i32),
     I64(i64),
+    U32(u32),
+    U64(u64),
     F64(f64),
     Bool(bool),
 }
@@ -115,6 +117,8 @@ impl StaticValue for PythonValue {
             return Ok(match val {
                 PrimitiveValue::I32(val) => ctx.ctx.i32_type().const_int(*val as u64, false).into(),
                 PrimitiveValue::I64(val) => ctx.ctx.i64_type().const_int(*val as u64, false).into(),
+                PrimitiveValue::U32(val) => ctx.ctx.i32_type().const_int(*val as u64, false).into(),
+                PrimitiveValue::U64(val) => ctx.ctx.i64_type().const_int(*val as u64, false).into(),
                 PrimitiveValue::F64(val) => ctx.ctx.f64_type().const_float(*val).into(),
                 PrimitiveValue::Bool(val) => {
                     ctx.ctx.bool_type().const_int(*val as u64, false).into()
@@ -238,6 +242,10 @@ impl InnerResolver {
             Ok(Ok((primitives.int32, true)))
         } else if ty_id == self.primitive_ids.int64 {
             Ok(Ok((primitives.int64, true)))
+        } else if ty_id == self.primitive_ids.uint32 {
+            Ok(Ok((primitives.uint32, true)))
+        } else if ty_id == self.primitive_ids.uint64 {
+            Ok(Ok((primitives.uint64, true)))
         } else if ty_id == self.primitive_ids.bool {
             Ok(Ok((primitives.bool, true)))
         } else if ty_id == self.primitive_ids.float {
@@ -615,6 +623,16 @@ impl InnerResolver {
                     format!("{} is not in the range of int64", obj)))?;
             self.id_to_primitive.write().insert(id, PrimitiveValue::I64(val));
             Ok(Some(ctx.ctx.i64_type().const_int(val as u64, false).into()))
+        } else if ty_id == self.primitive_ids.uint32 {
+            let val: u32 = obj.extract().map_err(|_| super::CompileError::new_err(
+                    format!("{} is not in the range of uint32", obj)))?;
+            self.id_to_primitive.write().insert(id, PrimitiveValue::U32(val));
+            Ok(Some(ctx.ctx.i32_type().const_int(val as u64, false).into()))
+        } else if ty_id == self.primitive_ids.uint64 {
+            let val: u64 = obj.extract().map_err(|_| super::CompileError::new_err(
+                    format!("{} is not in the range of uint64", obj)))?;
+            self.id_to_primitive.write().insert(id, PrimitiveValue::U64(val));
+            Ok(Some(ctx.ctx.i64_type().const_int(val, false).into()))
         } else if ty_id == self.primitive_ids.bool {
             let val: bool = obj.extract().map_err(|_| super::CompileError::new_err(
                     format!("{} is not in the range of bool", obj)))?;

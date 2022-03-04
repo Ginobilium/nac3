@@ -12,12 +12,14 @@ type BuiltinInfo = (Vec<(Arc<RwLock<TopLevelDef>>, Option<Stmt>)>, &'static [&'s
 pub fn get_builtins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
     let int32 = primitives.0.int32;
     let int64 = primitives.0.int64;
+    let uint32 = primitives.0.uint32;
+    let uint64 = primitives.0.uint64;
     let float = primitives.0.float;
     let boolean = primitives.0.bool;
     let range = primitives.0.range;
     let string = primitives.0.str;
     let num_ty = primitives.1.get_fresh_var_with_range(
-        &[int32, int64, float, boolean],
+        &[int32, int64, float, boolean, uint32, uint64],
         Some("N".into()),
         None,
     );
@@ -35,12 +37,12 @@ pub fn get_builtins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
         ("__param2__".into(), int64, true),
     ];
     let div_by_zero = primitives.1.add_ty(TypeEnum::TObj {
-        obj_id: DefinitionId(10),
+        obj_id: DefinitionId(12),
         fields: exception_fields.iter().map(|(a, b, c)| (*a, (*b, *c))).collect(),
         params: Default::default(),
     });
     let index_error = primitives.1.add_ty(TypeEnum::TObj {
-        obj_id: DefinitionId(11),
+        obj_id: DefinitionId(13),
         fields: exception_fields.iter().map(|(a, b, c)| (*a, (*b, *c))).collect(),
         params: Default::default(),
     });
@@ -125,6 +127,20 @@ pub fn get_builtins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
             resolver: None,
             loc: None,
         })),
+        Arc::new(RwLock::new(TopLevelComposer::make_top_level_class_def(
+            8,
+            None,
+            "uint32".into(),
+            None,
+            None,
+        ))),
+        Arc::new(RwLock::new(TopLevelComposer::make_top_level_class_def(
+            9,
+            None,
+            "uint64".into(),
+            None,
+            None,
+        ))),
         Arc::new(RwLock::new(TopLevelDef::Function {
             name: "ZeroDivisionError.__init__".into(),
             simple_name: "__init__".into(),
@@ -149,7 +165,7 @@ pub fn get_builtins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
         })),
         Arc::new(RwLock::new(TopLevelDef::Class {
             name: "ZeroDivisionError".into(),
-            object_id: DefinitionId(10),
+            object_id: DefinitionId(12),
             type_vars: Default::default(),
             fields: exception_fields.clone(),
             methods: vec![("__init__".into(), div_by_zero_signature, DefinitionId(8))],
@@ -163,7 +179,7 @@ pub fn get_builtins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
         })),
         Arc::new(RwLock::new(TopLevelDef::Class {
             name: "IndexError".into(),
-            object_id: DefinitionId(11),
+            object_id: DefinitionId(13),
             type_vars: Default::default(),
             fields: exception_fields,
             methods: vec![("__init__".into(), index_error_signature, DefinitionId(9))],
@@ -291,6 +307,46 @@ pub fn get_builtins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
                             unreachable!()
                         },
                     )
+                },
+            )))),
+            loc: None,
+        })),
+        Arc::new(RwLock::new(TopLevelDef::Function {
+            name: "uint32".into(),
+            simple_name: "uint32".into(),
+            signature: primitives.1.add_ty(TypeEnum::TFunc(FunSignature {
+                args: vec![FuncArg { name: "n".into(), ty: num_ty.0, default_value: None }],
+                ret: uint32,
+                vars: var_map.clone(),
+            })),
+            var_id: Default::default(),
+            instance_to_symbol: Default::default(),
+            instance_to_stmt: Default::default(),
+            resolver: None,
+            codegen_callback: Some(Arc::new(GenCall::new(Box::new(
+                |ctx, _, fun, args, generator| {
+                    // TODO: 
+                    unimplemented!()
+                },
+            )))),
+            loc: None,
+        })),
+        Arc::new(RwLock::new(TopLevelDef::Function {
+            name: "uint64".into(),
+            simple_name: "uint64".into(),
+            signature: primitives.1.add_ty(TypeEnum::TFunc(FunSignature {
+                args: vec![FuncArg { name: "n".into(), ty: num_ty.0, default_value: None }],
+                ret: uint64,
+                vars: var_map.clone(),
+            })),
+            var_id: Default::default(),
+            instance_to_symbol: Default::default(),
+            instance_to_stmt: Default::default(),
+            resolver: None,
+            codegen_callback: Some(Arc::new(GenCall::new(Box::new(
+                |ctx, _, fun, args, generator| {
+                    // TODO: 
+                    unimplemented!()
                 },
             )))),
             loc: None,
@@ -797,6 +853,8 @@ pub fn get_builtins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
             "IndexError",
             "int32",
             "int64",
+            "uint32",
+            "uint64",
             "float",
             "round",
             "round64",
