@@ -468,7 +468,7 @@ pub fn exn_constructor<'ctx, 'a>(
     let def = defs[zelf_id].read();
     let zelf_name =
         if let TopLevelDef::Class { name, .. } = &*def { *name } else { unreachable!() };
-    let exception_name = format!("0:{}", zelf_name);
+    let exception_name = format!("{}:{}", ctx.resolver.get_exception_id(zelf_id), zelf_name);
     unsafe {
         let id_ptr = ctx.builder.build_in_bounds_gep(zelf, &[zero, zero], "exn.id");
         let id = ctx.resolver.get_string_id(&exception_name);
@@ -641,7 +641,13 @@ pub fn gen_try<'ctx, 'a, G: CodeGenerator>(
                     &mut ctx.unifier,
                     type_.custom.unwrap(),
                 );
-                let exn_id = ctx.resolver.get_string_id(&format!("0:{}", exn_name));
+                let obj_id = if let TypeEnum::TObj { obj_id, .. } = &*ctx.unifier.get_ty(type_.custom.unwrap()) {
+                    *obj_id
+                } else {
+                    unreachable!()
+                };
+                let exception_name = format!("{}:{}", ctx.resolver.get_exception_id(obj_id.0), exn_name);
+                let exn_id = ctx.resolver.get_string_id(&exception_name);
                 let exn_id_global =
                     ctx.module.add_global(ctx.ctx.i32_type(), None, &format!("exn.{}", exn_id));
                 exn_id_global.set_initializer(&ctx.ctx.i32_type().const_int(exn_id as u64, false));

@@ -87,6 +87,7 @@ struct Nac3 {
     working_directory: TempDir,
     top_levels: Vec<TopLevelComponent>,
     string_store: Arc<RwLock<HashMap<String, i32>>>,
+    exception_ids: Arc<RwLock<HashMap<usize, usize>>>,
 }
 
 create_exception!(nac3artiq, CompileError, exceptions::PyException);
@@ -395,6 +396,7 @@ impl Nac3 {
             pyid_to_def: Default::default(),
             working_directory,
             string_store: Default::default(),
+            exception_ids: Default::default(),
         })
     }
 
@@ -442,6 +444,8 @@ impl Nac3 {
         let builtins = PyModule::import(py, "builtins")?;
         let typings = PyModule::import(py, "typing")?;
         let id_fn = builtins.getattr("id")?;
+        let issubclass = builtins.getattr("issubclass")?;
+        let exn_class = builtins.getattr("Exception")?;
         let store_obj = embedding_map.getattr("store_object").unwrap().to_object(py);
         let store_str = embedding_map.getattr("store_str").unwrap().to_object(py);
         let store_fun = embedding_map.getattr("store_function").unwrap().to_object(py);
@@ -451,7 +455,7 @@ impl Nac3 {
             type_fn: builtins.getattr("type").unwrap().to_object(py),
             origin_ty_fn: typings.getattr("get_origin").unwrap().to_object(py),
             args_ty_fn: typings.getattr("get_args").unwrap().to_object(py),
-            store_obj,
+            store_obj: store_obj.clone(),
             store_str,
         };
         let mut module_to_resolver_cache: HashMap<u64, _> = HashMap::new();
@@ -463,6 +467,18 @@ impl Nac3 {
             let py_module: &PyAny = module.extract(py)?;
             let module_id: u64 = id_fn.call1((py_module,))?.extract()?;
             let helper = helper.clone();
+            let class_obj;
+            if let StmtKind::ClassDef { name, .. } = &stmt.node {
+                let class = py_module.getattr(name.to_string()).unwrap();
+                if issubclass.call1((class, exn_class)).unwrap().extract().unwrap() &&
+                    class.getattr("artiq_builtin").is_err() {
+                    class_obj = Some(class);
+                } else {
+                    class_obj = None;
+                }
+            } else {
+                class_obj = None;
+            }
             let (name_to_pyid, resolver) =
                 module_to_resolver_cache.get(&module_id).cloned().unwrap_or_else(|| {
                     let mut name_to_pyid: HashMap<StrRef, u64> = HashMap::new();
@@ -488,6 +504,7 @@ impl Nac3 {
                         field_to_val: Default::default(),
                         helper,
                         string_store: self.string_store.clone(),
+                        exception_ids: self.exception_ids.clone(),
                     })))
                         as Arc<dyn SymbolResolver + Send + Sync>;
                     let name_to_pyid = Rc::new(name_to_pyid);
@@ -504,6 +521,9 @@ impl Nac3 {
                         e
                     ))
                 })?;
+            if let Some(class_obj) = class_obj {
+                self.exception_ids.write().insert(def_id.0, store_obj.call1(py, (class_obj, ))?.extract(py)?);
+            }
 
             match &stmt.node {
                 StmtKind::FunctionDef { decorator_list, .. } => {
@@ -569,6 +589,7 @@ impl Nac3 {
             module: module.to_object(py),
             helper,
             string_store: self.string_store.clone(),
+            exception_ids: self.exception_ids.clone(),
         }))) as Arc<dyn SymbolResolver + Send + Sync>;
         let (_, def_id, _) = composer
             .register_top_level(synthesized.pop().unwrap(), Some(resolver.clone()), "".into())

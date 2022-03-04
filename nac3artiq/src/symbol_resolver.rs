@@ -41,6 +41,7 @@ pub struct InnerResolver {
     pub primitive_ids: PrimitivePythonId,
     pub helper: PythonHelper,
     pub string_store: Arc<RwLock<HashMap<String, i32>>>,
+    pub exception_ids: Arc<RwLock<HashMap<usize, usize>>>,
     // module specific
     pub name_to_pyid: HashMap<StrRef, u64>,
     pub module: PyObject,
@@ -976,5 +977,10 @@ impl SymbolResolver for Resolver {
             string_store.insert(s.into(), id);
             id
         }
+    }
+
+    fn get_exception_id(&self, tyid: usize) -> usize {
+        let exn_ids = self.0.exception_ids.read();
+        exn_ids.get(&tyid).cloned().unwrap_or(0)
     }
 }

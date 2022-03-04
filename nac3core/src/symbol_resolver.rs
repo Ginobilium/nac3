@@ -136,6 +136,7 @@ pub trait SymbolResolver {
 
     fn get_default_param_value(&self, expr: &nac3parser::ast::Expr) -> Option<SymbolValue>;
     fn get_string_id(&self, s: &str) -> i32;
+    fn get_exception_id(&self, tyid: usize) -> usize;
     // handle function call etc.
 }
 
