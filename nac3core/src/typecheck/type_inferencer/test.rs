@@ -50,6 +50,10 @@ impl SymbolResolver for Resolver {
     fn get_string_id(&self, _: &str) -> i32 {
         unimplemented!()
     }
+
+    fn get_exception_id(&self, tyid: usize) -> usize {
+        unimplemented!()
+    }
 }
 
 struct TestEnvironment {
