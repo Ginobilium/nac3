@@ -429,7 +429,10 @@ impl Unifier {
             if signature.args.len() <= i {
                 self.restore_snapshot();
                 return Err(TypeError::new(
-                    TypeErrorKind::TooManyArguments { expected: signature.args.len(), got: i },
+                    TypeErrorKind::TooManyArguments {
+                        expected: signature.args.len(),
+                        got: posargs.len() + kwargs.len(),
+                    },
                     *loc,
                 ));
             }
