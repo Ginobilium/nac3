@@ -923,6 +923,9 @@ Factor: ast::Expr = {
                         kind: kind.clone()
                     }
                 }
+                (ast::Unaryop::UAdd, ast::ExprKind::Constant { value: Constant::Int(val), kind }) => {
+                    ast::ExprKind::Constant { value: Constant::Int(*val), kind: kind.clone() }
+                }
                 _ => ast::ExprKind::UnaryOp { operand: Box::new(e), op }
             }
         }
