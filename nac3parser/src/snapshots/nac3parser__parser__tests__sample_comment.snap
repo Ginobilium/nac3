@@ -67,9 +67,7 @@ expression: "parse_program(&source, Default::default()).unwrap()"
                             custom: (),
                             node: Constant {
                                 value: Int(
-                                    Some(
-                                        3,
-                                    ),
+                                    3,
                                 ),
                                 kind: None,
                             },

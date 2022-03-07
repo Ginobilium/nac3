@@ -159,9 +159,7 @@ Located {
                                     custom: (),
                                     node: Constant {
                                         value: Int(
-                                            Some(
-                                                5,
-                                            ),
+                                            5,
                                         ),
                                         kind: None,
                                     },
@@ -208,9 +206,7 @@ Located {
                                     custom: (),
                                     node: Constant {
                                         value: Int(
-                                            Some(
-                                                10,
-                                            ),
+                                            10,
                                         ),
                                         kind: None,
                                     },

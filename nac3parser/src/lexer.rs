@@ -1460,16 +1460,16 @@ class Foo(A, B):
             tokens,
             vec![
                 Tok::Int {
-                    value: Some(47i64),
+                    value: 47i128,
                 },
                 Tok::Int {
-                    value: Some(13i64),
+                    value: 13i128,
                 },
                 Tok::Int {
-                    value: Some(0i64),
+                    value: 0i128,
                 },
                 Tok::Int {
-                    value: Some(123i64),
+                    value: 123i128,
                 },
                 Tok::Float { value: 0.2 },
                 Tok::Complex {
@@ -1492,7 +1492,7 @@ class Foo(A, B):
             fn $name() {
                 let source = format!(r"99232  # {}", $eol);
                 let tokens = lex_source(&source);
-                assert_eq!(tokens, vec![Tok::Int { value: Some(99232i64) }, Tok::Newline]);
+                assert_eq!(tokens, vec![Tok::Int { value: 99232i128 }, Tok::Newline]);
             }
             )*
         }
@@ -1515,9 +1515,9 @@ class Foo(A, B):
                 assert_eq!(
                     tokens,
                     vec![
-                        Tok::Int { value: Some(123i64) },
+                        Tok::Int { value: 123i128 },
                         Tok::Newline,
-                        Tok::Int { value: Some(456i64) },
+                        Tok::Int { value: 456i128 },
                         Tok::Newline,
                     ]
                 )
@@ -1544,15 +1544,15 @@ class Foo(A, B):
                 },
                 Tok::Equal,
                 Tok::Int {
-                    value: Some(99i64)
+                    value: 99i128
                 },
                 Tok::Plus,
                 Tok::Int {
-                    value: Some(2i64)
+                    value: 2i128
                 },
                 Tok::Minus,
                 Tok::Int {
-                    value: Some(0i64)
+                    value: 0i128
                 },
                 Tok::Newline,
             ]
@@ -1579,7 +1579,7 @@ class Foo(A, B):
                         Tok::Newline,
                         Tok::Indent,
                         Tok::Return,
-                        Tok::Int { value: Some(99i64) },
+                        Tok::Int { value: 99i128 },
                         Tok::Newline,
                         Tok::Dedent,
                     ]
@@ -1622,7 +1622,7 @@ class Foo(A, B):
                         Tok::Newline,
                         Tok::Indent,
                         Tok::Return,
-                        Tok::Int { value: Some(99i64) },
+                        Tok::Int { value: 99i128 },
                         Tok::Newline,
                         Tok::Dedent,
                         Tok::Dedent,
@@ -1660,7 +1660,7 @@ class Foo(A, B):
                         Tok::Newline,
                         Tok::Indent,
                         Tok::Return,
-                        Tok::Int { value: Some(99i64) },
+                        Tok::Int { value: 99i128 },
                         Tok::Newline,
                         Tok::Dedent,
                         Tok::Dedent,
@@ -1698,9 +1698,9 @@ class Foo(A, B):
                         },
                         Tok::Equal,
                         Tok::Lsqb,
-                        Tok::Int { value: Some(1i64) },
+                        Tok::Int { value: 1i128 },
                         Tok::Comma,
-                        Tok::Int { value: Some(2i64) },
+                        Tok::Int { value: 2i128 },
                         Tok::Rsqb,
                         Tok::Newline,
                     ]

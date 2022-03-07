@@ -26,9 +26,7 @@ expression: parse_ast
                 custom: (),
                 node: Constant {
                     value: Int(
-                        Some(
-                            1,
-                        ),
+                        1,
                     ),
                     kind: None,
                 },
@@ -55,9 +53,7 @@ expression: parse_ast
                             custom: (),
                             node: Constant {
                                 value: Int(
-                                    Some(
-                                        10,
-                                    ),
+                                    10,
                                 ),
                                 kind: None,
                             },
@@ -88,9 +84,7 @@ expression: parse_ast
                             custom: (),
                             node: Constant {
                                 value: Int(
-                                    Some(
-                                        2,
-                                    ),
+                                    2,
                                 ),
                                 kind: None,
                             },
@@ -117,9 +111,7 @@ expression: parse_ast
                                         custom: (),
                                         node: Constant {
                                             value: Int(
-                                                Some(
-                                                    20,
-                                                ),
+                                                20,
                                             ),
                                             kind: None,
                                         },
@@ -150,9 +142,7 @@ expression: parse_ast
                                         custom: (),
                                         node: Constant {
                                             value: Int(
-                                                Some(
-                                                    30,
-                                                ),
+                                                30,
                                             ),
                                             kind: None,
                                         },

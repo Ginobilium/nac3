@@ -82,9 +82,7 @@ expression: "parse_program(&source, Default::default()).unwrap()"
                             custom: (),
                             node: Constant {
                                 value: Int(
-                                    Some(
-                                        4,
-                                    ),
+                                    4,
                                 ),
                                 kind: None,
                             },
@@ -100,9 +98,7 @@ expression: "parse_program(&source, Default::default()).unwrap()"
                             custom: (),
                             node: Constant {
                                 value: Int(
-                                    Some(
-                                        5,
-                                    ),
+                                    5,
                                 ),
                                 kind: None,
                             },
