@@ -463,16 +463,13 @@ pub fn parse_parameter_default_value(
 ) -> Result<SymbolValue, String> {
     fn handle_constant(val: &Constant, loc: &Location) -> Result<SymbolValue, String> {
         match val {
-            Constant::Int(v) => match v {
-                Some(v) => {
-                    if let Ok(v) = (*v).try_into() {
-                        Ok(SymbolValue::I32(v))
-                    } else {
-                        Err(format!("integer value out of range at {}", loc))
-                    }
+            Constant::Int(v) => {
+                if let Ok(v) = (*v).try_into() {
+                    Ok(SymbolValue::I32(v))
+                } else {
+                    Err(format!("integer value out of range at {}", loc))
                 }
-                None => Err(format!("integer value out of range at {}", loc)),
-            },
+            }
             Constant::Float(v) => Ok(SymbolValue::Double(*v)),
             Constant::Bool(v) => Ok(SymbolValue::Bool(*v)),
             Constant::Tuple(tuple) => Ok(SymbolValue::Tuple(
@@ -483,62 +480,39 @@ pub fn parse_parameter_default_value(
     }
     match &default.node {
         ast::ExprKind::Constant { value, .. } => handle_constant(value, &default.location),
-        ast::ExprKind::Call { func, args, .. } if {
+        ast::ExprKind::Call { func, args, .. } if args.len() == 1 => {
             match &func.node {
-                ast::ExprKind::Name { id, .. } => *id == "int64".into(),
-                _ => false,
-            }
-        } => {
-            if args.len() == 1 {
-                match &args[0].node {
-                    ast::ExprKind::Constant { value: Constant::Int(Some(v)), .. } =>
-                        Ok(SymbolValue::I64(*v)),
+                ast::ExprKind::Name { id, .. } if *id == "int64".into() => match &args[0].node {
+                    ast::ExprKind::Constant { value: Constant::Int(v), .. } => {
+                        let v: Result<i64, _> = (*v).try_into();
+                        match v {
+                            Ok(v) => Ok(SymbolValue::I64(v)),
+                            _ => Err(format!("default param value out of range at {}", default.location)),
+                        }
+                    }
                     _ => Err(format!("only allow constant integer here at {}", default.location))
                 }
-            } else {
-                Err(format!("only allow constant integer here at {}", default.location))
-            }
-        }
-        ast::ExprKind::Call { func, args, .. } if {
-            match &func.node {
-                ast::ExprKind::Name { id, .. } => *id == "uint32".into(),
-                _ => false,
-            }
-        } => {
-            if args.len() == 1 {
-                match &args[0].node {
-                    ast::ExprKind::Constant { value: Constant::Int(Some(v)), .. } => {
+                ast::ExprKind::Name { id, .. } if *id == "uint32".into() => match &args[0].node {
+                    ast::ExprKind::Constant { value: Constant::Int(v), .. } => {
                         let v: Result<u32, _> = (*v).try_into();
                         match v {
                             Ok(v) => Ok(SymbolValue::U32(v)),
-                            _ => Err(format!("default param value out of range at {}", default.location))
+                            _ => Err(format!("default param value out of range at {}", default.location)),
                         }
                     }
                     _ => Err(format!("only allow constant integer here at {}", default.location))
                 }
-            } else {
-                Err(format!("only allow constant integer here at {}", default.location))
-            }
-        }
-        ast::ExprKind::Call { func, args, .. } if {
-            match &func.node {
-                ast::ExprKind::Name { id, .. } => *id == "uint64".into(),
-                _ => false,
-            }
-        } => {
-            if args.len() == 1 {
-                match &args[0].node {
-                    ast::ExprKind::Constant { value: Constant::Int(Some(v)), .. } => {
+                ast::ExprKind::Name { id, .. } if *id == "uint64".into() => match &args[0].node {
+                    ast::ExprKind::Constant { value: Constant::Int(v), .. } => {
                         let v: Result<u64, _> = (*v).try_into();
                         match v {
                             Ok(v) => Ok(SymbolValue::U64(v)),
-                            _ => Err(format!("default param value out of range at {}", default.location))
+                            _ => Err(format!("default param value out of range at {}", default.location)),
                         }
                     }
                     _ => Err(format!("only allow constant integer here at {}", default.location))
                 }
-            } else {
-                Err(format!("only allow constant integer here at {}", default.location))
+                _ => Err(format!("unsupported default parameter at {}", default.location)),
             }
         }
         ast::ExprKind::Tuple { elts, .. } => Ok(SymbolValue::Tuple(elts

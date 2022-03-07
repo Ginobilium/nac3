@@ -153,7 +153,7 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
                 let ty = self.ctx.bool_type();
                 ty.const_int(if *v { 1 } else { 0 }, false).into()
             }
-            Constant::Int(Some(val)) => {
+            Constant::Int(val) => {
                 let ty = if self.unifier.unioned(ty, self.primitives.int32)
                     || self.unifier.unioned(ty, self.primitives.uint32)
                 {
@@ -1315,7 +1315,7 @@ pub fn gen_expr<'ctx, 'a, G: CodeGenerator>(
                     .into_struct_value();
                 let index: u32 =
                     if let ExprKind::Constant { value: ast::Constant::Int(v), .. } = &slice.node {
-                        v.unwrap().try_into().unwrap()
+                        (*v).try_into().unwrap()
                     } else {
                         unreachable!("tuple subscript must be const int after type check");
                     };

@@ -919,7 +919,7 @@ Factor: ast::Expr = {
             match (&op, &e.node) {
                 (ast::Unaryop::USub, ast::ExprKind::Constant { value: Constant::Int(val), kind }) => {
                     ast::ExprKind::Constant {
-                        value: if let Some(val) = val { Constant::Int(Some(-val)) } else { Constant::Int(None) },
+                        value: if i128::MAX == *val { Constant::Int(*val) } else { Constant::Int(-val) },
                         kind: kind.clone()
                     }
                 }
@@ -1361,7 +1361,7 @@ extern {
         "True" => lexer::Tok::True,
         "False" => lexer::Tok::False,
         "None" => lexer::Tok::None,
-        int => lexer::Tok::Int { value: <Option<i64>> },
+        int => lexer::Tok::Int { value: <i128> },
         float => lexer::Tok::Float { value: <f64> },
         complex => lexer::Tok::Complex { real: <f64>, imag: <f64> },
         string => lexer::Tok::String { value: <String>, is_fstring: <bool> },

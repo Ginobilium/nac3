@@ -7,7 +7,7 @@ use crate::ast;
 #[derive(Clone, Debug, PartialEq)]
 pub enum Tok {
     Name { name: ast::StrRef },
-    Int { value: Option<i64> },
+    Int { value: i128 },
     Float { value: f64 },
     Complex { real: f64, imag: f64 },
     String { value: String, is_fstring: bool },
@@ -112,7 +112,7 @@ impl fmt::Display for Tok {
         use Tok::*;
         match self {
             Name { name } => write!(f, "'{}'", ast::get_str_from_ref(&ast::get_str_ref_lock(), *name)),
-            Int { value } => if let Some(value) = value { write!(f, "'{}'", value) } else { write!(f, "'#OFL#'") },
+            Int { value } => if *value != i128::MAX { write!(f, "'{}'", value) } else { write!(f, "'#OFL#'") },
             Float { value } => write!(f, "'{}'", value),
             Complex { real, imag } => write!(f, "{}j{}", real, imag),
             String { value, is_fstring } => {

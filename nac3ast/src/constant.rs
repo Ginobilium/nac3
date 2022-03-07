@@ -4,7 +4,7 @@ pub enum Constant {
     Bool(bool),
     Str(String),
     Bytes(Vec<u8>),
-    Int(Option<i64>),
+    Int(i128),
     Tuple(Vec<Constant>),
     Float(f64),
     Complex { real: f64, imag: f64 },
@@ -28,12 +28,12 @@ impl From<bool> for Constant {
 }
 impl From<i32> for Constant {
     fn from(i: i32) -> Constant {
-        Self::Int(Some(i as i64))
+        Self::Int(i as i128)
     }
 }
 impl From<i64> for Constant {
     fn from(i: i64) -> Constant {
-        Self::Int(Some(i))
+        Self::Int(i as i128)
     }
 }
 

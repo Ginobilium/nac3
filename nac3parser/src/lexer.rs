@@ -285,11 +285,11 @@ where
     fn lex_number_radix(&mut self, start_pos: Location, radix: u32) -> LexResult {
         let value_text = self.radix_run(radix);
         let end_pos = self.get_pos();
-        let value = match i64::from_str_radix(&value_text, radix) {
-            Ok(value) => Some(value),
+        let value = match i128::from_str_radix(&value_text, radix) {
+            Ok(value) => value,
             Err(e) => {
                 match e.kind() {
-                    IntErrorKind::PosOverflow | IntErrorKind::NegOverflow => None,
+                    IntErrorKind::PosOverflow | IntErrorKind::NegOverflow => i128::MAX,
                     _ => return Err(LexicalError {
                         error: LexicalErrorType::OtherError(format!("{:?}", e)),
                         location: start_pos,
@@ -361,9 +361,9 @@ where
                 let end_pos = self.get_pos();
                 // assumption: value_text contains a valid integer.
                 // parse should only fail because of overflow.
-                let value = value_text.parse::<i64>().ok();
+                let value = value_text.parse::<i128>().ok();
                 let nonzero = match value {
-                    Some(value) => value != 0i64,
+                    Some(value) => value != 0i128,
                     None => true
                 };
                 if start_is_zero && nonzero {
@@ -372,7 +372,7 @@ where
                         location: self.get_pos(),
                     });
                 }
-                Ok((start_pos, Tok::Int { value }, end_pos))
+                Ok((start_pos, Tok::Int { value: value.unwrap_or(i128::MAX) }, end_pos))
             }
         }
     }

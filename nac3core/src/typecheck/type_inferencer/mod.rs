@@ -781,21 +781,19 @@ impl<'a> Inferencer<'a> {
                         &args[0].node
                     {
                         let custom = Some(self.primitives.int64);
-                        match val {
-                            Some(val) if {
-                                let v: Result<i64, _> = (*val).try_into();
-                                v.is_ok()
-                            } => {},
-                            _ => return report_error("Integer out of bound", args[0].location)
+                        let v: Result<i64, _> = (*val).try_into();
+                        if v.is_ok() {
+                            return Ok(Located {
+                                location: args[0].location,
+                                custom,
+                                node: ExprKind::Constant {
+                                    value: ast::Constant::Int(*val),
+                                    kind: kind.clone(),
+                                },
+                            });
+                        } else {
+                            return report_error("Integer out of bound", args[0].location)
                         }
-                        return Ok(Located {
-                            location: args[0].location,
-                            custom,
-                            node: ExprKind::Constant {
-                                value: ast::Constant::Int(*val),
-                                kind: kind.clone(),
-                            },
-                        });
                     }
                 }
                 if id == "uint32".into() && args.len() == 1 {
@@ -803,21 +801,19 @@ impl<'a> Inferencer<'a> {
                         &args[0].node
                     {
                         let custom = Some(self.primitives.uint32);
-                        match val {
-                            Some(val) if {
-                                let v: Result<u32, _> = (*val).try_into();
-                                v.is_ok()
-                            } => {},
-                            _ => return report_error("Integer out of bound", args[0].location)
+                        let v: Result<u32, _> = (*val).try_into();
+                        if v.is_ok() {
+                            return Ok(Located {
+                                location: args[0].location,
+                                custom,
+                                node: ExprKind::Constant {
+                                    value: ast::Constant::Int(*val),
+                                    kind: kind.clone(),
+                                },
+                            });
+                        } else {
+                            return report_error("Integer out of bound", args[0].location)
                         }
-                        return Ok(Located {
-                            location: args[0].location,
-                            custom,
-                            node: ExprKind::Constant {
-                                value: ast::Constant::Int(*val),
-                                kind: kind.clone(),
-                            },
-                        });
                     }
                 }
                 if id == "uint64".into() && args.len() == 1 {
@@ -825,21 +821,19 @@ impl<'a> Inferencer<'a> {
                     &args[0].node
                     {
                         let custom = Some(self.primitives.uint64);
-                        match val {
-                            Some(val) if {
-                                let v: Result<u64, _> = (*val).try_into();
-                                v.is_ok()
-                            } => {},
-                            _ => return report_error("Integer out of bound", args[0].location)
+                        let v: Result<u64, _> = (*val).try_into();
+                        if v.is_ok() {
+                            return Ok(Located {
+                                location: args[0].location,
+                                custom,
+                                node: ExprKind::Constant {
+                                    value: ast::Constant::Int(*val),
+                                    kind: kind.clone(),
+                                },
+                            });
+                        } else {
+                            return report_error("Integer out of bound", args[0].location)
                         }
-                        return Ok(Located {
-                            location: args[0].location,
-                            custom,
-                            node: ExprKind::Constant {
-                                value: ast::Constant::Int(*val),
-                                kind: kind.clone(),
-                            },
-                        });
                     }
                 }
                 Located { location: func_location, custom, node: ExprKind::Name { id, ctx } }
@@ -923,17 +917,12 @@ impl<'a> Inferencer<'a> {
         match constant {
             ast::Constant::Bool(_) => Ok(self.primitives.bool),
             ast::Constant::Int(val) => {
-                match val {
-                    Some(val) => {
-                        let int32: Result<i32, _> = (*val).try_into();
-                        // int64 and unsigned integers are handled separately in functions
-                        if int32.is_ok() {
-                            Ok(self.primitives.int32)
-                        } else {
-                            report_error("Integer out of bound", *loc)
-                        }
-                    }
-                    None => report_error("Integer out of bound", *loc),
+                let int32: Result<i32, _> = (*val).try_into();
+                // int64 and unsigned integers are handled separately in functions
+                if int32.is_ok() {
+                    Ok(self.primitives.int32)
+                } else {
+                    report_error("Integer out of bound", *loc)
                 }
             }
             ast::Constant::Float(_) => Ok(self.primitives.float),
@@ -1066,10 +1055,7 @@ impl<'a> Inferencer<'a> {
             }
             ast::ExprKind::Constant { value: ast::Constant::Int(val), .. } => {
                 // the index is a constant, so value can be a sequence.
-                let ind: Option<i32> = match val {
-                    Some(val) => (*val).try_into().ok(),
-                    None => None,
-                };
+                let ind: Option<i32> = (*val).try_into().ok();
                 let ind = ind.ok_or_else(|| "Index must be int32".to_string())?;
                 let map = once((
                     ind.into(),
