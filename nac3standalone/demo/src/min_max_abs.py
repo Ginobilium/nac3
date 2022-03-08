@@ -65,4 +65,27 @@ def run() -> int32:
     output_float64(max(-12.234, 3.23))
     output_float64(max(0.1, 12.3))
     output_float64(max(1.1, 1.1))
+
+    # abs ===========
+    output_int32(int32(abs(False)))
+    output_int32(int32(abs(True)))
+
+    output_int32(abs(0))
+    output_int32(abs(-3))
+    output_int32(abs(2))
+    
+    output_int64(abs(int64(-12)))
+    output_int64(abs(int64(0)))
+    output_int64(abs(int64(2)))
+    
+    output_uint32(abs(uint32(0)))
+    output_uint32(abs(uint32(24)))
+    
+    output_uint64(abs(uint64(0)))
+    output_uint64(abs(uint64(24)))
+
+    output_float64(abs(-12.234))
+    output_float64(abs(-0.0))
+    output_float64(abs(1.1))
+
     return 0

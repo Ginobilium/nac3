@@ -40,7 +40,9 @@ pub extern "C" fn output_uint64(x: u64) {
 
 #[no_mangle]
 pub extern "C" fn output_float64(x: f64) {
-    println!("{}", x);
+    // debug output to preserve the digits after the decimal points
+    // to match python `print` function
+    println!("{:?}", x);
 }
 
 #[no_mangle]
