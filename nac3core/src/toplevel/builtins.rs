@@ -987,7 +987,7 @@ pub fn get_builtins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
                     FuncArg { name: "n".into(), ty: num_ty.0, default_value: None },
                 ],
                 ret: num_ty.0,
-                vars: var_map,
+                vars: var_map.clone(),
             })),
             var_id: Default::default(),
             instance_to_symbol: Default::default(),
@@ -1040,6 +1040,75 @@ pub fn get_builtins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
             )))),
             loc: None,
         })),
+        Arc::new(RwLock::new(TopLevelDef::Function {
+            name: "abs".into(),
+            simple_name: "abs".into(),
+            signature: primitives.1.add_ty(TypeEnum::TFunc(FunSignature {
+                args: vec![FuncArg { name: "n".into(), ty: num_ty.0, default_value: None }],
+                ret: num_ty.0,
+                vars: var_map,
+            })),
+            var_id: Default::default(),
+            instance_to_symbol: Default::default(),
+            instance_to_stmt: Default::default(),
+            resolver: None,
+            codegen_callback: Some(Arc::new(GenCall::new(Box::new(
+                |ctx, _, fun, args, generator| {
+                    let boolean = ctx.primitives.bool;
+                    let int32 = ctx.primitives.int32;
+                    let int64 = ctx.primitives.int64;
+                    let uint32 = ctx.primitives.uint32;
+                    let uint64 = ctx.primitives.uint64;
+                    let float = ctx.primitives.float;
+                    let llvm_i1 = ctx.ctx.bool_type();
+                    let llvm_i32 = ctx.ctx.i32_type().as_basic_type_enum();
+                    let llvm_i64 = ctx.ctx.i64_type().as_basic_type_enum();
+                    let llvm_f64 = ctx.ctx.f64_type().as_basic_type_enum();
+                    let n_ty = fun.0.args[0].ty;
+                    let n_val = args[0].1.clone().to_basic_value_enum(ctx, generator)?;
+                    let mut is_type = |a: Type, b: Type| ctx.unifier.unioned(a, b);
+                    let mut is_float = false;
+                    let (fun_name, arg_ty) =
+                        if is_type(n_ty, boolean) || is_type(n_ty, uint32) || is_type(n_ty, uint64)
+                        {
+                            return Ok(n_val.into());
+                        } else if is_type(n_ty, int32) {
+                            ("llvm.abs.i32", llvm_i32)
+                        } else if is_type(n_ty, int64) {
+                            ("llvm.abs.i64", llvm_i64)
+                        } else if is_type(n_ty, float) {
+                            is_float = true;
+                            ("llvm.fabs.f64", llvm_f64)
+                        } else {
+                            unreachable!();
+                        };
+                    let intrinsic = ctx.module.get_function(fun_name).unwrap_or_else(|| {
+                        let fn_type = if is_float {
+                            arg_ty.fn_type(&[arg_ty.into()], false)
+                        } else {
+                            arg_ty.fn_type(&[arg_ty.into(), llvm_i1.into()], false)
+                        };
+                        ctx.module.add_function(fun_name, fn_type, None)
+                    });
+                    let val = ctx
+                        .builder
+                        .build_call(
+                            intrinsic,
+                            &if is_float {
+                                vec![n_val.into()]
+                            } else {
+                                vec![n_val.into(), llvm_i1.const_int(0, false).into()]
+                            },
+                            "abs",
+                        )
+                        .try_as_basic_value()
+                        .left()
+                        .unwrap();
+                    Ok(val.into())
+                },
+            )))),
+            loc: None,
+        })),
     ];
     let ast_list: Vec<Option<ast::Stmt<()>>> =
         (0..top_level_def_list.len()).map(|_| None).collect();
@@ -1065,6 +1134,7 @@ pub fn get_builtins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
             "len",
             "min",
             "max",
+            "abs",
         ],
     )
 }
