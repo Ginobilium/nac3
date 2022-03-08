@@ -5,7 +5,7 @@ import importlib.util
 import importlib.machinery
 import pathlib
 
-from numpy import int32, int64
+from numpy import int32, int64, uint32, uint64
 
 
 def patch(module):
@@ -19,13 +19,22 @@ def patch(module):
         name = fun.__name__
         if name == "output_asciiart":
             return output_asciiart
-        elif name in {"output_int32", "output_int64", "output_int32_list"}:
+        elif name in {
+            "output_int32",
+            "output_int64",
+            "output_int32_list",
+            "output_uint32",
+            "output_uint64",
+            "output_float64"
+        }:
             return print
         else:
             raise NotImplementedError
 
     module.int32 = int32
     module.int64 = int64
+    module.uint32 = uint32
+    module.uint64 = uint64
     module.extern = extern
 
 

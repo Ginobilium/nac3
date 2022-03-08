@@ -29,6 +29,21 @@ pub extern "C" fn output_int64(x: i64) {
 }
 
 #[no_mangle]
+pub extern "C" fn output_uint32(x: u32) {
+    println!("{}", x);
+}
+
+#[no_mangle]
+pub extern "C" fn output_uint64(x: u64) {
+    println!("{}", x);
+}
+
+#[no_mangle]
+pub extern "C" fn output_float64(x: f64) {
+    println!("{}", x);
+}
+
+#[no_mangle]
 pub extern "C" fn output_asciiart(x: i32) {
     let chars = " .,-:;i+hHM$*#@  ";
     if x < 0 {
