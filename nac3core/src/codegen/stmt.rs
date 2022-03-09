@@ -913,6 +913,10 @@ pub fn gen_return<'ctx, 'a, G: CodeGenerator>(
             ctx.builder.build_store(ctx.return_buffer.unwrap(), value);
         }
         ctx.builder.build_unconditional_branch(return_target);
+    } else if ctx.need_sret {
+        // sret
+        ctx.builder.build_store(ctx.return_buffer.unwrap(), value.unwrap());
+        ctx.builder.build_return(None);
     } else {
         let value = value.as_ref().map(|v| v as &dyn BasicValue);
         ctx.builder.build_return(value);

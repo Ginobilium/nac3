@@ -8,14 +8,16 @@ use crate::{
 };
 use crossbeam::channel::{unbounded, Receiver, Sender};
 use inkwell::{
+    AddressSpace,
+    OptimizationLevel,
+    attributes::{Attribute, AttributeLoc},
     basic_block::BasicBlock,
     builder::Builder,
     context::Context,
     module::Module,
     passes::{PassManager, PassManagerBuilder},
-    types::{BasicType, BasicTypeEnum},
-    values::{BasicValueEnum, FunctionValue, PhiValue, PointerValue},
-    AddressSpace, OptimizationLevel,
+    types::{AnyType, BasicType, BasicTypeEnum},
+    values::{BasicValueEnum, FunctionValue, PhiValue, PointerValue}
 };
 use itertools::Itertools;
 use nac3parser::ast::{Stmt, StrRef};
@@ -74,6 +76,7 @@ pub struct CodeGenContext<'ctx, 'a> {
     // outer catch clauses
     pub outer_catch_clauses:
         Option<(Vec<Option<BasicValueEnum<'ctx>>>, BasicBlock<'ctx>, PhiValue<'ctx>)>,
+    pub need_sret: bool,
 }
 
 impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
@@ -323,6 +326,19 @@ fn get_llvm_type<'ctx>(
     })
 }
 
+fn need_sret<'ctx>(ctx: &'ctx Context, ty: BasicTypeEnum<'ctx>) -> bool {
+    fn need_sret_impl<'ctx>(ctx: &'ctx Context, ty: BasicTypeEnum<'ctx>, maybe_large: bool) -> bool {
+        match ty {
+            BasicTypeEnum::IntType(_) | BasicTypeEnum::PointerType(_) => false,
+            BasicTypeEnum::FloatType(_) if maybe_large => false,
+            BasicTypeEnum::StructType(ty) if maybe_large && ty.count_fields() <= 2 =>
+                ty.get_field_types().iter().any(|ty| need_sret_impl(ctx, *ty, false)),
+            _ => true,
+        }
+    }
+    need_sret_impl(ctx, ty, true)
+}
+
 pub fn gen_func<'ctx, G: CodeGenerator>(
     context: &'ctx Context,
     generator: &mut G,
@@ -417,7 +433,14 @@ pub fn gen_func<'ctx, G: CodeGenerator>(
     } else {
         unreachable!()
     };
-    let params = args
+    let ret_type = if unifier.unioned(ret, primitives.none) {
+        None
+    } else {
+        Some(get_llvm_type(context, generator, &mut unifier, top_level_ctx.as_ref(), &mut type_cache, ret))
+    };
+
+    let has_sret = ret_type.map_or(false, |ty| need_sret(context, ty));
+    let mut params = args
         .iter()
         .map(|arg| {
             get_llvm_type(
@@ -432,18 +455,13 @@ pub fn gen_func<'ctx, G: CodeGenerator>(
         })
         .collect_vec();
 
-    let fn_type = if unifier.unioned(ret, primitives.none) {
-        context.void_type().fn_type(&params, false)
-    } else {
-        get_llvm_type(
-            context,
-            generator,
-            &mut unifier,
-            top_level_ctx.as_ref(),
-            &mut type_cache,
-            ret,
-        )
-        .fn_type(&params, false)
+    if has_sret {
+        params.insert(0, ret_type.unwrap().ptr_type(AddressSpace::Generic).into());
+    }
+
+    let fn_type = match ret_type {
+        Some(ret_type) if !has_sret => ret_type.fn_type(&params, false),
+        _ => context.void_type().fn_type(&params, false)
     };
 
     let symbol = &task.symbol_name;
@@ -457,14 +475,20 @@ pub fn gen_func<'ctx, G: CodeGenerator>(
         });
         fn_val.set_personality_function(personality);
     }
+    if has_sret {
+        fn_val.add_attribute(AttributeLoc::Param(0),
+            context.create_type_attribute(Attribute::get_named_enum_kind_id("sret"),
+            ret_type.unwrap().as_any_type_enum()));
+    }
 
     let init_bb = context.append_basic_block(fn_val, "init");
     builder.position_at_end(init_bb);
     let body_bb = context.append_basic_block(fn_val, "body");
 
     let mut var_assignment = HashMap::new();
+    let offset = if has_sret { 1 } else { 0 };
     for (n, arg) in args.iter().enumerate() {
-        let param = fn_val.get_nth_param(n as u32).unwrap();
+        let param = fn_val.get_nth_param((n as u32) + offset).unwrap();
         let alloca = builder.build_alloca(
             get_llvm_type(
                 context,
@@ -479,7 +503,13 @@ pub fn gen_func<'ctx, G: CodeGenerator>(
         builder.build_store(alloca, param);
         var_assignment.insert(arg.name, (alloca, None, 0));
     }
-    let return_buffer = fn_type.get_return_type().map(|v| builder.build_alloca(v, "$ret"));
+
+    let return_buffer = if has_sret {
+        Some(fn_val.get_nth_param(0).unwrap().into_pointer_value())
+    } else {
+        fn_type.get_return_type().map(|v| builder.build_alloca(v, "$ret"))
+    };
+
     let static_values = {
         let store = registry.static_value_store.lock();
         store.store[task.id].clone()
@@ -512,6 +542,7 @@ pub fn gen_func<'ctx, G: CodeGenerator>(
         module,
         unifier,
         static_value_store,
+        need_sret: has_sret
     };
 
     let mut err = None;
