@@ -20,7 +20,6 @@ use crate::timeline::TimeFns;
 use std::{
     collections::hash_map::DefaultHasher,
     collections::HashMap,
-    convert::TryInto,
     hash::{Hash, Hasher},
     sync::Arc,
 };
@@ -381,13 +380,8 @@ fn rpc_codegen_callback_fn<'ctx, 'a>(
     }
 
     for (i, arg) in real_params.iter().enumerate() {
-        let arg_slot = if arg.is_pointer_value() {
-            arg.into_pointer_value()
-        } else {
-            let arg_slot = ctx.builder.build_alloca(arg.get_type(), &format!("rpc.arg{}", i));
-            ctx.builder.build_store(arg_slot, *arg);
-            arg_slot
-        };
+        let arg_slot = ctx.builder.build_alloca(arg.get_type(), &format!("rpc.arg{}", i));
+        ctx.builder.build_store(arg_slot, *arg);
         let arg_slot = ctx.builder.build_bitcast(arg_slot, ptr_type, "rpc.arg");
         let arg_ptr = unsafe {
             ctx.builder.build_gep(
@@ -451,11 +445,8 @@ fn rpc_codegen_callback_fn<'ctx, 'a>(
     let alloc_bb = ctx.ctx.append_basic_block(current_function, "rpc.continue");
     let tail_bb = ctx.ctx.append_basic_block(current_function, "rpc.tail");
 
-    let mut ret_ty = ctx.get_llvm_type(generator, fun.0.ret);
+    let ret_ty = ctx.get_llvm_type(generator, fun.0.ret);
     let need_load = !ret_ty.is_pointer_type();
-    if ret_ty.is_pointer_type() {
-        ret_ty = ret_ty.into_pointer_type().get_element_type().try_into().unwrap();
-    }
     let slot = ctx.builder.build_alloca(ret_ty, "rpc.ret.slot");
     let slotgen = ctx.builder.build_bitcast(slot, ptr_type, "rpc.ret.ptr");
     ctx.builder.build_unconditional_branch(head_bb);
@@ -484,17 +475,15 @@ fn rpc_codegen_callback_fn<'ctx, 'a>(
 
     ctx.builder.position_at_end(tail_bb);
 
-    Ok(if need_load {
-        let result = ctx.builder.build_load(slot, "rpc.result");
+    let result = ctx.builder.build_load(slot, "rpc.result");
+    if need_load {
         ctx.builder.build_call(
             stackrestore,
             &[stackptr.try_as_basic_value().unwrap_left().into()],
             "rpc.stackrestore",
         );
-        Some(result)
-    } else {
-        Some(slot.into())
-    })
+    }
+    Ok(Some(result))
 }
 
 pub fn rpc_codegen_callback() -> Arc<GenCall> {
