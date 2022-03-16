@@ -9,7 +9,92 @@ use inkwell::{types::BasicType, FloatPredicate, IntPredicate};
 
 type BuiltinInfo = (Vec<(Arc<RwLock<TopLevelDef>>, Option<Stmt>)>, &'static [&'static str]);
 
+pub fn get_exn_constructor(
+    name: &str,
+    class_id: usize,
+    cons_id: usize,
+    unifier: &mut Unifier,
+    primitives: &PrimitiveStore
+)-> (TopLevelDef, TopLevelDef, Type, Type) {
+    let int32 = primitives.int32;
+    let int64 = primitives.int64;
+    let string = primitives.str;
+    let exception_fields = vec![
+        ("__name__".into(), int32, true),
+        ("__file__".into(), string, true),
+        ("__line__".into(), int32, true),
+        ("__col__".into(), int32, true),
+        ("__func__".into(), string, true),
+        ("__message__".into(), string, true),
+        ("__param0__".into(), int64, true),
+        ("__param1__".into(), int64, true),
+        ("__param2__".into(), int64, true),
+    ];
+    let exn_cons_args = vec![
+        FuncArg {
+            name: "msg".into(),
+            ty: string,
+            default_value: Some(SymbolValue::Str("".into())),
+        },
+        FuncArg { name: "param0".into(), ty: int64, default_value: Some(SymbolValue::I64(0)) },
+        FuncArg { name: "param1".into(), ty: int64, default_value: Some(SymbolValue::I64(0)) },
+        FuncArg { name: "param2".into(), ty: int64, default_value: Some(SymbolValue::I64(0)) },
+    ];
+    let exn_type = unifier.add_ty(TypeEnum::TObj {
+        obj_id: DefinitionId(class_id),
+        fields: exception_fields.iter().map(|(a, b, c)| (*a, (*b, *c))).collect(),
+        params: Default::default(),
+    });
+    let signature = unifier.add_ty(TypeEnum::TFunc(FunSignature {
+        args: exn_cons_args,
+        ret: exn_type,
+        vars: Default::default(),
+    }));
+    let fun_def = TopLevelDef::Function {
+        name: format!("{}.__init__", name),
+        simple_name: "__init__".into(),
+        signature,
+        var_id: Default::default(),
+        instance_to_symbol: Default::default(),
+        instance_to_stmt: Default::default(),
+        resolver: None,
+        codegen_callback: Some(Arc::new(GenCall::new(Box::new(exn_constructor)))),
+        loc: None,
+    };
+    let class_def = TopLevelDef::Class {
+        name: name.into(),
+        object_id: DefinitionId(class_id),
+        type_vars: Default::default(),
+        fields: exception_fields,
+        methods: vec![("__init__".into(), signature, DefinitionId(cons_id))],
+        ancestors: vec![
+            TypeAnnotation::CustomClass { id: DefinitionId(class_id), params: Default::default() },
+            TypeAnnotation::CustomClass { id: DefinitionId(7), params: Default::default() },
+        ],
+        constructor: Some(signature),
+        resolver: None,
+        loc: None,
+    };
+    (fun_def, class_def, signature, exn_type)
+}
+
 pub fn get_builtins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
+    // please refer to the top_level_def_list below for the definition IDs
+    let (div_by_zero_fun, div_by_zero_class, _, _) = get_exn_constructor(
+        "DivisionByZeroError",
+        12,
+        10,
+        &mut primitives.1,
+        &primitives.0,
+    );
+    let (index_err_fun, index_err_class, _, _) = get_exn_constructor(
+        "IndexError",
+        13,
+        11,
+        &mut primitives.1,
+        &primitives.0,
+    );
+
     let int32 = primitives.0.int32;
     let int64 = primitives.0.int64;
     let uint32 = primitives.0.uint32;
@@ -24,7 +109,6 @@ pub fn get_builtins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
         None,
     );
     let var_map: HashMap<_, _> = vec![(num_ty.1, num_ty.0)].into_iter().collect();
-
     let exception_fields = vec![
         ("__name__".into(), int32, true),
         ("__file__".into(), string, true),
@@ -36,36 +120,7 @@ pub fn get_builtins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
         ("__param1__".into(), int64, true),
         ("__param2__".into(), int64, true),
     ];
-    let div_by_zero = primitives.1.add_ty(TypeEnum::TObj {
-        obj_id: DefinitionId(12),
-        fields: exception_fields.iter().map(|(a, b, c)| (*a, (*b, *c))).collect(),
-        params: Default::default(),
-    });
-    let index_error = primitives.1.add_ty(TypeEnum::TObj {
-        obj_id: DefinitionId(13),
-        fields: exception_fields.iter().map(|(a, b, c)| (*a, (*b, *c))).collect(),
-        params: Default::default(),
-    });
-    let exn_cons_args = vec![
-        FuncArg {
-            name: "msg".into(),
-            ty: string,
-            default_value: Some(SymbolValue::Str("".into())),
-        },
-        FuncArg { name: "param0".into(), ty: int64, default_value: Some(SymbolValue::I64(0)) },
-        FuncArg { name: "param1".into(), ty: int64, default_value: Some(SymbolValue::I64(0)) },
-        FuncArg { name: "param2".into(), ty: int64, default_value: Some(SymbolValue::I64(0)) },
-    ];
-    let div_by_zero_signature = primitives.1.add_ty(TypeEnum::TFunc(FunSignature {
-        args: exn_cons_args.clone(),
-        ret: div_by_zero,
-        vars: Default::default(),
-    }));
-    let index_error_signature = primitives.1.add_ty(TypeEnum::TFunc(FunSignature {
-        args: exn_cons_args,
-        ret: index_error,
-        vars: Default::default(),
-    }));
+
     let top_level_def_list = vec![
         Arc::new(RwLock::new(TopLevelComposer::make_top_level_class_def(
             0,
@@ -120,7 +175,7 @@ pub fn get_builtins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
             name: "Exception".into(),
             object_id: DefinitionId(7),
             type_vars: Default::default(),
-            fields: exception_fields.clone(),
+            fields: exception_fields,
             methods: Default::default(),
             ancestors: vec![],
             constructor: None,
@@ -141,56 +196,10 @@ pub fn get_builtins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
             None,
             None,
         ))),
-        Arc::new(RwLock::new(TopLevelDef::Function {
-            name: "ZeroDivisionError.__init__".into(),
-            simple_name: "__init__".into(),
-            signature: div_by_zero_signature,
-            var_id: Default::default(),
-            instance_to_symbol: Default::default(),
-            instance_to_stmt: Default::default(),
-            resolver: None,
-            codegen_callback: Some(Arc::new(GenCall::new(Box::new(exn_constructor)))),
-            loc: None,
-        })),
-        Arc::new(RwLock::new(TopLevelDef::Function {
-            name: "IndexError.__init__".into(),
-            simple_name: "__init__".into(),
-            signature: index_error_signature,
-            var_id: Default::default(),
-            instance_to_symbol: Default::default(),
-            instance_to_stmt: Default::default(),
-            resolver: None,
-            codegen_callback: Some(Arc::new(GenCall::new(Box::new(exn_constructor)))),
-            loc: None,
-        })),
-        Arc::new(RwLock::new(TopLevelDef::Class {
-            name: "ZeroDivisionError".into(),
-            object_id: DefinitionId(12),
-            type_vars: Default::default(),
-            fields: exception_fields.clone(),
-            methods: vec![("__init__".into(), div_by_zero_signature, DefinitionId(8))],
-            ancestors: vec![
-                TypeAnnotation::CustomClass { id: DefinitionId(10), params: Default::default() },
-                TypeAnnotation::CustomClass { id: DefinitionId(7), params: Default::default() },
-            ],
-            constructor: Some(div_by_zero_signature),
-            resolver: None,
-            loc: None,
-        })),
-        Arc::new(RwLock::new(TopLevelDef::Class {
-            name: "IndexError".into(),
-            object_id: DefinitionId(13),
-            type_vars: Default::default(),
-            fields: exception_fields,
-            methods: vec![("__init__".into(), index_error_signature, DefinitionId(9))],
-            ancestors: vec![
-                TypeAnnotation::CustomClass { id: DefinitionId(11), params: Default::default() },
-                TypeAnnotation::CustomClass { id: DefinitionId(7), params: Default::default() },
-            ],
-            constructor: Some(index_error_signature),
-            resolver: None,
-            loc: None,
-        })),
+        Arc::new(RwLock::new(div_by_zero_fun)),
+        Arc::new(RwLock::new(index_err_fun)),
+        Arc::new(RwLock::new(div_by_zero_class)),
+        Arc::new(RwLock::new(index_err_class)),
         Arc::new(RwLock::new(TopLevelDef::Function {
             name: "int32".into(),
             simple_name: "int32".into(),

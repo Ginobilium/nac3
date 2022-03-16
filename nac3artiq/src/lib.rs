@@ -10,6 +10,7 @@ use inkwell::{
     targets::*,
     OptimizationLevel,
 };
+use nac3core::toplevel::builtins::get_exn_constructor;
 use nac3core::typecheck::typedef::{TypeEnum, Unifier};
 use nac3parser::{
     ast::{self, ExprKind, Stmt, StmtKind, StrRef},
@@ -82,8 +83,6 @@ struct Nac3 {
     time_fns: &'static (dyn TimeFns + Sync),
     primitive: PrimitiveStore,
     builtins: Vec<(StrRef, FunSignature, Arc<GenCall>)>,
-    builtins_ty: HashMap<StrRef, Type>,
-    builtins_def: HashMap<StrRef, DefinitionId>,
     pyid_to_def: Arc<RwLock<HashMap<u64, DefinitionId>>>,
     primitive_ids: PrimitivePythonId,
     working_directory: TempDir,
@@ -260,6 +259,34 @@ impl Nac3 {
     }
 }
 
+fn add_exceptions(
+    composer: &mut TopLevelComposer,
+    builtin_def: &mut HashMap<StrRef, DefinitionId>,
+    builtin_ty: &mut HashMap<StrRef, Type>,
+    error_names: &[&str]
+) -> Vec<Type> {
+    let mut types = Vec::new();
+    // note: this is only for builtin exceptions, i.e. the exception name is "0:{exn}"
+    for name in error_names {
+        let def_id = composer.definition_ast_list.len();
+        let (exception_fn, exception_class, exception_cons, exception_type) = get_exn_constructor(
+            name,
+            // class id
+            def_id,
+            // constructor id
+            def_id + 1,
+            &mut composer.unifier,
+            &composer.primitives_ty
+        );
+        composer.definition_ast_list.push((Arc::new(RwLock::new(exception_class)), None));
+        composer.definition_ast_list.push((Arc::new(RwLock::new(exception_fn)), None));
+        builtin_ty.insert((*name).into(), exception_cons);
+        builtin_def.insert((*name).into(), DefinitionId(def_id));
+        types.push(exception_type);
+    }
+    types
+}
+
 #[pymethods]
 impl Nac3 {
     #[new]
@@ -321,68 +348,42 @@ impl Nac3 {
                 }))),
             ),
         ];
-        let (_, builtins_def, builtins_ty) = TopLevelComposer::new(
-            builtins.clone(),
-            ComposerConfig { kernel_ann: Some("Kernel"), kernel_invariant_ann: "KernelInvariant" },
-        );
 
         let builtins_mod = PyModule::import(py, "builtins").unwrap();
         let id_fn = builtins_mod.getattr("id").unwrap();
         let numpy_mod = PyModule::import(py, "numpy").unwrap();
         let typing_mod = PyModule::import(py, "typing").unwrap();
         let types_mod = PyModule::import(py, "types").unwrap();
+
+        let get_id = |x| id_fn.call1((x,)).unwrap().extract().unwrap();
+        let get_attr_id = |obj: &PyModule, attr| id_fn.call1((obj.getattr(attr).unwrap(),))
+            .unwrap().extract().unwrap();
         let primitive_ids = PrimitivePythonId {
-            virtual_id: id_fn
-                .call1((builtins_mod
-                    .getattr("globals")
-                    .unwrap()
-                    .call0()
-                    .unwrap()
-                    .get_item("virtual")
-                    .unwrap(),))
-                .unwrap()
-                .extract()
-                .unwrap(),
+            virtual_id: get_id(
+                            builtins_mod
+                            .getattr("globals")
+                            .unwrap()
+                            .call0()
+                            .unwrap()
+                            .get_item("virtual")
+                            .unwrap(
+                        )),
             generic_alias: (
-                id_fn
-                    .call1((typing_mod.getattr("_GenericAlias").unwrap(),))
-                    .unwrap()
-                    .extract()
-                    .unwrap(),
-                id_fn
-                    .call1((types_mod.getattr("GenericAlias").unwrap(),))
-                    .unwrap()
-                    .extract()
-                    .unwrap(),
+                get_attr_id(typing_mod, "_GenericAlias"),
+                get_attr_id(types_mod, "GenericAlias"),
             ),
-            none: id_fn.call1((builtins_mod.getattr("None").unwrap(),)).unwrap().extract().unwrap(),
-            typevar: id_fn
-                .call1((typing_mod.getattr("TypeVar").unwrap(),))
-                .unwrap()
-                .extract()
-                .unwrap(),
-            int: id_fn.call1((builtins_mod.getattr("int").unwrap(),)).unwrap().extract().unwrap(),
-            int32: id_fn.call1((numpy_mod.getattr("int32").unwrap(),)).unwrap().extract().unwrap(),
-            int64: id_fn.call1((numpy_mod.getattr("int64").unwrap(),)).unwrap().extract().unwrap(),
-            uint32: id_fn.call1((numpy_mod.getattr("uint32").unwrap(),)).unwrap().extract().unwrap(),
-            uint64: id_fn.call1((numpy_mod.getattr("uint64").unwrap(),)).unwrap().extract().unwrap(),
-            bool: id_fn.call1((builtins_mod.getattr("bool").unwrap(),)).unwrap().extract().unwrap(),
-            float: id_fn
-                .call1((builtins_mod.getattr("float").unwrap(),))
-                .unwrap()
-                .extract()
-                .unwrap(),
-            list: id_fn.call1((builtins_mod.getattr("list").unwrap(),)).unwrap().extract().unwrap(),
-            tuple: id_fn
-                .call1((builtins_mod.getattr("tuple").unwrap(),))
-                .unwrap()
-                .extract()
-                .unwrap(),
-            exception: id_fn
-                .call1((builtins_mod.getattr("Exception").unwrap(),))
-                .unwrap()
-                .extract()
-                .unwrap(),
+            none: get_attr_id(builtins_mod, "None"),
+            typevar: get_attr_id(typing_mod, "TypeVar"),
+            int: get_attr_id(builtins_mod, "int"),
+            int32: get_attr_id(numpy_mod, "int32"),
+            int64: get_attr_id(numpy_mod, "int64"),
+            uint32: get_attr_id(numpy_mod, "uint32"),
+            uint64: get_attr_id(numpy_mod, "uint64"),
+            bool: get_attr_id(builtins_mod, "bool"),
+            float: get_attr_id(builtins_mod, "float"),
+            list: get_attr_id(builtins_mod, "list"),
+            tuple: get_attr_id(builtins_mod, "tuple"),
+            exception: get_attr_id(builtins_mod, "Exception"),
         };
 
         let working_directory = tempfile::Builder::new().prefix("nac3-").tempdir().unwrap();
@@ -393,8 +394,6 @@ impl Nac3 {
             time_fns,
             primitive,
             builtins,
-            builtins_ty,
-            builtins_def,
             primitive_ids,
             top_levels: Default::default(),
             pyid_to_def: Default::default(),
@@ -440,7 +439,7 @@ impl Nac3 {
         embedding_map: &PyAny,
         py: Python,
     ) -> PyResult<()> {
-        let (mut composer, _, _) = TopLevelComposer::new(
+        let (mut composer, mut builtins_def, mut builtins_ty) = TopLevelComposer::new(
             self.builtins.clone(),
             ComposerConfig { kernel_ann: Some("Kernel"), kernel_invariant_ann: "KernelInvariant" },
         );
@@ -462,9 +461,16 @@ impl Nac3 {
             store_obj: store_obj.clone(),
             store_str,
         };
-        let mut module_to_resolver_cache: HashMap<u64, _> = HashMap::new();
 
         let pyid_to_type = Arc::new(RwLock::new(HashMap::<u64, Type>::new()));
+        let exception_names = [
+            "ValueError",
+            "RuntimeError"
+        ];
+        add_exceptions(&mut composer, &mut builtins_def, &mut builtins_ty, &exception_names);
+
+        let mut module_to_resolver_cache: HashMap<u64, _> = HashMap::new();
+
         let global_value_ids = Arc::new(RwLock::new(HashSet::<u64>::new()));
         let mut rpc_ids = vec![];
         for (stmt, path, module) in self.top_levels.iter() {
@@ -494,8 +500,8 @@ impl Nac3 {
                         name_to_pyid.insert(key.into(), val);
                     }
                     let resolver = Arc::new(Resolver(Arc::new(InnerResolver {
-                        id_to_type: self.builtins_ty.clone().into(),
-                        id_to_def: self.builtins_def.clone().into(),
+                        id_to_type: builtins_ty.clone().into(),
+                        id_to_def: builtins_def.clone().into(),
                         pyid_to_def: self.pyid_to_def.clone(),
                         pyid_to_type: pyid_to_type.clone(),
                         primitive_ids: self.primitive_ids.clone(),
@@ -579,8 +585,8 @@ impl Nac3 {
         let mut synthesized =
             parse_program(&synthesized, "__nac3_synthesized_modinit__".to_string().into()).unwrap();
         let resolver = Arc::new(Resolver(Arc::new(InnerResolver {
-            id_to_type: self.builtins_ty.clone().into(),
-            id_to_def: self.builtins_def.clone().into(),
+            id_to_type: builtins_ty.clone().into(),
+            id_to_def: builtins_def.clone().into(),
             pyid_to_def: self.pyid_to_def.clone(),
             pyid_to_type: pyid_to_type.clone(),
             primitive_ids: self.primitive_ids.clone(),

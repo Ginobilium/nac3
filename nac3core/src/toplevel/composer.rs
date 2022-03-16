@@ -461,6 +461,9 @@ impl TopLevelComposer {
         };
         let mut errors = HashSet::new();
         for (class_def, class_ast) in def_list.iter().skip(self.builtin_num) {
+            if class_ast.is_none() {
+                continue;
+            }
             if let Err(e) = analyze(class_def, class_ast) {
                 errors.insert(e);
             }
@@ -557,6 +560,9 @@ impl TopLevelComposer {
         // first, only push direct parent into the list
         let mut errors = HashSet::new();
         for (class_def, class_ast) in self.definition_ast_list.iter_mut().skip(self.builtin_num) {
+            if class_ast.is_none() {
+                continue;
+            }
             if let Err(e) = get_direct_parents(class_def, class_ast) {
                 errors.insert(e);
             }
@@ -587,7 +593,10 @@ impl TopLevelComposer {
             );
             Ok(())
         };
-        for (class_def, _) in self.definition_ast_list.iter().skip(self.builtin_num) {
+        for (class_def, ast) in self.definition_ast_list.iter().skip(self.builtin_num) {
+            if ast.is_none() {
+                continue;
+            }
             if let Err(e) = get_all_ancestors(class_def) {
                 errors.insert(e);
             }
@@ -598,6 +607,9 @@ impl TopLevelComposer {
 
         // insert the ancestors to the def list
         for (class_def, class_ast) in self.definition_ast_list.iter_mut().skip(self.builtin_num) {
+            if class_ast.is_none() {
+                continue;
+            }
             let mut class_def = class_def.write();
             let (class_ancestors, class_id, class_type_vars) = {
                 if let TopLevelDef::Class { ancestors, object_id, type_vars, .. } =
@@ -661,6 +673,9 @@ impl TopLevelComposer {
 
         let mut errors = HashSet::new();
         for (class_def, class_ast) in def_ast_list.iter().skip(self.builtin_num) {
+            if class_ast.is_none() {
+                continue;
+            }
             if matches!(&*class_def.read(), TopLevelDef::Class { .. }) {
                 if let Err(e) = Self::analyze_single_class_methods_fields(
                     class_def.clone(),
@@ -687,7 +702,10 @@ impl TopLevelComposer {
         loop {
             let mut finished = true;
 
-            for (class_def, _) in def_ast_list.iter().skip(self.builtin_num) {
+            for (class_def, class_ast) in def_ast_list.iter().skip(self.builtin_num) {
+                if class_ast.is_none() {
+                    continue;
+                }
                 let mut class_def = class_def.write();
                 if let TopLevelDef::Class { ancestors, .. } = class_def.deref() {
                     // if the length of the ancestor is equal to the current depth
@@ -950,6 +968,9 @@ impl TopLevelComposer {
             Ok(())
         };
         for (function_def, function_ast) in def_list.iter().skip(self.builtin_num) {
+            if function_ast.is_none() {
+                continue;
+            }
             if let Err(e) = analyze(function_def, function_ast) {
                 errors.insert(e);
             }
@@ -1553,6 +1574,9 @@ impl TopLevelComposer {
             Ok(())
         };
         for (i, (def, ast)) in definition_ast_list.iter().enumerate().skip(self.builtin_num) {
+            if ast.is_none() {
+                continue;
+            }
             if let Err(e) = analyze(i, def, ast) {
                 errors.insert(e);
             }
@@ -1849,6 +1873,9 @@ impl TopLevelComposer {
             Ok(())
         };
         for (id, (def, ast)) in self.definition_ast_list.iter().enumerate().skip(self.builtin_num) {
+            if ast.is_none() {
+                continue;
+            }
             if let Err(e) = analyze_2(id, def, ast) {
                 errors.insert(e);
             }
