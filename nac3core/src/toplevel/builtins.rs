@@ -79,22 +79,6 @@ pub fn get_exn_constructor(
 }
 
 pub fn get_builtins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
-    // please refer to the top_level_def_list below for the definition IDs
-    let (div_by_zero_fun, div_by_zero_class, _, _) = get_exn_constructor(
-        "DivisionByZeroError",
-        12,
-        10,
-        &mut primitives.1,
-        &primitives.0,
-    );
-    let (index_err_fun, index_err_class, _, _) = get_exn_constructor(
-        "IndexError",
-        13,
-        11,
-        &mut primitives.1,
-        &primitives.0,
-    );
-
     let int32 = primitives.0.int32;
     let int64 = primitives.0.int64;
     let uint32 = primitives.0.uint32;
@@ -121,7 +105,7 @@ pub fn get_builtins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
         ("__param2__".into(), int64, true),
     ];
 
-    let top_level_def_list = vec![
+    let mut top_level_def_list = vec![
         Arc::new(RwLock::new(TopLevelComposer::make_top_level_class_def(
             0,
             None,
@@ -196,10 +180,6 @@ pub fn get_builtins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
             None,
             None,
         ))),
-        Arc::new(RwLock::new(div_by_zero_fun)),
-        Arc::new(RwLock::new(index_err_fun)),
-        Arc::new(RwLock::new(div_by_zero_class)),
-        Arc::new(RwLock::new(index_err_class)),
         Arc::new(RwLock::new(TopLevelDef::Function {
             name: "int32".into(),
             simple_name: "int32".into(),
@@ -1119,13 +1099,12 @@ pub fn get_builtins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
             loc: None,
         })),
     ];
+
     let ast_list: Vec<Option<ast::Stmt<()>>> =
         (0..top_level_def_list.len()).map(|_| None).collect();
     (
         izip!(top_level_def_list, ast_list).collect_vec(),
         &[
-            "ZeroDivisionError",
-            "IndexError",
             "int32",
             "int64",
             "uint32",

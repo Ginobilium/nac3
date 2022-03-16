@@ -464,6 +464,8 @@ impl Nac3 {
 
         let pyid_to_type = Arc::new(RwLock::new(HashMap::<u64, Type>::new()));
         let exception_names = [
+            "ZeroDivisionError",
+            "IndexError",
             "ValueError",
             "RuntimeError"
         ];
