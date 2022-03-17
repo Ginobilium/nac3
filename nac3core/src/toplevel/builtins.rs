@@ -105,7 +105,7 @@ pub fn get_builtins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
         ("__param2__".into(), int64, true),
     ];
 
-    let mut top_level_def_list = vec![
+    let top_level_def_list = vec![
         Arc::new(RwLock::new(TopLevelComposer::make_top_level_class_def(
             0,
             None,

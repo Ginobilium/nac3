@@ -76,7 +76,7 @@ impl SymbolResolver for Resolver {
         }
     }
 
-    fn get_exception_id(&self, tyid: usize) -> usize {
+    fn get_exception_id(&self, _: usize) -> usize {
         unimplemented!()
     }
 }
