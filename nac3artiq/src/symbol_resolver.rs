@@ -503,7 +503,7 @@ impl InnerResolver {
             Ok(s) => s,
             Err(e) => return Ok(Err(e)),
         };
-        return match (&*unifier.get_ty(extracted_ty), inst_check) {
+        match (&*unifier.get_ty(extracted_ty), inst_check) {
             // do the instantiation for these three types
             (TypeEnum::TList { ty }, false) => {
                 let len: usize = self.helper.len_fn.call1(py, (obj,))?.extract(py)?;
@@ -538,22 +538,9 @@ impl InnerResolver {
                 let types = types?;
                 Ok(types.map(|types| unifier.add_ty(TypeEnum::TTuple { ty: types })))
             }
-            (TypeEnum::TObj { params, fields, .. }, false) => {
+            (TypeEnum::TObj { params: var_map, fields, .. }, false) => {
                 self.pyid_to_type.write().insert(ty_id, extracted_ty);
                 let mut instantiate_obj = || {
-                    let var_map = params
-                        .iter()
-                        .map(|(id_var, ty)| {
-                            if let TypeEnum::TVar { id, range, name, loc, .. } =
-                                &*unifier.get_ty(*ty)
-                            {
-                                assert_eq!(*id, *id_var);
-                                (*id, unifier.get_fresh_var_with_range(range, *name, *loc).0)
-                            } else {
-                                unreachable!()
-                            }
-                        })
-                        .collect::<HashMap<_, _>>();
                     // loop through non-function fields of the class to get the instantiated value
                     for field in fields.iter() {
                         let name: String = (*field.0).into();
@@ -590,7 +577,7 @@ impl InnerResolver {
                             return Ok(Err("object is not of concrete type".into()));
                         }
                     }
-                    Ok(Ok(unifier.subst(extracted_ty, &var_map).unwrap_or(extracted_ty)))
+                    Ok(Ok(extracted_ty))
                 };
                 let result = instantiate_obj();
                 // do not cache the type if there are errors
@@ -600,7 +587,7 @@ impl InnerResolver {
                 result
             }
             _ => Ok(Ok(extracted_ty)),
-        };
+        }
     }
 
     fn get_obj_value<'ctx, 'a>(
@@ -919,6 +906,7 @@ impl SymbolResolver for Resolver {
                     })
                     .unwrap(),
                 };
+                println!("{:?}", result);
                 if let Ok(t) = &result {
                     self.0.id_to_type.write().insert(str, *t);
                 }

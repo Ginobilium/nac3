@@ -229,10 +229,10 @@ pub fn parse_type_annotation<T>(
                         Err(format!("Cannot use function name as type at {}", loc))
                     }
                 }
-                Err(e) => {
+                Err(_) => {
                     let ty = resolver
                         .get_symbol_type(unifier, top_level_defs, primitives, *id)
-                        .map_err(|_| format!("Unknown type annotation at {}: {}", loc, e))?;
+                        .map_err(|e| format!("Unknown type annotation at {}: {}", loc, e))?;
                     if let TypeEnum::TVar { .. } = &*unifier.get_ty(ty) {
                         Ok(ty)
                     } else {

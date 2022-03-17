@@ -1,4 +1,5 @@
 use nac3parser::ast::fold::Fold;
+use std::rc::Rc;
 
 use crate::{
     codegen::{expr::get_subst_key, stmt::exn_constructor},
@@ -1192,18 +1193,9 @@ impl TopLevelComposer {
                                     unreachable!("must be type var annotation");
                                 }
                             }
-                            let dummy_return_type = unifier.get_dummy_var().0;
-                            type_var_to_concrete_def.insert(dummy_return_type, annotation.clone());
-                            dummy_return_type
+                            get_type_from_type_annotation_kinds(temp_def_list, unifier, primitives, &annotation)?
                         } else {
-                            // if do not have return annotation, return none
-                            // for uniform handling, still use type annoatation
-                            let dummy_return_type = unifier.get_dummy_var().0;
-                            type_var_to_concrete_def.insert(
-                                dummy_return_type,
-                                TypeAnnotation::Primitive(primitives.none),
-                            );
-                            dummy_return_type
+                            primitives.none
                         }
                     };
 
@@ -1449,6 +1441,34 @@ impl TopLevelComposer {
         let primitives_ty = &self.primitives_ty;
         let definition_ast_list = &self.definition_ast_list;
         let unifier = &mut self.unifier;
+
+        // first, fix function typevar ids
+        // they may be changed with our use of placeholders
+        for (def, _) in definition_ast_list.iter().skip(self.builtin_num) {
+            if let TopLevelDef::Function {
+                signature,
+                var_id,
+                ..
+            } = &mut *def.write() {
+                if let TypeEnum::TFunc(FunSignature { args, ret, vars }) =
+                        unifier.get_ty(*signature).as_ref() {
+                    let new_var_ids = vars.values().map(|v| match &*unifier.get_ty(*v) {
+                        TypeEnum::TVar{id, ..} => *id,
+                        _ => unreachable!(),
+                    }).collect_vec();
+                    if new_var_ids != *var_id {
+                        let new_signature = FunSignature {
+                            args: args.clone(),
+                            ret: ret.clone(),
+                            vars: new_var_ids.iter().zip(vars.values()).map(|(id, v)| (*id, v.clone())).collect(),
+                        };
+                        unifier.unification_table.set_value(*signature, Rc::new(TypeEnum::TFunc(new_signature)));
+                        *var_id = new_var_ids;
+                    }
+                }
+            }
+        }
+
         let mut errors = HashSet::new();
         let mut analyze = |i, def: &Arc<RwLock<TopLevelDef>>, ast: &Option<Stmt>| {
             let class_def = def.read();
@@ -1650,7 +1670,6 @@ impl TopLevelComposer {
                     // if class methods, `vars` also contains all class typevars here
                     let (type_var_subst_comb, no_range_vars) = {
                         let mut no_ranges: Vec<Type> = Vec::new();
-                        let var_ids = vars.keys().copied().collect_vec();
                         let var_combs = vars
                             .iter()
                             .map(|(_, ty)| {
@@ -1669,7 +1688,7 @@ impl TopLevelComposer {
                             .collect_vec();
                         let mut result: Vec<HashMap<u32, Type>> = Default::default();
                         for comb in var_combs {
-                            result.push(var_ids.clone().into_iter().zip(comb).collect());
+                            result.push(insted_vars.clone().into_iter().zip(comb).collect());
                         }
                         // NOTE: if is empty, means no type var, append a empty subst, ok to do this?
                         if result.is_empty() {

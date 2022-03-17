@@ -156,9 +156,9 @@ pub type SharedUnifier = Arc<Mutex<(UnificationTable<TypeEnum>, u32, Vec<Call>)>
 
 #[derive(Clone)]
 pub struct Unifier {
-    pub top_level: Option<Arc<TopLevelContext>>,
-    unification_table: UnificationTable<Rc<TypeEnum>>,
-    pub(super) calls: Vec<Rc<Call>>,
+    pub(crate) top_level: Option<Arc<TopLevelContext>>,
+    pub(crate) unification_table: UnificationTable<Rc<TypeEnum>>,
+    pub(crate) calls: Vec<Rc<Call>>,
     var_id: u32,
     unify_cache: HashSet<(Type, Type)>,
     snapshot: Option<(usize, u32)>
