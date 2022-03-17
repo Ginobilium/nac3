@@ -755,7 +755,6 @@ impl Nac3 {
         builder.set_inliner_with_threshold(255);
         builder.populate_module_pass_manager(&passes);
         passes.run_on(&main);
-        main.print_to_stderr();
 
         let (triple, features) = match isa {
             Isa::Host => (
