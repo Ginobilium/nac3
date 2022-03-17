@@ -467,7 +467,12 @@ impl Nac3 {
             "ZeroDivisionError",
             "IndexError",
             "ValueError",
-            "RuntimeError"
+            "RuntimeError",
+            "AssertionError",
+            "KeyError",
+            "NotImplementedError",
+            "OverflowError",
+            "IOError"
         ];
         add_exceptions(&mut composer, &mut builtins_def, &mut builtins_ty, &exception_names);
 
@@ -750,6 +755,7 @@ impl Nac3 {
         builder.set_inliner_with_threshold(255);
         builder.populate_module_pass_manager(&passes);
         passes.run_on(&main);
+        main.print_to_stderr();
 
         let (triple, features) = match isa {
             Isa::Host => (
