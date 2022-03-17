@@ -1282,7 +1282,7 @@ impl TopLevelComposer {
                                     if !class_type_vars_def.contains(&t) {
                                         return Err(format!(
                                             "class fields can only use type \
-                                            vars declared as class generic type vars (at {})",
+                                            vars over which the class is generic (at {})",
                                             annotation.location
                                         ));
                                     }
