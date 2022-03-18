@@ -105,6 +105,8 @@ pub fn parse_ast_to_type_annotation_kinds<T>(
             Ok(TypeAnnotation::CustomClass { id: obj_id, params: vec![] })
         } else if let Ok(ty) = resolver.get_symbol_type(unifier, top_level_defs, primitives, *id) {
             if let TypeEnum::TVar { .. } = unifier.get_ty(ty).as_ref() {
+                let var = unifier.get_fresh_var(Some(*id), Some(expr.location)).0;
+                unifier.unify(var, ty).unwrap();
                 Ok(TypeAnnotation::TypeVar(ty))
             } else {
                 Err(format!("`{}` is not a valid type annotation (at {})", id, expr.location))

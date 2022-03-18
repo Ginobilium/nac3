@@ -1193,9 +1193,18 @@ impl TopLevelComposer {
                                     unreachable!("must be type var annotation");
                                 }
                             }
-                            get_type_from_type_annotation_kinds(temp_def_list, unifier, primitives, &annotation)?
+                            let dummy_return_type = unifier.get_dummy_var().0;
+                            type_var_to_concrete_def.insert(dummy_return_type, annotation.clone());
+                            dummy_return_type
                         } else {
-                            primitives.none
+                            // if do not have return annotation, return none
+                            // for uniform handling, still use type annoatation
+                            let dummy_return_type = unifier.get_dummy_var().0;
+                            type_var_to_concrete_def.insert(
+                                dummy_return_type,
+                                TypeAnnotation::Primitive(primitives.none),
+                            );
+                            dummy_return_type
                         }
                     };
 
