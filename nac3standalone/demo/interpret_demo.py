@@ -6,6 +6,7 @@ import importlib.machinery
 import pathlib
 
 from numpy import int32, int64, uint32, uint64
+from typing import TypeVar, Generic
 
 
 def patch(module):
@@ -35,6 +36,8 @@ def patch(module):
     module.int64 = int64
     module.uint32 = uint32
     module.uint64 = uint64
+    module.TypeVar = TypeVar
+    module.Generic = Generic
     module.extern = extern
 
 

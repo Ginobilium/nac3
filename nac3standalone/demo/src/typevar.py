@@ -1,5 +1,3 @@
-from typing import TypeVar, Generic
-
 @extern
 def output_int32(x: int32):
     ...

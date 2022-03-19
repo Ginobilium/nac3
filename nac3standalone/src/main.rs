@@ -62,9 +62,6 @@ fn main() {
     let parser_result = parser::parse_program(&program, file_name.into()).unwrap();
 
     for stmt in parser_result.into_iter() {
-        if matches!(stmt.node, StmtKind::Import { .. } | StmtKind::ImportFrom { .. }) {
-            continue;
-        }
         if let StmtKind::Assign { targets, value, .. } = &stmt.node {
             fn handle_typevar_definition(
                 var: &Expr,
