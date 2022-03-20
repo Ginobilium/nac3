@@ -906,7 +906,6 @@ impl SymbolResolver for Resolver {
                     })
                     .unwrap(),
                 };
-                println!("{:?}", result);
                 if let Ok(t) = &result {
                     self.0.id_to_type.write().insert(str, *t);
                 }
