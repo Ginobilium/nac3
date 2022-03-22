@@ -37,7 +37,7 @@ cd artiq
 python setup.py install
 ```
 
-Locate a recent build of ``nac3artiq-mingw`` from [Hydra](https://nixbld.m-labs.hk) and download ``nac3artiq.zip``. Then extract the contents in the appropriate location:
+Locate a recent build of ``nac3artiq-msys2`` from [Hydra](https://nixbld.m-labs.hk) and download ``nac3artiq.zip``. Then extract the contents in the appropriate location:
 ```
 pacman -S unzip
 wget https://nixbld.m-labs.hk/build/97899/download/1/nac3artiq.zip  # edit the build number
