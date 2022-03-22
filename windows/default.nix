@@ -79,7 +79,7 @@ in rec {
     src = ../.;
     cargoLock = { lockFile = ../Cargo.lock; };
     doCheck = false;
-    nativeBuildInputs = [ pkgs.wineWowPackages.stable ];
+    nativeBuildInputs = [ pkgs.wineWowPackages.stable pkgs.zip ];
     buildPhase =
       ''
       export HOME=`mktemp -d`
@@ -89,5 +89,13 @@ in rec {
       export PYO3_CONFIG_FILE=Z:${pyo3-mingw-config}
       wine64 cargo build --release -p nac3artiq
       '';
+    installPhase =
+      ''
+      mkdir -p $out $out/nix-support
+      ln -s target/release/nac3artiq.dll nac3artiq.pyd
+      zip $out/nac3artiq.zip nac3artiq.pyd
+      echo file binary-dist $out/nac3artiq.zip >> $out/nix-support/hydra-build-products
+      '';
+    dontFixup = true;
   };
 }
