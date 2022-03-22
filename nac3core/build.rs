@@ -26,7 +26,6 @@ fn main() {
         "-S",
         "-Wall",
         "-Wextra",
-        "-Wno-implicit-function-declaration",
         "-o",
         "-",
     ];

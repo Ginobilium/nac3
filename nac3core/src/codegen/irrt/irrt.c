@@ -104,7 +104,7 @@ int32_t __nac3_list_slice_assign_var_size(
             || MAX(src_start, src_end) < MIN(dest_start, dest_end)
         );
     if (need_alloca) {
-        uint8_t *tmp = alloca(src_arr_len * size);
+        uint8_t *tmp = __builtin_alloca(src_arr_len * size);
         __builtin_memcpy(tmp, src_arr, src_arr_len * size);
         src_arr = tmp;
     }
