@@ -61,7 +61,7 @@ impl<V> UnificationTable<V> {
         if self.ranks[a] < self.ranks[b] {
             std::mem::swap(&mut a, &mut b);
         }
-        self.log.push(Action::Parent { key: b, original_parent: a });
+        self.log.push(Action::Parent { key: b, original_parent: self.parents[b] });
         self.parents[b] = a;
         if self.ranks[a] == self.ranks[b] {
             self.log.push(Action::Rank { key: a, original_rank: self.ranks[a] });
@@ -106,7 +106,7 @@ impl<V> UnificationTable<V> {
             // a = parent.parent
             let a = self.parents[parent];
             // root.parent = parent.parent
-            self.log.push(Action::Parent { key: root, original_parent: a });
+            self.log.push(Action::Parent { key: root, original_parent: self.parents[root] });
             self.parents[root] = a;
             root = parent;
             // parent = root.parent
@@ -145,8 +145,8 @@ impl<V> UnificationTable<V> {
     pub fn discard_snapshot(&mut self, snapshot: (usize, u32)) {
         let (log_len, generation) = snapshot;
         assert!(self.log.len() >= log_len, "snapshot discard error");
-        assert!(matches!(self.log[log_len - 1], Action::Marker { generation: gen } if generation == gen), "snapshot discard error");
-        self.log.truncate(log_len - 1);
+        assert!(matches!(self.log[log_len - 1], Action::Marker { generation: gen } if gen == generation), "snapshot discard error");
+        self.log.clear();
     }
 }
 
