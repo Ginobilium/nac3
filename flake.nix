@@ -137,6 +137,7 @@
       hydraJobs = {
         inherit (packages.x86_64-linux) llvm-nac3 nac3artiq;
         llvm-nac3-msys2 = packages.x86_64-w64-mingw32.llvm-nac3;
+        nac3artiq-msys2 = packages.x86_64-w64-mingw32.nac3artiq;
       };
   };
 
