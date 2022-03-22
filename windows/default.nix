@@ -98,4 +98,10 @@ in rec {
       '';
     dontFixup = true;
   };
+  wine-msys2 = pkgs.writeShellScriptBin "wine-msys2"
+    ''
+    export WINEDEBUG=-all
+    export WINEPATH=Z:${msys2-env}/mingw64/bin\;Z:${llvm-nac3}/bin
+    ${pkgs.wineWowPackages.stable}/bin/wine64 cmd
+    '';
 }

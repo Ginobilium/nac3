@@ -126,11 +126,15 @@
           cargo-insta
           clippy
           rustfmt
-          # MSYS2
+        ];
+      };
+      devShells.x86_64-linux.msys2 = pkgs.mkShell {
+        name = "nac3-dev-shell";
+        buildInputs = with pkgs; [
           curl
           pacman
           fakeroot
-          wineWowPackages.stable
+          packages.x86_64-w64-mingw32.wine-msys2
         ];
       };
 
