@@ -284,4 +284,19 @@
   url = "https://mirror.msys2.org/mingw/mingw64/mingw-w64-x86_64-python-3.9.11-2-any.pkg.tar.zst";
   sha256 = "05znxaybrm8affs83a51872iksa9yd4qk692lr3rjdjy3cbxkhca";
 })
+
+(pkgs.fetchurl {
+  url = "https://mirror.msys2.org/mingw/mingw64/mingw-w64-x86_64-gcc-libgfortran-11.2.0-10-any.pkg.tar.zst";
+  sha256 = "13qdcb614sz7w10b2snmp05qh4c7wf24qmfmzssxjjz8ld6p8b90";
+})
+
+(pkgs.fetchurl {
+  url = "https://mirror.msys2.org/mingw/mingw64/mingw-w64-x86_64-openblas-0.3.20-1-any.pkg.tar.zst";
+  sha256 = "1adbbycbvs2nkjhgap92fk3x0vqfjb3ghhvyd1xlnn56c5n0iphf";
+})
+
+(pkgs.fetchurl {
+  url = "https://mirror.msys2.org/mingw/mingw64/mingw-w64-x86_64-python-numpy-1.21.5-1-any.pkg.tar.zst";
+  sha256 = "10bhfq65nrzxipgy75bqaad74daif4ay06phwvbx70b9j0wm33c3";
+})
 ]
