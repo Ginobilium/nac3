@@ -59,7 +59,7 @@ in rec {
       ''
       export HOME=`mktemp -d`
       export WINEDEBUG=-all
-      export WINEPATH=${msys2-env}/mingw64/bin
+      export WINEPATH=Z:${msys2-env}/mingw64/bin
       ${silenceFontconfig}
       mkdir build
       cd build
@@ -84,7 +84,7 @@ in rec {
       ''
       export HOME=`mktemp -d`
       export WINEDEBUG=-all
-      export WINEPATH=${msys2-env}/mingw64/bin
+      export WINEPATH=Z:${msys2-env}/mingw64/bin
       ${silenceFontconfig}
       export PYO3_CONFIG_FILE=Z:${pyo3-mingw-config}
       wine64 cargo build --release -p nac3artiq
