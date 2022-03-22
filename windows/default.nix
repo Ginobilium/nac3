@@ -28,6 +28,8 @@ in
       mkdir clang
       tar xf ${src-clang} -C clang --strip-components=1
       cd llvm
+      # build of llvm-lto fails and -DLLVM_BUILD_TOOLS=OFF does not disable it reliably because cmake
+      rm -rf tools/lto
       '';
     patches = [ ../llvm/llvm-future-riscv-abi.diff ];
     configurePhase =
@@ -46,19 +48,15 @@ in
 
       mkdir build
       cd build
-      wine64 cmake .. -DCMAKE_BUILD_TYPE=Release -DLLVM_ENABLE_UNWIND_TABLES=OFF -DLLVM_ENABLE_THREADS=OFF -DLLVM_TARGETS_TO_BUILD=X86\;ARM\;RISCV -DLLVM_LINK_LLVM_DYLIB=OFF -DLLVM_ENABLE_FFI=OFF -DLLVM_BUILD_TOOLS=OFF -DLLVM_ENABLE_LIBXML2=OFF -DLLVM_ENABLE_PROJECTS=clang -DCMAKE_INSTALL_PREFIX=$out
+      wine64 cmake .. -DCMAKE_BUILD_TYPE=Release -DLLVM_ENABLE_UNWIND_TABLES=OFF -DLLVM_ENABLE_THREADS=OFF -DLLVM_TARGETS_TO_BUILD=X86\;ARM\;RISCV -DLLVM_LINK_LLVM_DYLIB=OFF -DLLVM_ENABLE_FFI=OFF -DLLVM_ENABLE_LIBXML2=OFF -DLLVM_ENABLE_PROJECTS=clang -DCMAKE_INSTALL_PREFIX=$out
       '';
     buildPhase =
       ''
       wine64 ninja
-      wine64 ninja llvm-config
-      wine64 ninja llvm-as
       '';
     installPhase =
       ''
       wine64 ninja install
-      cp bin/llvm-config.exe $out/bin
-      cp bin/llvm-as.exe $out/bin
       '';
   };
 }
