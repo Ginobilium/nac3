@@ -47,8 +47,6 @@ unzip nac3artiq.zip -d C:/msys64/mingw64/lib/python3.9/site-packages
 Install additional NAC3 dependencies:
 ```
 pacman -S mingw-w64-x86_64-lld
-wget https://nixbld.m-labs.hk/build/97899/download/1/mcfgthread-12.dll  # edit the build number
-cp mcfgthread-12.dll C:/msys64/mingw64/bin
 ```
 
 And you should be good to go.

@@ -6,46 +6,6 @@
   outputs = { self, nixpkgs }:
     let
       pkgs = import nixpkgs { system = "x86_64-linux"; };
-      pkgs-mingw = import nixpkgs {
-        system = "x86_64-linux";
-        crossSystem = { config = "x86_64-w64-mingw32"; libc = "msvcrt"; };
-        # work around https://github.com/NixOS/nixpkgs/issues/149593
-        overlays = [
-          (self: super: {
-            openssh = super.openssh.overrideAttrs(oa: { doCheck = false; });
-          })
-        ];
-      };
-      msys2-python-tar = pkgs.fetchurl {
-        url = "https://mirror.msys2.org/mingw/mingw64/mingw-w64-x86_64-python-3.9.7-4-any.pkg.tar.zst";
-        sha256 = "0iwlgbk4b457yn9djwqswid55xhyyi35qymz1lfh42xwdpxdm47c";
-      };
-      msys2-python = pkgs.stdenvNoCC.mkDerivation {
-        name = "msys2-python";
-        src = msys2-python-tar;
-        buildInputs = [ pkgs.gnutar pkgs.zstd ];
-        phases = [ "installPhase" ];
-        installPhase =
-          ''
-          mkdir $out
-          tar xf $src -C $out
-          '';
-      };
-      pyo3-mingw-config = pkgs.writeTextFile {
-        name = "pyo3-mingw-config";
-        text =
-          ''
-          implementation=CPython
-          version=3.9
-          shared=true
-          abi3=false
-          lib_name=python3.9
-          lib_dir=${msys2-python}/mingw64/lib
-          pointer_width=64
-          build_flags=WITH_THREAD
-          suppress_build_script_link_lines=false
-          '';
-      };
     in rec {
       packages.x86_64-linux = rec {
         llvm-nac3 = pkgs.callPackage "${self}/llvm" {};
@@ -149,53 +109,7 @@
         );
       };
 
-      packages.x86_64-w64-mingw32 = rec {
-        llvm-nac3 = pkgs-mingw.callPackage "${self}/llvm" { inherit (pkgs) llvmPackages_13; };
-        nac3artiq = pkgs-mingw.python3Packages.toPythonModule (
-          pkgs-mingw.rustPlatform.buildRustPackage {
-            name = "nac3artiq";
-            src = self;
-            cargoLock = { lockFile = ./Cargo.lock; };
-            nativeBuildInputs = [ pkgs.llvmPackages_13.clang-unwrapped pkgs.llvmPackages_13.llvm pkgs.zip ];
-            buildInputs = [ pkgs-mingw.zlib ];
-            configurePhase =
-              ''
-              # Link libstdc++ statically. As usual with cargo, this is an adventure.
-              cp --no-preserve=mode,ownership -R $CARGO_HOME/cargo-vendor-dir/llvm-sys-130.0.3/ llvm-sys-130.0.3
-              substituteInPlace llvm-sys-130.0.3/build.rs --replace "cargo:rustc-link-lib=dylib=" "cargo:rustc-link-lib=static="
-              substituteInPlace llvm-sys-130.0.3/build.rs --replace "fn main() {" "fn main() { println!(\"cargo:rustc-link-search=native=${pkgs-mingw.stdenv.cc.cc}/x86_64-w64-mingw32/lib\");"
-              chmod 755 $CARGO_HOME/cargo-vendor-dir
-              rm $CARGO_HOME/cargo-vendor-dir/llvm-sys-130.0.3
-              mv llvm-sys-130.0.3 $CARGO_HOME/cargo-vendor-dir/llvm-sys-130.0.3
-
-              export PYO3_CONFIG_FILE=${pyo3-mingw-config}
-
-              mkdir llvm-cfg
-              cat << EOF > llvm-cfg/llvm-config
-              #!${pkgs.bash}/bin/bash
-              set -e
-              # Gross hack to work around llvm-config asking for the wrong system libraries.
-              exec ${llvm-nac3.dev}/bin/llvm-config-native \$@ | ${pkgs.gnused}/bin/sed s/-lrt\ -ldl\ -lpthread\ -lm//
-              EOF
-              chmod +x llvm-cfg/llvm-config
-              export PATH=`pwd`/llvm-cfg:$PATH
-
-              export CARGO_TARGET_X86_64_PC_WINDOWS_GNU_RUSTFLAGS="-C link-arg=-lz -C link-arg=-luuid -C link-arg=-lole32 -C link-arg=-lmcfgthread"
-              '';
-            cargoBuildFlags = [ "--package" "nac3artiq" ];
-            doCheck = false;
-            installPhase =
-              ''
-              mkdir -p $out $out/nix-support
-              ln -s target/x86_64-pc-windows-gnu/release/nac3artiq.dll nac3artiq.pyd
-              zip $out/nac3artiq.zip nac3artiq.pyd
-              echo file binary-dist $out/nac3artiq.zip >> $out/nix-support/hydra-build-products
-              '';
-            dontFixup = true;
-            meta.platforms = ["x86_64-windows"];
-          }
-        );
-      };
+      packages.x86_64-w64-mingw32 = import ./windows { inherit pkgs; };
 
       devShell.x86_64-linux = pkgs.mkShell {
         name = "nac3-dev-shell";
@@ -212,23 +126,17 @@
           cargo-insta
           clippy
           rustfmt
+          # MSYS2
+          curl
+          pacman
+          fakeroot
+          wineWowPackages.stable
         ];
       };
 
       hydraJobs = {
         inherit (packages.x86_64-linux) llvm-nac3 nac3artiq;
-        llvm-nac3-mingw = packages.x86_64-w64-mingw32.llvm-nac3;
-        nac3artiq-mingw = packages.x86_64-w64-mingw32.nac3artiq;
-        mcfgthreads = pkgs-mingw.stdenvNoCC.mkDerivation {
-          name = "mcfgthreads-hydra";
-          phases = [ "installPhase" ];
-          installPhase =
-            ''
-            mkdir -p $out $out/nix-support
-            ln -s ${pkgs-mingw.windows.mcfgthreads}/bin/mcfgthread-12.dll $out/
-            echo file binary-dist $out/mcfgthread-12.dll >> $out/nix-support/hydra-build-products
-            '';
-        };
+        llvm-nac3-msys2 = packages.x86_64-w64-mingw32.llvm-nac3;
       };
   };
 
