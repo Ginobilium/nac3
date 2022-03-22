@@ -735,16 +735,40 @@ impl TopLevelComposer {
             }
         }
 
+        let mut subst_list = Some(Vec::new());
         // unification of previously assigned typevar
         let mut unification_helper = |ty, def| {
             let target_ty =
-                get_type_from_type_annotation_kinds(&temp_def_list, unifier, primitives, &def)?;
+                get_type_from_type_annotation_kinds(&temp_def_list, unifier, primitives, &def, &mut subst_list)?;
             unifier.unify(ty, target_ty).map_err(|e| e.to_display(unifier).to_string())?;
             Ok(()) as Result<(), String>
         };
         for (ty, def) in type_var_to_concrete_def {
             if let Err(e) = unification_helper(ty, def) {
                 errors.insert(e);
+            }
+        }
+        for ty in subst_list.unwrap().into_iter() {
+            if let TypeEnum::TObj { obj_id, params, fields } = &*unifier.get_ty(ty) {
+                let mut new_fields = HashMap::new();
+                let mut need_subst = false;
+                for (name, (ty, mutable)) in fields.iter() {
+                    let substituted = unifier.subst(*ty, params);
+                    need_subst |= substituted.is_some();
+                    new_fields.insert(*name, (substituted.unwrap_or(*ty), *mutable));
+                }
+                if need_subst {
+                    let new_ty = unifier.add_ty(TypeEnum::TObj {
+                        obj_id: *obj_id,
+                        params: params.clone(),
+                        fields: new_fields,
+                    });
+                    if let Err(e) = unifier.unify(ty, new_ty) {
+                        errors.insert(e.to_display(unifier).to_string());
+                    }
+                }
+            } else {
+                unreachable!()
             }
         }
         if !errors.is_empty() {
@@ -867,6 +891,7 @@ impl TopLevelComposer {
                                     unifier,
                                     primitives_store,
                                     &type_annotation,
+                                    &mut None
                                 )?;
 
                                 Ok(FuncArg {
@@ -934,6 +959,7 @@ impl TopLevelComposer {
                                 unifier,
                                 primitives_store,
                                 &return_ty_annotation,
+                                &mut None
                             )?
                         } else {
                             primitives_store.none
@@ -1498,6 +1524,7 @@ impl TopLevelComposer {
                     unifier,
                     primitives_ty,
                     &make_self_type_annotation(type_vars, *object_id),
+                    &mut None
                 )?;
                 if ancestors
                     .iter()
@@ -1666,6 +1693,7 @@ impl TopLevelComposer {
                                     unifier,
                                     primitives_ty,
                                     &ty_ann,
+                                    &mut None
                                 )?;
                                 Some((self_ty, type_vars.clone()))
                             } else {

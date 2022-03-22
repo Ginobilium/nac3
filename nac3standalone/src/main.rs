@@ -85,7 +85,7 @@ fn main() {
                                     Default::default(),
                                 )?;
                                 get_type_from_type_annotation_kinds(
-                                    def_list, unifier, primitives, &ty,
+                                    def_list, unifier, primitives, &ty, &mut None
                                 )
                             })
                             .collect::<Result<Vec<_>, _>>()?;

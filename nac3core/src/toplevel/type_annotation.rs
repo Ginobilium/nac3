@@ -273,6 +273,7 @@ pub fn get_type_from_type_annotation_kinds(
     unifier: &mut Unifier,
     primitives: &PrimitiveStore,
     ann: &TypeAnnotation,
+    subst_list: &mut Option<Vec<Type>>
 ) -> Result<Type, String> {
     match ann {
         TypeAnnotation::CustomClass { id: obj_id, params } => {
@@ -294,6 +295,7 @@ pub fn get_type_from_type_annotation_kinds(
                                 unifier,
                                 primitives,
                                 x,
+                                subst_list
                             )
                         })
                         .collect::<Result<Vec<_>, _>>()?;
@@ -349,12 +351,16 @@ pub fn get_type_from_type_annotation_kinds(
                         let subst_ty = unifier.subst(*ty, &subst).unwrap_or(*ty);
                         (*name, (subst_ty, *mutability))
                     }));
-
-                    Ok(unifier.add_ty(TypeEnum::TObj {
+                    let need_subst = !subst.is_empty();
+                    let ty = unifier.add_ty(TypeEnum::TObj {
                         obj_id: *obj_id,
                         fields: tobj_fields,
                         params: subst,
-                    }))
+                    });
+                    if need_subst {
+                        subst_list.as_mut().map(|wl| wl.push(ty));
+                    }
+                    Ok(ty)
                 }
             } else {
                 unreachable!("should be class def here")
@@ -367,6 +373,7 @@ pub fn get_type_from_type_annotation_kinds(
                 unifier,
                 primitives,
                 ty.as_ref(),
+                subst_list
             )?;
             Ok(unifier.add_ty(TypeEnum::TVirtual { ty }))
         }
@@ -376,6 +383,7 @@ pub fn get_type_from_type_annotation_kinds(
                 unifier,
                 primitives,
                 ty.as_ref(),
+                subst_list
             )?;
             Ok(unifier.add_ty(TypeEnum::TList { ty }))
         }
@@ -383,7 +391,7 @@ pub fn get_type_from_type_annotation_kinds(
             let tys = tys
                 .iter()
                 .map(|x| {
-                    get_type_from_type_annotation_kinds(top_level_defs, unifier, primitives, x)
+                    get_type_from_type_annotation_kinds(top_level_defs, unifier, primitives, x, subst_list)
                 })
                 .collect::<Result<Vec<_>, _>>()?;
             Ok(unifier.add_ty(TypeEnum::TTuple { ty: tys }))

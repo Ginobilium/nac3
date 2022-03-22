@@ -520,7 +520,7 @@ impl Unifier {
         match (&*ty_a, &*ty_b) {
             (
                 TVar { fields: fields1, id, name: name1, loc: loc1, .. },
-                TVar { fields: fields2, name: name2, loc: loc2, .. },
+                TVar { fields: fields2, id: id2, name: name2, loc: loc2, .. },
             ) => {
                 let new_fields = match (fields1, fields2) {
                     (None, None) => None,
@@ -570,7 +570,7 @@ impl Unifier {
                 self.unification_table.set_value(
                     a,
                     Rc::new(TypeEnum::TVar {
-                        id: *id,
+                        id: name1.map_or(*id2, |_| *id),
                         fields: new_fields,
                         range,
                         name: name1.or(*name2),

@@ -353,6 +353,7 @@ pub fn gen_func<'ctx, G: CodeGenerator>(
         let (unifier, primitives) = &top_level_ctx.unifiers.read()[task.unifier_index];
         (Unifier::from_shared_unifier(unifier), *primitives)
     };
+    unifier.top_level = Some(top_level_ctx.clone());
 
     let mut cache = HashMap::new();
     for (a, b) in task.subst.iter() {

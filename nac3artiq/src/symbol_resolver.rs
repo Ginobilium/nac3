@@ -538,13 +538,25 @@ impl InnerResolver {
                 let types = types?;
                 Ok(types.map(|types| unifier.add_ty(TypeEnum::TTuple { ty: types })))
             }
-            (TypeEnum::TObj { params: var_map, fields, .. }, false) => {
-                self.pyid_to_type.write().insert(ty_id, extracted_ty);
+            (TypeEnum::TObj { params, fields, .. }, false) => {
+                let var_map = params
+                    .iter()
+                    .map(|(id_var, ty)| {
+                        if let TypeEnum::TVar { id, range, name, loc, .. } =
+                            &*unifier.get_ty(*ty)
+                        {
+                            assert_eq!(*id, *id_var);
+                            (*id, unifier.get_fresh_var_with_range(range, *name, *loc).0)
+                        } else {
+                            unreachable!()
+                        }
+                    })
+                    .collect::<HashMap<_, _>>();
                 let mut instantiate_obj = || {
                     // loop through non-function fields of the class to get the instantiated value
                     for field in fields.iter() {
                         let name: String = (*field.0).into();
-                        if let TypeEnum::TFunc(..) = &*unifier.get_ty(field.1 .0) {
+                        if let TypeEnum::TFunc(..) = &*unifier.get_ty(field.1.0) {
                             continue;
                         } else {
                             let field_data = obj.getattr(&name)?;
@@ -560,7 +572,7 @@ impl InnerResolver {
                                 }
                             };
                             let field_ty =
-                                unifier.subst(field.1 .0, &var_map).unwrap_or(field.1 .0);
+                                unifier.subst(field.1.0, &var_map).unwrap_or(field.1.0);
                             if let Err(e) = unifier.unify(ty, field_ty) {
                                 // field type mismatch
                                 return Ok(Err(format!(
@@ -577,14 +589,10 @@ impl InnerResolver {
                             return Ok(Err("object is not of concrete type".into()));
                         }
                     }
+                    let extracted_ty = unifier.subst(extracted_ty, &var_map).unwrap_or(extracted_ty);
                     Ok(Ok(extracted_ty))
                 };
-                let result = instantiate_obj();
-                // do not cache the type if there are errors
-                if matches!(result, Err(_) | Ok(Err(_))) {
-                    self.pyid_to_type.write().remove(&ty_id);
-                }
-                result
+                instantiate_obj()
             }
             _ => Ok(Ok(extracted_ty)),
         }
