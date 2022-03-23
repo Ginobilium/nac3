@@ -46,6 +46,9 @@ impl<'a> Inferencer<'a> {
                 }
                 Ok(())
             }
+            ExprKind::Constant { .. } => {
+                Err(format!("cannot assign to a constant (at {})", pattern.location))
+            }
             _ => self.check_expr(pattern, defined_identifiers),
         }
     }
