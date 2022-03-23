@@ -102,6 +102,7 @@ in rec {
     ''
     export WINEDEBUG=-all
     export WINEPATH=Z:${msys2-env}/mingw64/bin\;Z:${llvm-nac3}/bin
-    ${pkgs.wineWowPackages.stable}/bin/wine64 cmd
+    export PYO3_CONFIG_FILE=Z:${pyo3-mingw-config}
+    exec ${pkgs.wineWowPackages.stable}/bin/wine64 cmd
     '';
 }
