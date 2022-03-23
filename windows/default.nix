@@ -78,7 +78,6 @@ in rec {
     name = "nac3artiq";
     src = ../.;
     cargoLock = { lockFile = ../Cargo.lock; };
-    doCheck = false;
     nativeBuildInputs = [ pkgs.wineWowPackages.stable pkgs.zip ];
     buildPhase =
       ''
@@ -95,6 +94,10 @@ in rec {
       ln -s target/release/nac3artiq.dll nac3artiq.pyd
       zip $out/nac3artiq.zip nac3artiq.pyd
       echo file binary-dist $out/nac3artiq.zip >> $out/nix-support/hydra-build-products
+      '';
+    checkPhase =
+      ''
+      wine64 cargo test --release
       '';
     dontFixup = true;
   };
