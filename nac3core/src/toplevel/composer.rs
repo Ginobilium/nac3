@@ -775,6 +775,18 @@ impl TopLevelComposer {
             return Err(errors.into_iter().sorted().join("\n----------\n"));
         }
 
+        for (def, _) in def_ast_list.iter().skip(self.builtin_num) {
+            match &*def.read() {
+                TopLevelDef::Class { resolver: Some(resolver), .. }
+                | TopLevelDef::Function { resolver: Some(resolver), .. } => {
+                    if let Err(e) = resolver.handle_deferred_eval(unifier, &temp_def_list, primitives) {
+                        errors.insert(e);
+                    }
+                }
+                _ => {}
+            }
+        }
+
         Ok(())
     }
 
@@ -1057,17 +1069,7 @@ impl TopLevelComposer {
                     let (method_dummy_ty, method_id) =
                         Self::get_class_method_def_info(class_methods_def, *name)?;
 
-                    // the method var map can surely include the class's generic parameters
-                    let mut method_var_map: HashMap<u32, Type> = class_type_vars_def
-                        .iter()
-                        .map(|ty| {
-                            if let TypeEnum::TVar { id, .. } = unifier.get_ty(*ty).as_ref() {
-                                (*id, *ty)
-                            } else {
-                                unreachable!("must be type var here")
-                            }
-                        })
-                        .collect();
+                    let mut method_var_map: HashMap<u32, Type> = HashMap::new();
 
                     let arg_types: Vec<FuncArg> = {
                         // check method parameters cannot have same name
@@ -1494,8 +1496,8 @@ impl TopLevelComposer {
                     if new_var_ids != *var_id {
                         let new_signature = FunSignature {
                             args: args.clone(),
-                            ret: ret.clone(),
-                            vars: new_var_ids.iter().zip(vars.values()).map(|(id, v)| (*id, v.clone())).collect(),
+                            ret: *ret,
+                            vars: new_var_ids.iter().zip(vars.values()).map(|(id, v)| (*id, *v)).collect(),
                         };
                         unifier.unification_table.set_value(*signature, Rc::new(TypeEnum::TFunc(new_signature)));
                         *var_id = new_var_ids;
@@ -1674,13 +1676,13 @@ impl TopLevelComposer {
                 simple_name,
                 signature,
                 resolver,
-                var_id: insted_vars,
                 ..
             } = &mut *function_def
             {
                 if let TypeEnum::TFunc(FunSignature { args, ret, vars }) =
                     unifier.get_ty(*signature).as_ref()
                 {
+                    let mut vars = vars.clone();
                     // None if is not class method
                     let uninst_self_type = {
                         if let Some(class_id) = method_class.get(&DefinitionId(id)) {
@@ -1695,6 +1697,12 @@ impl TopLevelComposer {
                                     &ty_ann,
                                     &mut None
                                 )?;
+                                vars.extend(type_vars.iter().map(|ty|
+                                    if let TypeEnum::TVar { id, .. } = &*unifier.get_ty(*ty) {
+                                        (*id, *ty)
+                                    } else {
+                                        unreachable!()
+                                    }));
                                 Some((self_ty, type_vars.clone()))
                             } else {
                                 unreachable!("must be class def")
@@ -1725,7 +1733,7 @@ impl TopLevelComposer {
                             .collect_vec();
                         let mut result: Vec<HashMap<u32, Type>> = Default::default();
                         for comb in var_combs {
-                            result.push(insted_vars.clone().into_iter().zip(comb).collect());
+                            result.push(vars.keys().cloned().zip(comb).collect());
                         }
                         // NOTE: if is empty, means no type var, append a empty subst, ok to do this?
                         if result.is_empty() {
@@ -1913,7 +1921,7 @@ impl TopLevelComposer {
                         }
 
                         instance_to_stmt.insert(
-                            get_subst_key(unifier, self_type, &subst, Some(insted_vars)),
+                            get_subst_key(unifier, self_type, &subst, Some(&vars.keys().cloned().collect())),
                             FunInstance {
                                 body: Arc::new(fun_body),
                                 unifier_id: 0,

@@ -38,7 +38,7 @@ use tempfile::{self, TempDir};
 
 use crate::{
     codegen::{rpc_codegen_callback, ArtiqCodeGenerator},
-    symbol_resolver::{InnerResolver, PythonHelper, Resolver},
+    symbol_resolver::{InnerResolver, PythonHelper, Resolver, DeferredEvaluationStore},
 };
 
 mod codegen;
@@ -89,6 +89,7 @@ struct Nac3 {
     top_levels: Vec<TopLevelComponent>,
     string_store: Arc<RwLock<HashMap<String, i32>>>,
     exception_ids: Arc<RwLock<HashMap<usize, usize>>>,
+    deferred_eval_store: DeferredEvaluationStore
 }
 
 create_exception!(nac3artiq, CompileError, exceptions::PyException);
@@ -400,6 +401,7 @@ impl Nac3 {
             working_directory,
             string_store: Default::default(),
             exception_ids: Default::default(),
+            deferred_eval_store: DeferredEvaluationStore::new(),
         })
     }
 
@@ -522,6 +524,7 @@ impl Nac3 {
                         helper,
                         string_store: self.string_store.clone(),
                         exception_ids: self.exception_ids.clone(),
+                        deferred_eval_store: self.deferred_eval_store.clone(),
                     })))
                         as Arc<dyn SymbolResolver + Send + Sync>;
                     let name_to_pyid = Rc::new(name_to_pyid);
@@ -607,6 +610,7 @@ impl Nac3 {
             helper,
             string_store: self.string_store.clone(),
             exception_ids: self.exception_ids.clone(),
+            deferred_eval_store: self.deferred_eval_store.clone(),
         }))) as Arc<dyn SymbolResolver + Send + Sync>;
         let (_, def_id, _) = composer
             .register_top_level(synthesized.pop().unwrap(), Some(resolver.clone()), "".into())

@@ -496,7 +496,13 @@ pub fn gen_func_instance<'ctx, 'a>(
         }
         let symbol = format!("{}.{}", name, instance_to_symbol.len());
         instance_to_symbol.insert(key, symbol.clone());
-        let key = ctx.get_subst_key(obj.as_ref().map(|a| a.0), sign, Some(var_id));
+        let mut filter = var_id.clone();
+        if let Some((obj_ty, _)) = &obj {
+            if let TypeEnum::TObj { params, .. } = &*ctx.unifier.get_ty(*obj_ty) {
+                filter.extend(params.keys());
+            }
+        }
+        let key = ctx.get_subst_key(obj.as_ref().map(|a| a.0), sign, Some(&filter));
         let instance = instance_to_stmt.get(&key).unwrap();
 
         let mut store = ConcreteTypeStore::new();

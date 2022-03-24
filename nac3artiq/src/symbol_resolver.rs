@@ -16,7 +16,10 @@ use pyo3::{
 };
 use std::{
     collections::{HashMap, HashSet},
-    sync::Arc,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering::Relaxed}
+    }
 };
 
 use crate::PrimitivePythonId;
@@ -28,6 +31,21 @@ pub enum PrimitiveValue {
     U64(u64),
     F64(f64),
     Bool(bool),
+}
+
+#[derive(Clone)]
+pub struct DeferredEvaluationStore {
+    needs_defer: Arc<AtomicBool>,
+    store: Arc<RwLock<Vec<(Vec<Type>, PyObject, String)>>>,
+}
+
+impl DeferredEvaluationStore {
+    pub fn new() -> Self {
+        DeferredEvaluationStore {
+            needs_defer: Arc::new(AtomicBool::new(true)),
+            store: Arc::new(RwLock::new(Vec::new())),
+        }
+    }
 }
 
 pub struct InnerResolver {
@@ -44,6 +62,7 @@ pub struct InnerResolver {
     pub helper: PythonHelper,
     pub string_store: Arc<RwLock<HashMap<String, i32>>>,
     pub exception_ids: Arc<RwLock<HashMap<usize, usize>>>,
+    pub deferred_eval_store: DeferredEvaluationStore,
     // module specific
     pub name_to_pyid: HashMap<StrRef, u64>,
     pub module: PyObject,
@@ -298,27 +317,39 @@ impl InnerResolver {
             let constraint_types = {
                 let constraints = pyty.getattr("__constraints__").unwrap();
                 let mut result: Vec<Type> = vec![];
+                let needs_defer = self.deferred_eval_store.needs_defer.load(Relaxed);
                 for i in 0.. {
                     if let Ok(constr) = constraints.get_item(i) {
-                        result.push({
-                            match self.get_pyty_obj_type(py, constr, unifier, defs, primitives)? {
-                                Ok((ty, _)) => {
-                                    if unifier.is_concrete(ty, &[]) {
-                                        ty
-                                    } else {
-                                        return Ok(Err(format!(
-                                            "the {}th constraint of TypeVar `{}` is not concrete",
-                                            i + 1,
-                                            pyty.getattr("__name__")?.extract::<String>()?
-                                        )));
+                        if needs_defer {
+                            result.push(unifier.get_dummy_var().0);
+                        } else {
+                            result.push({
+                                match self.get_pyty_obj_type(py, constr, unifier, defs, primitives)? {
+                                    Ok((ty, _)) => {
+                                        if unifier.is_concrete(ty, &[]) {
+                                            ty
+                                        } else {
+                                            return Ok(Err(format!(
+                                                "the {}th constraint of TypeVar `{}` is not concrete",
+                                                i + 1,
+                                                pyty.getattr("__name__")?.extract::<String>()?
+                                            )));
+                                        }
                                     }
+                                    Err(err) => return Ok(Err(err)),
                                 }
-                                Err(err) => return Ok(Err(err)),
-                            }
-                        })
+                            })
+                        }
                     } else {
                         break;
                     }
+                }
+                if needs_defer {
+                    self.deferred_eval_store.store.write()
+                        .push((result.clone(),
+                               constraints.extract()?,
+                               pyty.getattr("__name__")?.extract::<String>()?
+                        ))
                 }
                 result
             };
@@ -908,15 +939,14 @@ impl SymbolResolver for Resolver {
                             }
                         }
                         if let Ok(t) = sym_ty {
-                            self.0.pyid_to_type.write().insert(*id, t);
+                            if let TypeEnum::TVar { .. } = &*unifier.get_ty(t) {
+                                self.0.pyid_to_type.write().insert(*id, t);
+                            }
                         }
                         Ok(sym_ty)
                     })
                     .unwrap(),
                 };
-                if let Ok(t) = &result {
-                    self.0.id_to_type.write().insert(str, *t);
-                }
                 result
             }
         }
@@ -990,6 +1020,45 @@ impl SymbolResolver for Resolver {
             string_store.insert(s.into(), id);
             id
         }
+    }
+
+    fn handle_deferred_eval(
+        &self,
+        unifier: &mut Unifier,
+        defs: &[Arc<RwLock<TopLevelDef>>],
+        primitives: &PrimitiveStore
+    ) -> Result<(), String> {
+        // we don't need a lock because this will only be run in a single thread
+        if self.0.deferred_eval_store.needs_defer.load(Relaxed) {
+            self.0.deferred_eval_store.needs_defer.store(false, Relaxed);
+            let store = self.0.deferred_eval_store.store.read();
+            Python::with_gil(|py| -> PyResult<Result<(), String>> {
+                for (variables, constraints, name) in store.iter() {
+                    let constraints: &PyAny = constraints.as_ref(py);
+                    for (i, var) in variables.iter().enumerate() {
+                        if let Ok(constr) = constraints.get_item(i) {
+                            match self.0.get_pyty_obj_type(py, constr, unifier, defs, primitives)? {
+                                Ok((ty, _)) => {
+                                    if !unifier.is_concrete(ty, &[]) {
+                                        return Ok(Err(format!(
+                                            "the {}th constraint of TypeVar `{}` is not concrete",
+                                            i + 1,
+                                            name,
+                                        )));
+                                    }
+                                    unifier.unify(ty, *var).unwrap()
+                                }
+                                Err(err) => return Ok(Err(err)),
+                            }
+                        } else {
+                            break;
+                        }
+                    }
+                }
+                Ok(Ok(()))
+            }).unwrap()?
+        }
+        Ok(())
     }
 
     fn get_exception_id(&self, tyid: usize) -> usize {
