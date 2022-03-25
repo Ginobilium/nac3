@@ -360,13 +360,14 @@ fn need_sret<'ctx>(ctx: &'ctx Context, ty: BasicTypeEnum<'ctx>) -> bool {
     need_sret_impl(ctx, ty, true)
 }
 
-pub fn gen_func<'ctx, G: CodeGenerator>(
+pub fn gen_func_impl<'ctx, G: CodeGenerator, F: FnOnce(&mut G, &mut CodeGenContext) -> Result<(), String>> (
     context: &'ctx Context,
     generator: &mut G,
     registry: &WorkerRegistry,
     builder: Builder<'ctx>,
     module: Module<'ctx>,
     task: CodeGenTask,
+    codegen_function: F
 ) -> Result<(Builder<'ctx>, Module<'ctx>, FunctionValue<'ctx>), (Builder<'ctx>, String)> {
     let top_level_ctx = registry.top_level_ctx.clone();
     let static_value_store = registry.static_value_store.clone();
@@ -572,25 +573,34 @@ pub fn gen_func<'ctx, G: CodeGenerator>(
         need_sret: has_sret
     };
 
-    let mut err = None;
-    for stmt in task.body.iter() {
-        if let Err(e) = generator.gen_stmt(&mut code_gen_context, stmt) {
-            err = Some(e);
-            break;
-        }
-        if code_gen_context.is_terminated() {
-            break;
-        }
-    }
+    let result = codegen_function(generator, &mut code_gen_context);
+
     // after static analysis, only void functions can have no return at the end.
     if !code_gen_context.is_terminated() {
         code_gen_context.builder.build_return(None);
     }
 
     let CodeGenContext { builder, module, .. } = code_gen_context;
-    if let Some(e) = err {
+    if let Err(e) = result {
         return Err((builder, e));
     }
 
     Ok((builder, module, fn_val))
+}
+
+pub fn gen_func<'ctx, G: CodeGenerator>(
+    context: &'ctx Context,
+    generator: &mut G,
+    registry: &WorkerRegistry,
+    builder: Builder<'ctx>,
+    module: Module<'ctx>,
+    task: CodeGenTask,
+) -> Result<(Builder<'ctx>, Module<'ctx>, FunctionValue<'ctx>), (Builder<'ctx>, String)> {
+    let body = task.body.clone();
+    gen_func_impl(context, generator, registry, builder, module, task, |generator, ctx| {
+        for stmt in body.iter() {
+            generator.gen_stmt(ctx, stmt)?;
+        }
+        Ok(())
+    })
 }

@@ -355,9 +355,9 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
         }
     }
 
-    pub fn gen_string<G: CodeGenerator, S: Into<String>>(
+    pub fn gen_string<S: Into<String>>(
         &mut self,
-        generator: &mut G,
+        generator: &mut dyn CodeGenerator,
         s: S,
     ) -> BasicValueEnum<'ctx> {
         self.gen_const(generator, &nac3parser::ast::Constant::Str(s.into()), self.primitives.str)

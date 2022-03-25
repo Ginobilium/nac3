@@ -6,7 +6,7 @@ use nac3core::{
     },
     symbol_resolver::ValueEnum,
     toplevel::{DefinitionId, GenCall},
-    typecheck::typedef::{FunSignature, Type},
+    typecheck::typedef::{FunSignature, FuncArg, Type, TypeEnum}
 };
 
 use nac3parser::ast::{Expr, ExprKind, Located, Stmt, StmtKind, StrRef};
@@ -15,7 +15,9 @@ use inkwell::{
     context::Context, module::Linkage, types::IntType, values::BasicValueEnum, AddressSpace,
 };
 
-use crate::timeline::TimeFns;
+use pyo3::{PyObject, PyResult, Python, types::{PyDict, PyList}};
+
+use crate::{symbol_resolver::InnerResolver, timeline::TimeFns};
 
 use std::{
     collections::hash_map::DefaultHasher,
@@ -270,8 +272,6 @@ fn gen_rpc_tag<'ctx, 'a>(
                 buffer.push(b'l');
                 gen_rpc_tag(ctx, *ty, buffer)?;
             }
-            // we should return an error, this will be fixed after improving error message
-            // as this requires returning an error during codegen
             _ => return Err(format!("Unsupported type: {:?}", ctx.unifier.stringify(ty))),
         }
     }
@@ -291,7 +291,7 @@ fn rpc_codegen_callback_fn<'ctx, 'a>(
     let int32 = ctx.ctx.i32_type();
     let tag_ptr_type = ctx.ctx.struct_type(&[ptr_type.into(), size_type.into()], false);
 
-    let service_id = int32.const_int(fun.1 .0 as u64, false);
+    let service_id = int32.const_int(fun.1.0 as u64, false);
     // -- setup rpc tags
     let mut tag = Vec::new();
     if obj.is_some() {
@@ -484,6 +484,81 @@ fn rpc_codegen_callback_fn<'ctx, 'a>(
         );
     }
     Ok(Some(result))
+}
+
+pub fn attributes_writeback<'ctx, 'a>(
+    ctx: &mut CodeGenContext<'ctx, 'a>,
+    generator: &mut dyn CodeGenerator,
+    inner_resolver: &InnerResolver,
+    host_attributes: PyObject,
+) -> Result<(), String> {
+    Python::with_gil(|py| -> PyResult<Result<(), String>> {
+        let host_attributes = host_attributes.cast_as::<PyList>(py)?;
+        let top_levels = ctx.top_level.definitions.read();
+        let globals = inner_resolver.global_value_ids.read();
+        let int32 = ctx.ctx.i32_type();
+        let zero = int32.const_zero();
+        let mut values = Vec::new();
+        let mut scratch_buffer = Vec::new();
+        for (_, val) in globals.iter() {
+            let val = val.as_ref(py);
+            let ty = inner_resolver.get_obj_type(py, val, &mut ctx.unifier, &top_levels, &ctx.primitives)?;
+            if let Err(ty) = ty {
+                return Ok(Err(ty))
+            }
+            let ty = ty.unwrap();
+            match &*ctx.unifier.get_ty(ty) {
+                TypeEnum::TObj { fields, .. } => {
+                    // we only care about primitive attributes
+                    // for non-primitive attributes, they should be in another global
+                    let mut attributes = Vec::new();
+                    let obj = inner_resolver.get_obj_value(py, val, ctx, generator)?.unwrap();
+                    for (name, (field_ty, is_mutable)) in fields.iter() {
+                        if !is_mutable {
+                            continue
+                        }
+                        if gen_rpc_tag(ctx, *field_ty, &mut scratch_buffer).is_ok() {
+                            attributes.push(name.to_string());
+                            let index = ctx.get_attr_index(ty, *name);
+                            values.push((*field_ty, ctx.build_gep_and_load(
+                                            obj.into_pointer_value(),
+                                            &[zero, int32.const_int(index as u64, false)])));
+                        }
+                    }
+                    if !attributes.is_empty() {
+                        let pydict = PyDict::new(py);
+                        pydict.set_item("obj", val)?;
+                        pydict.set_item("fields", attributes)?;
+                        host_attributes.append(pydict)?;
+                    }
+                },
+                TypeEnum::TList { ty: elem_ty } => {
+                    if gen_rpc_tag(ctx, *elem_ty, &mut scratch_buffer).is_ok() {
+                        let pydict = PyDict::new(py);
+                        pydict.set_item("obj", val)?;
+                        host_attributes.append(pydict)?;
+                        values.push((ty, inner_resolver.get_obj_value(py, val, ctx, generator)?.unwrap()));
+                    }
+                },
+                _ => {}
+            }
+        }
+        let fun = FunSignature {
+            args: values.iter().enumerate().map(|(i, (ty, _))| FuncArg {
+                name: i.to_string().into(),
+                ty: *ty,
+                default_value: None
+            }).collect(),
+            ret: ctx.primitives.none,
+            vars: Default::default()
+        };
+        let args: Vec<_> = values.into_iter().map(|(_, val)| (None, ValueEnum::Dynamic(val))).collect();
+        if let Err(e) = rpc_codegen_callback_fn(ctx, None, (&fun, DefinitionId(0)), args, generator) {
+            return Ok(Err(e));
+        }
+        Ok(Ok(()))
+    }).unwrap()?;
+    Ok(())
 }
 
 pub fn rpc_codegen_callback() -> Arc<GenCall> {

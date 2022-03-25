@@ -15,7 +15,7 @@ use pyo3::{
     PyAny, PyObject, PyResult, Python,
 };
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering::Relaxed}
@@ -54,7 +54,7 @@ pub struct InnerResolver {
     pub id_to_pyval: RwLock<HashMap<StrRef, (u64, PyObject)>>,
     pub id_to_primitive: RwLock<HashMap<u64, PrimitiveValue>>,
     pub field_to_val: RwLock<HashMap<(u64, StrRef), Option<(u64, PyObject)>>>,
-    pub global_value_ids: Arc<RwLock<HashSet<u64>>>,
+    pub global_value_ids: Arc<RwLock<HashMap<u64, PyObject>>>,
     pub class_names: Mutex<HashMap<StrRef, Type>>,
     pub pyid_to_def: Arc<RwLock<HashMap<u64, DefinitionId>>>,
     pub pyid_to_type: Arc<RwLock<HashMap<u64, Type>>>,
@@ -503,7 +503,7 @@ impl InnerResolver {
         }
     }
 
-    fn get_obj_type(
+    pub fn get_obj_type(
         &self,
         py: Python,
         obj: &PyAny,
@@ -605,7 +605,7 @@ impl InnerResolver {
                         unreachable!("must be tobj")
                     }
                 }
-                
+
                 let ty = match self.get_obj_type(py, field_data, unifier, defs, primitives)? {
                     Ok(t) => t,
                     Err(e) => {
@@ -686,7 +686,7 @@ impl InnerResolver {
         }
     }
 
-    fn get_obj_value<'ctx, 'a>(
+    pub fn get_obj_value<'ctx, 'a>(
         &self,
         py: Python,
         obj: &PyAny,
@@ -754,13 +754,13 @@ impl InnerResolver {
                 .struct_type(&[ty.ptr_type(AddressSpace::Generic).into(), size_t.into()], false);
 
             {
-                if self.global_value_ids.read().contains(&id) {
+                if self.global_value_ids.read().contains_key(&id) {
                     let global = ctx.module.get_global(&id_str).unwrap_or_else(|| {
                         ctx.module.add_global(arr_ty, Some(AddressSpace::Generic), &id_str)
                     });
                     return Ok(Some(global.as_pointer_value().into()));
                 } else {
-                    self.global_value_ids.write().insert(id);
+                    self.global_value_ids.write().insert(id, obj.into());
                 }
             }
 
@@ -834,13 +834,13 @@ impl InnerResolver {
             let ty = ctx.ctx.struct_type(&types, false);
 
             {
-                if self.global_value_ids.read().contains(&id) {
+                if self.global_value_ids.read().contains_key(&id) {
                     let global = ctx.module.get_global(&id_str).unwrap_or_else(|| {
                         ctx.module.add_global(ty, Some(AddressSpace::Generic), &id_str)
                     });
                     return Ok(Some(global.as_pointer_value().into()));
                 } else {
-                    self.global_value_ids.write().insert(id);
+                    self.global_value_ids.write().insert(id, obj.into());
                 }
             }
 
@@ -869,13 +869,13 @@ impl InnerResolver {
                     Some(v) => {
                         let global_str = format!("{}_option", id);
                         {
-                            if self.global_value_ids.read().contains(&id) {
+                            if self.global_value_ids.read().contains_key(&id) {
                                 let global = ctx.module.get_global(&global_str).unwrap_or_else(|| {
                                     ctx.module.add_global(v.get_type(), Some(AddressSpace::Generic), &global_str)
                                 });
                                 return Ok(Some(global.as_pointer_value().into()));
                             } else {
-                                self.global_value_ids.write().insert(id);
+                                self.global_value_ids.write().insert(id, obj.into());
                             }
                         }
                         let global = ctx.module.add_global(v.get_type(), Some(AddressSpace::Generic), &global_str);
@@ -902,13 +902,13 @@ impl InnerResolver {
                 .get_element_type()
                 .into_struct_type();
             {
-                if self.global_value_ids.read().contains(&id) {
+                if self.global_value_ids.read().contains_key(&id) {
                     let global = ctx.module.get_global(&id_str).unwrap_or_else(|| {
                         ctx.module.add_global(ty, Some(AddressSpace::Generic), &id_str)
                     });
                     return Ok(Some(global.as_pointer_value().into()));
                 } else {
-                    self.global_value_ids.write().insert(id);
+                    self.global_value_ids.write().insert(id, obj.into());
                 }
             }
             // should be classes

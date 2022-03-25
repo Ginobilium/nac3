@@ -10,6 +10,7 @@ use inkwell::{
     targets::*,
     OptimizationLevel,
 };
+use nac3core::codegen::gen_func_impl;
 use nac3core::toplevel::builtins::get_exn_constructor;
 use nac3core::typecheck::typedef::{TypeEnum, Unifier};
 use nac3parser::{
@@ -36,6 +37,7 @@ use nac3core::{
 
 use tempfile::{self, TempDir};
 
+use crate::codegen::attributes_writeback;
 use crate::{
     codegen::{rpc_codegen_callback, ArtiqCodeGenerator},
     symbol_resolver::{InnerResolver, PythonHelper, Resolver, DeferredEvaluationStore},
@@ -476,6 +478,8 @@ impl Nac3 {
         let store_obj = embedding_map.getattr("store_object").unwrap().to_object(py);
         let store_str = embedding_map.getattr("store_str").unwrap().to_object(py);
         let store_fun = embedding_map.getattr("store_function").unwrap().to_object(py);
+        let host_attributes = embedding_map.getattr("attributes_writeback").unwrap().to_object(py);
+        let global_value_ids: Arc<RwLock<HashMap<_, _>>> = Arc::new(RwLock::new(HashMap::new()));
         let helper = PythonHelper {
             id_fn: builtins.getattr("id").unwrap().to_object(py),
             len_fn: builtins.getattr("len").unwrap().to_object(py),
@@ -503,7 +507,6 @@ impl Nac3 {
 
         let mut module_to_resolver_cache: HashMap<u64, _> = HashMap::new();
 
-        let global_value_ids = Arc::new(RwLock::new(HashSet::<u64>::new()));
         let mut rpc_ids = vec![];
         for (stmt, path, module) in self.top_levels.iter() {
             let py_module: &PyAny = module.extract(py)?;
@@ -617,7 +620,7 @@ impl Nac3 {
         };
         let mut synthesized =
             parse_program(&synthesized, "__nac3_synthesized_modinit__".to_string().into()).unwrap();
-        let resolver = Arc::new(Resolver(Arc::new(InnerResolver {
+        let inner_resolver = Arc::new(InnerResolver {
             id_to_type: builtins_ty.clone().into(),
             id_to_def: builtins_def.clone().into(),
             pyid_to_def: self.pyid_to_def.clone(),
@@ -634,17 +637,18 @@ impl Nac3 {
             string_store: self.string_store.clone(),
             exception_ids: self.exception_ids.clone(),
             deferred_eval_store: self.deferred_eval_store.clone(),
-        }))) as Arc<dyn SymbolResolver + Send + Sync>;
+        });
+        let resolver = Arc::new(Resolver(inner_resolver.clone())) as Arc<dyn SymbolResolver + Send + Sync>;
         let (_, def_id, _) = composer
             .register_top_level(synthesized.pop().unwrap(), Some(resolver.clone()), "".into())
             .unwrap();
 
-        let signature =
+        let fun_signature =
             FunSignature { args: vec![], ret: self.primitive.none, vars: HashMap::new() };
         let mut store = ConcreteTypeStore::new();
         let mut cache = HashMap::new();
         let signature =
-            store.from_signature(&mut composer.unifier, &self.primitive, &signature, &mut cache);
+            store.from_signature(&mut composer.unifier, &self.primitive, &fun_signature, &mut cache);
         let signature = store.add_cty(signature);
 
         if let Err(e) = composer.start_analysis(true) {
@@ -721,10 +725,27 @@ impl Nac3 {
             symbol_name: "__modinit__".to_string(),
             body: instance.body,
             signature,
-            resolver,
+            resolver: resolver.clone(),
             store,
             unifier_index: instance.unifier_id,
             calls: instance.calls,
+            id: 0,
+        };
+
+        let mut store = ConcreteTypeStore::new();
+        let mut cache = HashMap::new();
+        let signature =
+            store.from_signature(&mut composer.unifier, &self.primitive, &fun_signature, &mut cache);
+        let signature = store.add_cty(signature);
+        let attributes_writeback_task = CodeGenTask {
+            subst: Default::default(),
+            symbol_name: "attributes_writeback".to_string(),
+            body: Arc::new(Default::default()),
+            signature,
+            resolver,
+            store,
+            unifier_index: instance.unifier_id,
+            calls: Arc::new(Default::default()),
             id: 0,
         };
         let isa = self.isa;
@@ -746,14 +767,27 @@ impl Nac3 {
             .map(|s| Box::new(ArtiqCodeGenerator::new(s.to_string(), size_t, self.time_fns)))
             .collect();
 
+        let membuffer = membuffers.clone();
         py.allow_threads(|| {
             let (registry, handles) = WorkerRegistry::create_workers(threads, top_level.clone(), f);
             registry.add_task(task);
             registry.wait_tasks_complete(handles);
+
+            let mut generator = ArtiqCodeGenerator::new("attributes_writeback".to_string(), size_t, self.time_fns);
+            let context = inkwell::context::Context::create();
+            let module = context.create_module("attributes_writeback");
+            let builder = context.create_builder();
+            let (_, module, _) = gen_func_impl(&context, &mut generator, &registry, builder, module,
+                attributes_writeback_task, |generator, ctx| {
+                    attributes_writeback(ctx, generator, inner_resolver.as_ref(), host_attributes)
+                }).unwrap();
+            let buffer = module.write_bitcode_to_memory();
+            let buffer = buffer.as_slice().into();
+            membuffer.lock().push(buffer);
         });
 
-        let buffers = membuffers.lock();
         let context = inkwell::context::Context::create();
+        let buffers = membuffers.lock();
         let main = context
             .create_module_from_ir(MemoryBuffer::create_from_memory_range(&buffers[0], "main"))
             .unwrap();
@@ -765,6 +799,11 @@ impl Nac3 {
             main.link_in_module(other)
                 .map_err(|err| CompileError::new_err(err.to_string()))?;
         }
+        let builder = context.create_builder();
+        let modinit_return = main.get_function("__modinit__").unwrap().get_last_basic_block().unwrap().get_terminator().unwrap();
+        builder.position_before(&modinit_return);
+        builder.build_call(main.get_function("attributes_writeback").unwrap(), &[], "attributes_writeback");
+
         main.link_in_module(load_irrt(&context))
             .map_err(|err| CompileError::new_err(err.to_string()))?;
 

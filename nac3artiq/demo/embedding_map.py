@@ -5,6 +5,7 @@ class EmbeddingMap:
         self.string_map = {}
         self.string_reverse_map = {}
         self.function_map = {}
+        self.attributes_writeback = []
 
         # preallocate exception names
         self.preallocate_runtime_exception_names(["RuntimeError",
