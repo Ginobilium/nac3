@@ -78,7 +78,7 @@ in rec {
   nac3artiq = pkgs.rustPlatform.buildRustPackage {
     name = "nac3artiq-msys2";
     src = ../.;
-    cargoLock = { lockFile = ../Cargo.lock; };
+    cargoLock = { lockFile = ../../Cargo.lock; };
     nativeBuildInputs = [ pkgs.wineWowPackages.stable pkgs.zip ];
     buildPhase =
       ''
