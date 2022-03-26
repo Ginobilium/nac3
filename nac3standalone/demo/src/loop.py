@@ -6,4 +6,4 @@ def run() -> int32:
     for _ in range(10):
         output_int32(_)
         _ = 0
-
+    return 0
