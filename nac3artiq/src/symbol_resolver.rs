@@ -917,9 +917,24 @@ impl InnerResolver {
             if let TopLevelDef::Class { fields, .. } = &*definition {
                 let values: Result<Option<Vec<_>>, _> = fields
                     .iter()
-                    .map(|(name, _, _)| {
-                        self.get_obj_value(py, obj.getattr(&name.to_string())?, ctx, generator).map_err(|e|
-                            super::CompileError::new_err(format!("Error getting field {}: {}", name, e)))
+                    .map(|(name, ty, _)| {
+                        let v = self.get_obj_value(py, obj.getattr(&name.to_string())?, ctx, generator)
+                            .map_err(|e| super::CompileError::new_err(format!("Error getting field {}: {}", name, e)));
+                        match (v, ctx.unifier.get_ty_immutable(*ty).as_ref()) {
+                            (Ok(Some(v)), TypeEnum::TObj { obj_id, params, .. })
+                                if *obj_id == ctx.primitives.option.get_obj_id(&ctx.unifier) =>
+                            {
+                                let actual_ptr_ty = ctx
+                                    .get_llvm_type(generator, *params.iter().next().unwrap().1)
+                                    .ptr_type(AddressSpace::Generic);
+                                Ok(Some(ctx.builder.build_bitcast(
+                                    v,
+                                    actual_ptr_ty,
+                                    "option_none_ptr_cast",
+                                )))
+                            }
+                            (v, _) => v,
+                        }
                     })
                     .collect();
                 let values = values?;
