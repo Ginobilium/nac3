@@ -189,7 +189,8 @@ pub fn gen_for<'ctx, 'a, G: CodeGenerator>(
         if ctx.unifier.unioned(iter.custom.unwrap(), ctx.primitives.range) {
             // setup
             let iter_val = iter_val.into_pointer_value();
-            let i = generator.gen_store_target(ctx, target)?;
+            let i = generator.gen_var_alloc(ctx, int32.into())?;
+            let user_i = generator.gen_store_target(ctx, target)?;
             let (start, end, step) = destructure_range(ctx, iter_val);
             ctx.builder.build_store(i, ctx.builder.build_int_sub(start, step, "start_init"));
             ctx.builder.build_unconditional_branch(test_bb);
@@ -207,6 +208,7 @@ pub fn gen_for<'ctx, 'a, G: CodeGenerator>(
                 "start_loop",
             );
             ctx.builder.build_store(i, tmp);
+            ctx.builder.build_store(user_i, tmp);
             // // if step > 0, continue when i < end
             let cmp1 = ctx.builder.build_int_compare(inkwell::IntPredicate::SLT, tmp, end, "cmp1");
             // if step < 0, continue when i > end
