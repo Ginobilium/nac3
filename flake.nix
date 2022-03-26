@@ -129,7 +129,7 @@
         ];
       };
       devShells.x86_64-linux.msys2 = pkgs.mkShell {
-        name = "nac3-dev-shell";
+        name = "nac3-dev-shell-msys2";
         buildInputs = with pkgs; [
           curl
           pacman

@@ -33,13 +33,14 @@ let
   };
 in rec {
   llvm-nac3 = pkgs.stdenvNoCC.mkDerivation rec {
-    name = "llvm-nac3-msys2";
+    pname = "llvm-nac3-msys2";
+    version = "13.0.1";
     src-llvm = pkgs.fetchurl {
-      url = "https://github.com/llvm/llvm-project/releases/download/llvmorg-13.0.1/llvm-13.0.1.src.tar.xz";
+      url = "https://github.com/llvm/llvm-project/releases/download/llvmorg-${version}/llvm-${version}.src.tar.xz";
       sha256 = "sha256-7GuA2Cw4SsrS3BkpA6bPLNuv+4ibhL+5janXHmMPyDQ=";
     };
     src-clang = pkgs.fetchurl {
-      url = "https://github.com/llvm/llvm-project/releases/download/llvmorg-13.0.1/clang-13.0.1.src.tar.xz";
+      url = "https://github.com/llvm/llvm-project/releases/download/llvmorg-${version}/clang-${version}.src.tar.xz";
       sha256 = "sha256-eHqeLZn1yHIKoXc+S+AJRhzTDTvUD90kWR5HNGfJF8k=";
     };
     buildInputs = [ pkgs.wineWowPackages.stable ];
@@ -75,7 +76,7 @@ in rec {
       '';
   };
   nac3artiq = pkgs.rustPlatform.buildRustPackage {
-    name = "nac3artiq";
+    name = "nac3artiq-msys2";
     src = ../.;
     cargoLock = { lockFile = ../Cargo.lock; };
     nativeBuildInputs = [ pkgs.wineWowPackages.stable pkgs.zip ];
