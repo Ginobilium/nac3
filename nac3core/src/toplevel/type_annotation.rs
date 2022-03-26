@@ -72,8 +72,6 @@ pub fn parse_ast_to_type_annotation_kinds<T>(
             Ok(TypeAnnotation::Primitive(primitives.float))
         } else if id == &"bool".into() {
             Ok(TypeAnnotation::Primitive(primitives.bool))
-        } else if id == &"None".into() {
-            Ok(TypeAnnotation::Primitive(primitives.none))
         } else if id == &"str".into() {
             Ok(TypeAnnotation::Primitive(primitives.str))
         } else if id == &"Exception".into() {
@@ -221,6 +219,29 @@ pub fn parse_ast_to_type_annotation_kinds<T>(
                 locked,
             )?;
             Ok(TypeAnnotation::List(def_ann.into()))
+        }
+
+        // option
+        ast::ExprKind::Subscript { value, slice, .. }
+            if {
+                matches!(&value.node, ast::ExprKind::Name { id, .. } if id == &"Option".into())
+            } =>
+        {
+            let def_ann = parse_ast_to_type_annotation_kinds(
+                resolver,
+                top_level_defs,
+                unifier,
+                primitives,
+                slice.as_ref(),
+                locked,
+            )?;
+            let id =
+                if let TypeEnum::TObj { obj_id, .. } = unifier.get_ty(primitives.option).as_ref() {
+                    *obj_id
+                } else {
+                    unreachable!()
+                };
+            Ok(TypeAnnotation::CustomClass { id, params: vec![def_ann] })
         }
 
         // tuple

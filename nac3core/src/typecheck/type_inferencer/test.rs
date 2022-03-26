@@ -129,7 +129,24 @@ impl TestEnvironment {
             fields: HashMap::new(),
             params: HashMap::new(),
         });
-        let primitives = PrimitiveStore { int32, int64, float, bool, none, range, str, exception, uint32, uint64 };
+        let option = unifier.add_ty(TypeEnum::TObj {
+            obj_id: DefinitionId(10),
+            fields: HashMap::new(),
+            params: HashMap::new(),
+        });
+        let primitives = PrimitiveStore {
+            int32,
+            int64,
+            float,
+            bool,
+            none,
+            range,
+            str,
+            exception,
+            uint32,
+            uint64,
+            option,
+        };
         set_primitives_magic_methods(&primitives, &mut unifier);
 
         let id_to_name = [
@@ -237,6 +254,11 @@ impl TestEnvironment {
             fields: HashMap::new(),
             params: HashMap::new(),
         });
+        let option = unifier.add_ty(TypeEnum::TObj {
+            obj_id: DefinitionId(10),
+            fields: HashMap::new(),
+            params: HashMap::new(),
+        });
         identifier_mapping.insert("None".into(), none);
         for (i, name) in ["int32", "int64", "float", "bool", "none", "range", "str", "Exception"]
             .iter()
@@ -259,7 +281,19 @@ impl TestEnvironment {
         }
         let defs = 7;
 
-        let primitives = PrimitiveStore { int32, int64, float, bool, none, range, str, exception, uint32, uint64 };
+        let primitives = PrimitiveStore {
+            int32,
+            int64,
+            float,
+            bool,
+            none,
+            range,
+            str,
+            exception,
+            uint32,
+            uint64,
+            option,
+        };
 
         let (v0, id) = unifier.get_dummy_var();
 

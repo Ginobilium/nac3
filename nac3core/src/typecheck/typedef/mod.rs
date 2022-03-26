@@ -54,6 +54,18 @@ pub enum RecordKey {
     Int(i32),
 }
 
+impl Type {
+    // a wrapper function for cleaner code so that we don't need to
+    // write this long pattern matching just to get the field `obj_id`
+    pub fn get_obj_id(self, unifier: &Unifier) -> DefinitionId {
+        if let TypeEnum::TObj { obj_id, .. } = unifier.get_ty_immutable(self).as_ref() {
+            *obj_id
+        } else {
+            unreachable!("expect a object type")
+        }
+    }
+}
+
 impl From<&RecordKey> for StrRef {
     fn from(r: &RecordKey) -> Self {
         match r {

@@ -259,6 +259,7 @@ fn get_llvm_type<'ctx>(
     unifier: &mut Unifier,
     top_level: &TopLevelContext,
     type_cache: &mut HashMap<Type, BasicTypeEnum<'ctx>>,
+    primitives: &PrimitiveStore,
     ty: Type,
 ) -> BasicTypeEnum<'ctx> {
     use TypeEnum::*;
@@ -268,9 +269,28 @@ fn get_llvm_type<'ctx>(
         let ty_enum = unifier.get_ty(ty);
         let result = match &*ty_enum {
             TObj { obj_id, fields, .. } => {
-                // check to avoid treating primitives as classes
-                if obj_id.0 <= 7 {
-                    unreachable!();
+                // check to avoid treating primitives other than Option as classes
+                if obj_id.0 <= 10 {
+                    match (unifier.get_ty(ty).as_ref(), unifier.get_ty(primitives.option).as_ref())
+                    {
+                        (
+                            TypeEnum::TObj { obj_id, params, .. },
+                            TypeEnum::TObj { obj_id: opt_id, .. },
+                        ) if *obj_id == *opt_id => {
+                            return get_llvm_type(
+                                ctx,
+                                generator,
+                                unifier,
+                                top_level,
+                                type_cache,
+                                primitives,
+                                *params.iter().next().unwrap().1,
+                            )
+                            .ptr_type(AddressSpace::Generic)
+                            .into();
+                        }
+                        _ => unreachable!("must be option type"),
+                    }
                 }
                 // a struct with fields in the order of declaration
                 let top_level_defs = top_level.definitions.read();
@@ -289,6 +309,7 @@ fn get_llvm_type<'ctx>(
                                 unifier,
                                 top_level,
                                 type_cache,
+                                primitives,
                                 fields[&f.0].0,
                             )
                         })
@@ -304,14 +325,14 @@ fn get_llvm_type<'ctx>(
                 // a struct with fields in the order present in the tuple
                 let fields = ty
                     .iter()
-                    .map(|ty| get_llvm_type(ctx, generator, unifier, top_level, type_cache, *ty))
+                    .map(|ty| get_llvm_type(ctx, generator, unifier, top_level, type_cache, primitives, *ty))
                     .collect_vec();
                 ctx.struct_type(&fields, false).into()
             }
             TList { ty } => {
                 // a struct with an integer and a pointer to an array
                 let element_type =
-                    get_llvm_type(ctx, generator, unifier, top_level, type_cache, *ty);
+                    get_llvm_type(ctx, generator, unifier, top_level, type_cache, primitives, *ty);
                 let fields = [
                     element_type.ptr_type(AddressSpace::Generic).into(),
                     generator.get_size_type(ctx).into(),
@@ -385,6 +406,7 @@ pub fn gen_func<'ctx, G: CodeGenerator>(
         range: unifier.get_representative(primitives.range),
         str: unifier.get_representative(primitives.str),
         exception: unifier.get_representative(primitives.exception),
+        option: unifier.get_representative(primitives.option),
     };
 
     let mut type_cache: HashMap<_, _> = [
@@ -417,6 +439,8 @@ pub fn gen_func<'ctx, G: CodeGenerator>(
         exception.set_body(&fields, false);
         exception.ptr_type(AddressSpace::Generic).into()
     });
+    // NOTE: special handling of option cannot use this type cache since it contains type var,
+    // handled inside get_llvm_type instead
 
     let (args, ret) = if let ConcreteTypeEnum::TFunc { args, ret, .. } =
         task.store.get(task.signature)
@@ -437,7 +461,7 @@ pub fn gen_func<'ctx, G: CodeGenerator>(
     let ret_type = if unifier.unioned(ret, primitives.none) {
         None
     } else {
-        Some(get_llvm_type(context, generator, &mut unifier, top_level_ctx.as_ref(), &mut type_cache, ret))
+        Some(get_llvm_type(context, generator, &mut unifier, top_level_ctx.as_ref(), &mut type_cache, &primitives, ret))
     };
 
     let has_sret = ret_type.map_or(false, |ty| need_sret(context, ty));
@@ -450,6 +474,7 @@ pub fn gen_func<'ctx, G: CodeGenerator>(
                 &mut unifier,
                 top_level_ctx.as_ref(),
                 &mut type_cache,
+                &primitives,
                 arg.ty,
             )
             .into()
@@ -497,6 +522,7 @@ pub fn gen_func<'ctx, G: CodeGenerator>(
                 &mut unifier,
                 top_level_ctx.as_ref(),
                 &mut type_cache,
+                &primitives,
                 arg.ty,
             ),
             &arg.name.to_string(),

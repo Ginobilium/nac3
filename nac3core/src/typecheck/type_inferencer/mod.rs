@@ -40,6 +40,7 @@ pub struct PrimitiveStore {
     pub range: Type,
     pub str: Type,
     pub exception: Type,
+    pub option: Type,
 }
 
 pub struct FunctionData {
@@ -448,25 +449,47 @@ impl<'a> fold::Fold<()> for Inferencer<'a> {
                 Some(self.infer_constant(value, &expr.location)?)
             }
             ast::ExprKind::Name { id, .. } => {
-                if !self.defined_identifiers.contains(id) {
-                    match self.function_data.resolver.get_symbol_type(
-                        self.unifier,
-                        &self.top_level.definitions.read(),
-                        self.primitives,
-                        *id,
-                    ) {
-                        Ok(_) => {
-                            self.defined_identifiers.insert(*id);
-                        }
-                        Err(e) => {
-                            return report_error(
-                                &format!("type error at identifier `{}` ({})", id, e),
-                                expr.location,
-                            );
+                // the name `none` is special since it may have different types
+                if id == &"none".into() {
+                    if let TypeEnum::TObj { params, .. } =
+                        self.unifier.get_ty_immutable(self.primitives.option).as_ref()
+                    {
+                        let var_map = params
+                            .iter()
+                            .map(|(id_var, ty)| {
+                                if let TypeEnum::TVar { id, range, name, loc, .. } = &*self.unifier.get_ty(*ty) {
+                                    assert_eq!(*id, *id_var);
+                                    (*id, self.unifier.get_fresh_var_with_range(range, *name, *loc).0)
+                                } else {
+                                    unreachable!()
+                                }
+                            })
+                            .collect::<HashMap<_, _>>();
+                        Some(self.unifier.subst(self.primitives.option, &var_map).unwrap())
+                    } else {
+                        unreachable!("must be tobj")
+                    }
+                } else {
+                    if !self.defined_identifiers.contains(id) {
+                        match self.function_data.resolver.get_symbol_type(
+                            self.unifier,
+                            &self.top_level.definitions.read(),
+                            self.primitives,
+                            *id,
+                        ) {
+                            Ok(_) => {
+                                self.defined_identifiers.insert(*id);
+                            }
+                            Err(e) => {
+                                return report_error(
+                                    &format!("type error at identifier `{}` ({})", id, e),
+                                    expr.location,
+                                );
+                            }
                         }
                     }
+                    Some(self.infer_identifier(*id)?)
                 }
-                Some(self.infer_identifier(*id)?)
             }
             ast::ExprKind::List { elts, .. } => Some(self.infer_list(elts)?),
             ast::ExprKind::Tuple { elts, .. } => Some(self.infer_tuple(elts)?),
@@ -932,6 +955,8 @@ impl<'a> Inferencer<'a> {
                 Ok(self.unifier.add_ty(TypeEnum::TTuple { ty: ty? }))
             }
             ast::Constant::Str(_) => Ok(self.primitives.str),
+            ast::Constant::None
+                => report_error("CPython `None` not supported (nac3 uses `none` instead)", *loc),
             _ => report_error("not supported", *loc),
         }
     }

@@ -279,6 +279,10 @@ impl InnerResolver {
         } else if ty_id == self.primitive_ids.tuple {
             // do not handle type var param and concrete check here
             Ok(Ok((unifier.add_ty(TypeEnum::TTuple { ty: vec![] }), false)))
+        } else if ty_id == self.primitive_ids.option {
+            Ok(Ok((primitives.option, false)))
+        } else if ty_id == self.primitive_ids.none {
+            unreachable!("none cannot be typeid")
         } else if let Some(def_id) = self.pyid_to_def.read().get(&ty_id).cloned() {
             let def = defs[def_id.0].read();
             if let TopLevelDef::Class { object_id, type_vars, fields, methods, .. } = &*def {
@@ -569,6 +573,52 @@ impl InnerResolver {
                 let types = types?;
                 Ok(types.map(|types| unifier.add_ty(TypeEnum::TTuple { ty: types })))
             }
+            // special handling for option type since its class member layout in python side
+            // is special and cannot be mapped directly to a nac3 type as below
+            (TypeEnum::TObj { obj_id, params, .. }, false)
+                if *obj_id == primitives.option.get_obj_id(unifier) =>
+            {
+                let field_data = match obj.getattr("_nac3_option") {
+                    Ok(d) => d,
+                    // we use `none = Option(None)`, so the obj always have attr `_nac3_option`
+                    Err(_) => unreachable!("cannot be None")
+                };
+                // if is `none`
+                let zelf_id: u64 = self.helper.id_fn.call1(py, (obj,))?.extract(py)?;
+                if zelf_id == self.primitive_ids.none {
+                    if let TypeEnum::TObj { params, .. } =
+                        unifier.get_ty_immutable(primitives.option).as_ref()
+                    {
+                        let var_map = params
+                            .iter()
+                            .map(|(id_var, ty)| {
+                                if let TypeEnum::TVar { id, range, name, loc, .. } = &*unifier.get_ty(*ty) {
+                                    assert_eq!(*id, *id_var);
+                                    (*id, unifier.get_fresh_var_with_range(range, *name, *loc).0)
+                                } else {
+                                    unreachable!()
+                                }
+                            })
+                            .collect::<HashMap<_, _>>();
+                        return Ok(Ok(unifier.subst(primitives.option, &var_map).unwrap()))
+                    } else {
+                        unreachable!("must be tobj")
+                    }
+                }
+                
+                let ty = match self.get_obj_type(py, field_data, unifier, defs, primitives)? {
+                    Ok(t) => t,
+                    Err(e) => {
+                        return Ok(Err(format!(
+                            "error when getting type of the option object ({})",
+                            e
+                        )))
+                    }
+                };
+                let new_var_map: HashMap<_, _> = params.iter().map(|(id, _)| (*id, ty)).collect();
+                let res = unifier.subst(extracted_ty, &new_var_map).unwrap_or(extracted_ty);
+                Ok(Ok(res))
+            }
             (TypeEnum::TObj { params, fields, .. }, false) => {
                 let var_map = params
                     .iter()
@@ -795,6 +845,39 @@ impl InnerResolver {
             let global = ctx.module.add_global(ty, Some(AddressSpace::Generic), &id_str);
             global.set_initializer(&val);
             Ok(Some(global.as_pointer_value().into()))
+        } else if ty_id == self.primitive_ids.option {
+            if id == self.primitive_ids.none {
+                // for option type, just a null ptr, whose type needs to be casted in codegen
+                // according to the type info attached in the ast
+                Ok(Some(ctx.ctx.i8_type().ptr_type(AddressSpace::Generic).const_null().into()))
+            } else {
+                match self
+                    .get_obj_value(py, obj.getattr("_nac3_option").unwrap(), ctx, generator)
+                    .map_err(|e| {
+                        super::CompileError::new_err(format!(
+                            "Error getting value of Option object: {}",
+                            e
+                        ))
+                    })? {
+                    Some(v) => {
+                        let global_str = format!("{}_option", id);
+                        {
+                            if self.global_value_ids.read().contains(&id) {
+                                let global = ctx.module.get_global(&global_str).unwrap_or_else(|| {
+                                    ctx.module.add_global(v.get_type(), Some(AddressSpace::Generic), &global_str)
+                                });
+                                return Ok(Some(global.as_pointer_value().into()));
+                            } else {
+                                self.global_value_ids.write().insert(id);
+                            }
+                        }
+                        let global = ctx.module.add_global(v.get_type(), Some(AddressSpace::Generic), &global_str);
+                        global.set_initializer(&v);
+                        Ok(Some(global.as_pointer_value().into()))
+                    },
+                    None => Ok(None),
+                }
+            }
         } else {
             let id_str = id.to_string();
 

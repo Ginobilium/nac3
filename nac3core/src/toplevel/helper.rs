@@ -107,7 +107,43 @@ impl TopLevelComposer {
             fields: HashMap::new(),
             params: HashMap::new(),
         });
-        let primitives = PrimitiveStore { int32, int64, float, bool, none, range, str, exception, uint32, uint64 };
+
+        let option_type_var = unifier.get_fresh_var(Some("option_type_var".into()), None);
+        let is_some_type_fun_ty = unifier.add_ty(TypeEnum::TFunc(FunSignature {
+            args: vec![],
+            ret: bool,
+            vars: HashMap::from([(option_type_var.1, option_type_var.0)]),
+        }));
+        let unwrap_fun_ty = unifier.add_ty(TypeEnum::TFunc(FunSignature {
+            args: vec![],
+            ret: option_type_var.0,
+            vars: HashMap::from([(option_type_var.1, option_type_var.0)]),
+        }));
+        let option = unifier.add_ty(TypeEnum::TObj {
+            obj_id: DefinitionId(10),
+            fields: vec![
+                ("is_some".into(), (is_some_type_fun_ty, true)),
+                ("is_none".into(), (is_some_type_fun_ty, true)),
+                ("unwrap".into(), (unwrap_fun_ty, true)),
+            ]
+            .into_iter()
+            .collect::<HashMap<_, _>>(),
+            params: HashMap::from([(option_type_var.1, option_type_var.0)]),
+        });
+
+        let primitives = PrimitiveStore {
+            int32,
+            int64,
+            float,
+            bool,
+            none,
+            range,
+            str,
+            exception,
+            uint32,
+            uint64,
+            option,
+        };
         crate::typecheck::magic_methods::set_primitives_magic_methods(&primitives, &mut unifier);
         (primitives, unifier)
     }

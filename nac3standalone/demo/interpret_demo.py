@@ -8,6 +8,38 @@ import pathlib
 from numpy import int32, int64, uint32, uint64
 from typing import TypeVar, Generic
 
+T = TypeVar('T')
+class Option(Generic[T]):
+    _nac3_option: T
+
+    def __init__(self, v: T):
+        self._nac3_option = v
+
+    def is_none(self):
+        return self._nac3_option is None
+    
+    def is_some(self):
+        return not self.is_none()
+    
+    def unwrap(self):
+        return self._nac3_option
+
+    def __repr__(self) -> str:
+        if self.is_none():
+            return "none"
+        else:
+            return "Some({})".format(repr(self._nac3_option))
+    
+    def __str__(self) -> str:
+        if self.is_none():
+            return "none"
+        else:
+            return "Some({})".format(str(self._nac3_option))
+
+def Some(v: T) -> Option[T]:
+    return Option(v)
+
+none = Option(None)
 
 def patch(module):
     def output_asciiart(x):
@@ -39,6 +71,9 @@ def patch(module):
     module.TypeVar = TypeVar
     module.Generic = Generic
     module.extern = extern
+    module.Option = Option
+    module.Some = Some
+    module.none = none
 
 
 def file_import(filename, prefix="file_import_"):

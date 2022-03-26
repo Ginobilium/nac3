@@ -7,8 +7,8 @@ expression: res_vec
 [
     "Function {\nname: \"foo\",\nsig: \"fn[[a:list[int32], b:tuple[T, float]], A[B, bool]]\",\nvar_id: []\n}\n",
     "Class {\nname: \"A\",\nancestors: [\"{class: A, params: [\\\"T\\\", \\\"V\\\"]}\"],\nfields: [\"a\", \"b\"],\nmethods: [(\"__init__\", \"fn[[v:V], none]\"), (\"fun\", \"fn[[a:T], V]\")],\ntype_vars: [\"T\", \"V\"]\n}\n",
-    "Function {\nname: \"A.__init__\",\nsig: \"fn[[v:V], none]\",\nvar_id: [19]\n}\n",
-    "Function {\nname: \"A.fun\",\nsig: \"fn[[a:T], V]\",\nvar_id: [24]\n}\n",
+    "Function {\nname: \"A.__init__\",\nsig: \"fn[[v:V], none]\",\nvar_id: [20]\n}\n",
+    "Function {\nname: \"A.fun\",\nsig: \"fn[[a:T], V]\",\nvar_id: [25]\n}\n",
     "Function {\nname: \"gfun\",\nsig: \"fn[[a:A[int32, list[float]]], none]\",\nvar_id: []\n}\n",
     "Class {\nname: \"B\",\nancestors: [\"{class: B, params: []}\"],\nfields: [],\nmethods: [(\"__init__\", \"fn[[], none]\")],\ntype_vars: []\n}\n",
     "Function {\nname: \"B.__init__\",\nsig: \"fn[[], none]\",\nvar_id: []\n}\n",

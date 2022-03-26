@@ -153,12 +153,11 @@ pub trait SymbolResolver {
 }
 
 thread_local! {
-    static IDENTIFIER_ID: [StrRef; 12] = [
+    static IDENTIFIER_ID: [StrRef; 11] = [
         "int32".into(),
         "int64".into(),
         "float".into(),
         "bool".into(),
-        "None".into(),
         "virtual".into(),
         "list".into(),
         "tuple".into(),
@@ -183,14 +182,13 @@ pub fn parse_type_annotation<T>(
     let int64_id = ids[1];
     let float_id = ids[2];
     let bool_id = ids[3];
-    let none_id = ids[4];
-    let virtual_id = ids[5];
-    let list_id = ids[6];
-    let tuple_id = ids[7];
-    let str_id = ids[8];
-    let exn_id = ids[9];
-    let uint32_id = ids[10];
-    let uint64_id = ids[11];
+    let virtual_id = ids[4];
+    let list_id = ids[5];
+    let tuple_id = ids[6];
+    let str_id = ids[7];
+    let exn_id = ids[8];
+    let uint32_id = ids[9];
+    let uint64_id = ids[10];
 
     let name_handling = |id: &StrRef, loc: Location, unifier: &mut Unifier| {
         if *id == int32_id {
@@ -205,8 +203,6 @@ pub fn parse_type_annotation<T>(
             Ok(primitives.float)
         } else if *id == bool_id {
             Ok(primitives.bool)
-        } else if *id == none_id {
-            Ok(primitives.none)
         } else if *id == str_id {
             Ok(primitives.str)
         } else if *id == exn_id {

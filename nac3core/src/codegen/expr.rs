@@ -138,6 +138,7 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
             &mut self.unifier,
             self.top_level,
             &mut self.type_cache,
+            &self.primitives,
             ty,
         )
     }
@@ -934,6 +935,22 @@ pub fn gen_expr<'ctx, 'a, G: CodeGenerator>(
             let ty = expr.custom.unwrap();
             ctx.gen_const(generator, value, ty).into()
         }
+        ExprKind::Name { id, .. } if id == &"none".into() => {
+            match (
+                ctx.unifier.get_ty(expr.custom.unwrap()).as_ref(),
+                ctx.unifier.get_ty(ctx.primitives.option).as_ref(),
+            ) {
+                (
+                    TypeEnum::TObj { obj_id, params, .. },
+                    TypeEnum::TObj { obj_id: opt_id, .. },
+                ) if *obj_id == *opt_id => ctx
+                    .get_llvm_type(generator, *params.iter().next().unwrap().1)
+                    .ptr_type(AddressSpace::Generic)
+                    .const_null()
+                    .into(),
+                _ => unreachable!("must be option type"),
+            }
+        }
         ExprKind::Name { id, .. } => match ctx.var_assignment.get(id) {
             Some((ptr, None, _)) => ctx.builder.build_load(*ptr, "load").into(),
             Some((_, Some(static_value), _)) => ValueEnum::Static(static_value.clone()),
@@ -941,16 +958,27 @@ pub fn gen_expr<'ctx, 'a, G: CodeGenerator>(
                 let resolver = ctx.resolver.clone();
                 let val = resolver.get_symbol_value(*id, ctx).unwrap();
                 // if is tuple, need to deref it to handle tuple as value
-                if let (TypeEnum::TTuple { .. }, BasicValueEnum::PointerValue(ptr)) = (
+                // if is option, need to cast pointer to handle None
+                match (
                     &*ctx.unifier.get_ty(expr.custom.unwrap()),
                     resolver
                         .get_symbol_value(*id, ctx)
                         .unwrap()
                         .to_basic_value_enum(ctx, generator)?,
                 ) {
-                    ctx.builder.build_load(ptr, "tup_val").into()
-                } else {
-                    val
+                    (TypeEnum::TTuple { .. }, BasicValueEnum::PointerValue(ptr)) => {
+                        ctx.builder.build_load(ptr, "tup_val").into()
+                    }
+                    (TypeEnum::TObj { obj_id, params, .. }, BasicValueEnum::PointerValue(ptr))
+                        if *obj_id == ctx.primitives.option.get_obj_id(&ctx.unifier) => {
+                            let actual_ptr_ty = ctx.get_llvm_type(
+                                generator,
+                                *params.iter().next().unwrap().1,
+                            )
+                            .ptr_type(AddressSpace::Generic);
+                            ctx.builder.build_bitcast(ptr, actual_ptr_ty, "option_ptr_cast").into()
+                        }
+                    _ => val,
                 }
             }
         },
@@ -1281,6 +1309,26 @@ pub fn gen_expr<'ctx, 'a, G: CodeGenerator>(
                             unreachable!()
                         }
                     };
+                    // directly generate code for option.unwrap
+                    // since it needs location information from ast
+                    if attr == &"unwrap".into()
+                        && id == ctx.primitives.option.get_obj_id(&ctx.unifier)
+                    {
+                        if let BasicValueEnum::PointerValue(ptr) = val.to_basic_value_enum(ctx, generator)? {
+                            let not_null = ctx.builder.build_is_not_null(ptr, "unwrap_not_null");
+                            ctx.make_assert(
+                                generator,
+                                not_null,
+                                "0:UnwrapNoneError",
+                                "",
+                                [None, None, None],
+                                expr.location,
+                            );
+                            return Ok(Some(ctx.builder.build_load(ptr, "unwrap_some").into()))
+                        } else {
+                            unreachable!("option must be ptr")
+                        }
+                    }
                     return Ok(generator
                         .gen_call(
                             ctx,

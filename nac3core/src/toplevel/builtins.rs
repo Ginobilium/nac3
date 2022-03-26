@@ -105,6 +105,20 @@ pub fn get_builtins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
         ("__param2__".into(), int64, true),
     ];
 
+    // for Option, is_some and is_none share the same type: () -> bool,
+    // and they are methods under the same class `Option`
+    let (is_some_ty, unwrap_ty, (option_ty_var, option_ty_var_id)) =
+        if let TypeEnum::TObj { fields, params, .. } =
+            primitives.1.get_ty(primitives.0.option).as_ref()
+        {
+            (
+                *fields.get(&"is_some".into()).unwrap(),
+                *fields.get(&"unwrap".into()).unwrap(),
+                (*params.iter().next().unwrap().1, *params.iter().next().unwrap().0),
+            )
+        } else {
+            unreachable!()
+        };
     let top_level_def_list = vec![
         Arc::new(RwLock::new(TopLevelComposer::make_top_level_class_def(
             0,
@@ -180,6 +194,81 @@ pub fn get_builtins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
             None,
             None,
         ))),
+        Arc::new(RwLock::new({
+            TopLevelDef::Class {
+                name: "Option".into(),
+                object_id: DefinitionId(10),
+                type_vars: vec![option_ty_var],
+                fields: vec![],
+                methods: vec![
+                    ("is_some".into(), is_some_ty.0, DefinitionId(11)),
+                    ("is_none".into(), is_some_ty.0, DefinitionId(12)),
+                    ("unwrap".into(), unwrap_ty.0, DefinitionId(13)),
+                ],
+                ancestors: vec![TypeAnnotation::CustomClass {
+                    id: DefinitionId(10),
+                    params: Default::default(),
+                }],
+                constructor: None,
+                resolver: None,
+                loc: None,
+            }
+        })),
+        Arc::new(RwLock::new(TopLevelDef::Function {
+            name: "Option.is_some".into(),
+            simple_name: "is_some".into(),
+            signature: is_some_ty.0,
+            var_id: vec![option_ty_var_id],
+            instance_to_symbol: Default::default(),
+            instance_to_stmt: Default::default(),
+            resolver: None,
+            codegen_callback: Some(Arc::new(GenCall::new(Box::new(
+                |ctx, obj, _, _, generator| {
+                    let obj_val = obj.unwrap().1.clone().to_basic_value_enum(ctx, generator)?;
+                    if let BasicValueEnum::PointerValue(ptr) = obj_val {
+                        Ok(Some(ctx.builder.build_is_not_null(ptr, "is_some").into()))
+                    } else {
+                        unreachable!("option must be ptr")
+                    }
+                },
+            )))),
+            loc: None,
+        })),
+        Arc::new(RwLock::new(TopLevelDef::Function {
+            name: "Option.is_none".into(),
+            simple_name: "is_none".into(),
+            signature: is_some_ty.0,
+            var_id: vec![option_ty_var_id],
+            instance_to_symbol: Default::default(),
+            instance_to_stmt: Default::default(),
+            resolver: None,
+            codegen_callback: Some(Arc::new(GenCall::new(Box::new(
+                |ctx, obj, _, _, generator| {
+                    let obj_val = obj.unwrap().1.clone().to_basic_value_enum(ctx, generator)?;
+                    if let BasicValueEnum::PointerValue(ptr) = obj_val {
+                        Ok(Some(ctx.builder.build_is_null(ptr, "is_none").into()))
+                    } else {
+                        unreachable!("option must be ptr")
+                    }
+                },
+            )))),
+            loc: None,
+        })),
+        Arc::new(RwLock::new(TopLevelDef::Function {
+            name: "Option.unwrap".into(),
+            simple_name: "unwrap".into(),
+            signature: unwrap_ty.0,
+            var_id: vec![option_ty_var_id],
+            instance_to_symbol: Default::default(),
+            instance_to_stmt: Default::default(),
+            resolver: None,
+            codegen_callback: Some(Arc::new(GenCall::new(Box::new(
+                |ctx, obj, _, _, generator| {
+                    unreachable!("handled in gen_expr")
+                },
+            )))),
+            loc: None,
+        })),
         Arc::new(RwLock::new(TopLevelDef::Function {
             name: "int32".into(),
             simple_name: "int32".into(),
@@ -1098,6 +1187,28 @@ pub fn get_builtins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
             )))),
             loc: None,
         })),
+        Arc::new(RwLock::new(TopLevelDef::Function {
+            name: "Some".into(),
+            simple_name: "Some".into(),
+            signature: primitives.1.add_ty(TypeEnum::TFunc(FunSignature {
+                args: vec![FuncArg { name: "n".into(), ty: option_ty_var, default_value: None }],
+                ret: primitives.0.option,
+                vars: HashMap::from([(option_ty_var_id, option_ty_var)]),
+            })),
+            var_id: vec![option_ty_var_id],
+            instance_to_symbol: Default::default(),
+            instance_to_stmt: Default::default(),
+            resolver: None,
+            codegen_callback: Some(Arc::new(GenCall::new(Box::new(
+                |ctx, _, _fun, args, generator| {
+                    let arg_val = args[0].1.clone().to_basic_value_enum(ctx, generator)?;
+                    let alloca = ctx.builder.build_alloca(arg_val.get_type(), "alloca_some");
+                    ctx.builder.build_store(alloca, arg_val);
+                    Ok(Some(alloca.into()))
+                },
+            )))),
+            loc: None,
+        })),
     ];
 
     let ast_list: Vec<Option<ast::Stmt<()>>> =
@@ -1123,6 +1234,7 @@ pub fn get_builtins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
             "min",
             "max",
             "abs",
+            "Some",
         ],
     )
 }
