@@ -263,7 +263,7 @@ pub fn get_builtins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
             instance_to_stmt: Default::default(),
             resolver: None,
             codegen_callback: Some(Arc::new(GenCall::new(Box::new(
-                |ctx, obj, _, _, generator| {
+                |_, _, _, _, _| {
                     unreachable!("handled in gen_expr")
                 },
             )))),

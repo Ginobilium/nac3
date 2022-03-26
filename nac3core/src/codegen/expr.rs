@@ -990,7 +990,7 @@ pub fn gen_expr<'ctx, 'a, G: CodeGenerator>(
                 .map(|x| {
                     generator
                         .gen_expr(ctx, x)
-                        .map_or_else(|e| Err(e), |v| v.unwrap().to_basic_value_enum(ctx, generator))
+                        .map_or_else(Err, |v| v.unwrap().to_basic_value_enum(ctx, generator))
                 })
                 .collect::<Result<Vec<_>, _>>()?;
             let ty = if elements.is_empty() {
@@ -1023,7 +1023,7 @@ pub fn gen_expr<'ctx, 'a, G: CodeGenerator>(
                 .map(|x| {
                     generator
                         .gen_expr(ctx, x)
-                        .map_or_else(|e| Err(e), |v| v.unwrap().to_basic_value_enum(ctx, generator))
+                        .map_or_else(Err, |v| v.unwrap().to_basic_value_enum(ctx, generator))
                 })
                 .collect::<Result<Vec<_>, _>>()?;
             let element_ty = element_val.iter().map(BasicValueEnum::get_type).collect_vec();
@@ -1051,7 +1051,7 @@ pub fn gen_expr<'ctx, 'a, G: CodeGenerator>(
                         v.into_pointer_value(),
                         &[zero, int32.const_int(index as u64, false)],
                     ))) as Result<_, String>
-                }, |v| Ok(v))?,
+                }, Ok)?,
                 ValueEnum::Dynamic(v) => {
                     let index = ctx.get_attr_index(value.custom.unwrap(), *attr);
                     ValueEnum::Dynamic(ctx.build_gep_and_load(

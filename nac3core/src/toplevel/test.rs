@@ -65,14 +65,14 @@ impl SymbolResolver for Resolver {
     }
 
     fn get_identifier_def(&self, id: StrRef) -> Result<DefinitionId, String> {
-        self.0.id_to_def.lock().get(&id).cloned().ok_or("Unknown identifier".to_string())
+        self.0.id_to_def.lock().get(&id).cloned().ok_or_else(|| "Unknown identifier".to_string())
     }
 
     fn get_string_id(&self, _: &str) -> i32 {
         unimplemented!()
     }
 
-    fn get_exception_id(&self, tyid: usize) -> usize {
+    fn get_exception_id(&self, _tyid: usize) -> usize {
         unimplemented!()
     }
 }
