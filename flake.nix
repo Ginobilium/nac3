@@ -8,7 +8,7 @@
       pkgs = import nixpkgs { system = "x86_64-linux"; };
     in rec {
       packages.x86_64-linux = rec {
-        llvm-nac3 = pkgs.callPackage "${self}/llvm" {};
+        llvm-nac3 = pkgs.callPackage ./nix/llvm {};
         nac3artiq = pkgs.python3Packages.toPythonModule (
           pkgs.rustPlatform.buildRustPackage {
             name = "nac3artiq";
@@ -48,7 +48,7 @@
         };
 
         # LLVM PGO support
-        llvm-nac3-instrumented = pkgs.callPackage "${self}/llvm" {
+        llvm-nac3-instrumented = pkgs.callPackage ./nix/llvm {
           stdenv = pkgs.llvmPackages_13.stdenv;
           extraCmakeFlags = [ "-DLLVM_BUILD_INSTRUMENTED=IR" ];
         };
@@ -86,7 +86,7 @@
             llvm-profdata merge -o $out/llvm.profdata /build/llvm/build/profiles/*
             '';
         };
-        llvm-nac3-pgo = pkgs.callPackage "${self}/llvm" {
+        llvm-nac3-pgo = pkgs.callPackage ./nix/llvm {
           stdenv = pkgs.llvmPackages_13.stdenv;
           extraCmakeFlags = [ "-DLLVM_PROFDATA_FILE=${nac3artiq-profile}/llvm.profdata" ];
         };
@@ -109,7 +109,7 @@
         );
       };
 
-      packages.x86_64-w64-mingw32 = import ./windows { inherit pkgs; };
+      packages.x86_64-w64-mingw32 = import ./nix/windows { inherit pkgs; };
 
       devShell.x86_64-linux = pkgs.mkShell {
         name = "nac3-dev-shell";
