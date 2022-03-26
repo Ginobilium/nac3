@@ -957,28 +957,22 @@ pub fn gen_expr<'ctx, 'a, G: CodeGenerator>(
             None => {
                 let resolver = ctx.resolver.clone();
                 let val = resolver.get_symbol_value(*id, ctx).unwrap();
-                // if is tuple, need to deref it to handle tuple as value
                 // if is option, need to cast pointer to handle None
                 match (
                     &*ctx.unifier.get_ty(expr.custom.unwrap()),
-                    resolver
-                        .get_symbol_value(*id, ctx)
-                        .unwrap()
-                        .to_basic_value_enum(ctx, generator)?,
+                    val.to_basic_value_enum(ctx, generator)?
                 ) {
-                    (TypeEnum::TTuple { .. }, BasicValueEnum::PointerValue(ptr)) => {
-                        ctx.builder.build_load(ptr, "tup_val").into()
-                    }
                     (TypeEnum::TObj { obj_id, params, .. }, BasicValueEnum::PointerValue(ptr))
-                        if *obj_id == ctx.primitives.option.get_obj_id(&ctx.unifier) => {
-                            let actual_ptr_ty = ctx.get_llvm_type(
-                                generator,
-                                *params.iter().next().unwrap().1,
-                            )
-                            .ptr_type(AddressSpace::Generic);
-                            ctx.builder.build_bitcast(ptr, actual_ptr_ty, "option_ptr_cast").into()
-                        }
-                    _ => val,
+                        if *obj_id == ctx.primitives.option.get_obj_id(&ctx.unifier) =>
+                    {
+                        let actual_ptr_ty = ctx.get_llvm_type(
+                            generator,
+                            *params.iter().next().unwrap().1,
+                        )
+                        .ptr_type(AddressSpace::Generic);
+                        ctx.builder.build_bitcast(ptr, actual_ptr_ty, "option_ptr_cast").into()
+                    }
+                    val => val.1.into(),
                 }
             }
         },
@@ -1026,20 +1020,7 @@ pub fn gen_expr<'ctx, 'a, G: CodeGenerator>(
                         .map_or_else(Err, |v| v.unwrap().to_basic_value_enum(ctx, generator))
                 })
                 .collect::<Result<Vec<_>, _>>()?;
-            let element_ty = element_val.iter().map(BasicValueEnum::get_type).collect_vec();
-            let tuple_ty = ctx.ctx.struct_type(&element_ty, false);
-            let tuple_ptr = ctx.builder.build_alloca(tuple_ty, "tuple");
-            for (i, v) in element_val.into_iter().enumerate() {
-                unsafe {
-                    let ptr = ctx.builder.build_in_bounds_gep(
-                        tuple_ptr,
-                        &[zero, int32.const_int(i as u64, false)],
-                        "ptr",
-                    );
-                    ctx.builder.build_store(ptr, v);
-                }
-            }
-            ctx.builder.build_load(tuple_ptr, "tup_val").into()
+            ctx.ctx.const_struct(&element_val, false).into()
         }
         ExprKind::Attribute { value, attr, .. } => {
             // note that we would handle class methods directly in calls

@@ -14,7 +14,7 @@ use crate::{
         typedef::{Type, Unifier},
     },
 };
-use inkwell::values::{BasicValueEnum, FloatValue, IntValue, PointerValue};
+use inkwell::values::{BasicValueEnum, FloatValue, IntValue, PointerValue, StructValue};
 use itertools::{chain, izip};
 use nac3parser::ast::{Expr, Location, StrRef};
 use parking_lot::RwLock;
@@ -102,6 +102,12 @@ impl<'ctx> From<IntValue<'ctx>> for ValueEnum<'ctx> {
 
 impl<'ctx> From<FloatValue<'ctx>> for ValueEnum<'ctx> {
     fn from(v: FloatValue<'ctx>) -> Self {
+        ValueEnum::Dynamic(v.into())
+    }
+}
+
+impl<'ctx> From<StructValue<'ctx>> for ValueEnum<'ctx> {
+    fn from(v: StructValue<'ctx>) -> Self {
         ValueEnum::Dynamic(v.into())
     }
 }

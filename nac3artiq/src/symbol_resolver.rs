@@ -849,9 +849,7 @@ impl InnerResolver {
                         super::CompileError::new_err(format!("Error getting element {}: {}", i, e)))).collect();
             let val = val?.unwrap();
             let val = ctx.ctx.const_struct(&val, false);
-            let global = ctx.module.add_global(ty, Some(AddressSpace::Generic), &id_str);
-            global.set_initializer(&val);
-            Ok(Some(global.as_pointer_value().into()))
+            Ok(Some(val.into()))
         } else if ty_id == self.primitive_ids.option {
             if id == self.primitive_ids.none {
                 // for option type, just a null ptr, whose type needs to be casted in codegen
