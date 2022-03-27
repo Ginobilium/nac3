@@ -74,6 +74,7 @@ in rec {
       ''
       wine64 ninja install
       '';
+    dontFixup = true;
   };
   nac3artiq = pkgs.rustPlatform.buildRustPackage {
     name = "nac3artiq-msys2";
