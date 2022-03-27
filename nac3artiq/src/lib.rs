@@ -867,7 +867,11 @@ impl Nac3 {
             );
         }
 
-        if let Ok(linker_status) = Command::new("ld.lld").args(linker_args).status() {
+        #[cfg(not(windows))]
+        let lld_command = "ld.lld";
+        #[cfg(windows)]
+        let lld_command = "ld.lld.exe";
+        if let Ok(linker_status) = Command::new(lld_command).args(linker_args).status() {
             if !linker_status.success() {
                 return Err(CompileError::new_err("failed to start linker"));
             }
