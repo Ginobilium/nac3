@@ -808,42 +808,7 @@ impl InnerResolver {
 
             Ok(Some(global.as_pointer_value().into()))
         } else if ty_id == self.primitive_ids.tuple {
-            let id_str = id.to_string();
-
-            if let Some(global) = ctx.module.get_global(&id_str) {
-                return Ok(Some(global.as_pointer_value().into()));
-            }
-
             let elements: &PyTuple = obj.cast_as()?;
-            let types: Result<Result<Vec<_>, _>, _> = elements
-                .iter()
-                .enumerate()
-                .map(|(i, elem)| {
-                    self.get_obj_type(
-                        py,
-                        elem,
-                        &mut ctx.unifier,
-                        &ctx.top_level.definitions.read(),
-                        &ctx.primitives,
-                    )
-                    .map_err(|e| super::CompileError::new_err(format!("Error getting element {}: {}", i, e)))
-                    .map(|ty| ty.map(|ty| ctx.get_llvm_type(generator, ty)))
-                })
-                .collect();
-            let types = types?.unwrap();
-            let ty = ctx.ctx.struct_type(&types, false);
-
-            {
-                if self.global_value_ids.read().contains_key(&id) {
-                    let global = ctx.module.get_global(&id_str).unwrap_or_else(|| {
-                        ctx.module.add_global(ty, Some(AddressSpace::Generic), &id_str)
-                    });
-                    return Ok(Some(global.as_pointer_value().into()));
-                } else {
-                    self.global_value_ids.write().insert(id, obj.into());
-                }
-            }
-
             let val: Result<Option<Vec<_>>, _> =
                 elements.iter().enumerate().map(|(i, elem)| self.get_obj_value(py, elem, ctx, generator).map_err(|e|
                         super::CompileError::new_err(format!("Error getting element {}: {}", i, e)))).collect();
