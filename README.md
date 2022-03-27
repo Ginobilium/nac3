@@ -40,13 +40,14 @@ python setup.py install
 Locate a recent build of ``nac3artiq-msys2`` from [Hydra](https://nixbld.m-labs.hk) and download ``nac3artiq.zip``. Then extract the contents in the appropriate location:
 ```
 pacman -S unzip
-wget https://nixbld.m-labs.hk/build/97899/download/1/nac3artiq.zip  # edit the build number
+wget https://nixbld.m-labs.hk/build/115529/download/1/nac3artiq.zip  # edit the build number
 unzip nac3artiq.zip -d C:/msys64/mingw64/lib/python3.9/site-packages
 ```
 
-Install additional NAC3 dependencies:
+Do the same for ``lld-msys2``:
 ```
-pacman -S mingw-w64-x86_64-lld
+wget https://nixbld.m-labs.hk/build/115527/download/1/ld.lld.exe
+mv ld.lld.exe C:/msys64/mingw64/bin
 ```
 
 And you should be good to go.
