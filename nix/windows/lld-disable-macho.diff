@@ -1,0 +1,36 @@
+diff '--color=auto' -Naur lld-13.0.1.src/CMakeLists.txt lld-13.0.1.src-new/CMakeLists.txt
+--- lld-13.0.1.src/CMakeLists.txt	2022-01-21 05:31:59.000000000 +0800
++++ lld-13.0.1.src-new/CMakeLists.txt	2022-03-27 18:26:30.284921982 +0800
+@@ -206,7 +206,6 @@
+ add_subdirectory(docs)
+ add_subdirectory(COFF)
+ add_subdirectory(ELF)
+-add_subdirectory(MachO)
+ add_subdirectory(MinGW)
+ add_subdirectory(wasm)
+ 
+diff '--color=auto' -Naur lld-13.0.1.src/tools/lld/CMakeLists.txt lld-13.0.1.src-new/tools/lld/CMakeLists.txt
+--- lld-13.0.1.src/tools/lld/CMakeLists.txt	2022-01-21 05:31:59.000000000 +0800
++++ lld-13.0.1.src-new/tools/lld/CMakeLists.txt	2022-03-27 18:26:40.805046295 +0800
+@@ -15,7 +15,6 @@
+   lldCOFF
+   lldDriver
+   lldELF
+-  lldMachO2
+   lldMinGW
+   lldWasm
+   )
+diff '--color=auto' -Naur lld-13.0.1.src/tools/lld/lld.cpp lld-13.0.1.src-new/tools/lld/lld.cpp
+--- lld-13.0.1.src/tools/lld/lld.cpp	2022-01-21 05:31:59.000000000 +0800
++++ lld-13.0.1.src-new/tools/lld/lld.cpp	2022-03-27 08:43:54.205524156 +0800
+@@ -148,10 +148,6 @@
+     return !elf::link(args, exitEarly, stdoutOS, stderrOS);
+   case WinLink:
+     return !coff::link(args, exitEarly, stdoutOS, stderrOS);
+-  case Darwin:
+-    return !macho::link(args, exitEarly, stdoutOS, stderrOS);
+-  case DarwinOld:
+-    return !mach_o::link(args, exitEarly, stdoutOS, stderrOS);
+   case Wasm:
+     return !lld::wasm::link(args, exitEarly, stdoutOS, stderrOS);
+   default:
