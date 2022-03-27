@@ -1020,7 +1020,20 @@ pub fn gen_expr<'ctx, 'a, G: CodeGenerator>(
                         .map_or_else(Err, |v| v.unwrap().to_basic_value_enum(ctx, generator))
                 })
                 .collect::<Result<Vec<_>, _>>()?;
-            ctx.ctx.const_struct(&element_val, false).into()
+            let element_ty = element_val.iter().map(BasicValueEnum::get_type).collect_vec();
+            let tuple_ty = ctx.ctx.struct_type(&element_ty, false);
+            let tuple_ptr = ctx.builder.build_alloca(tuple_ty, "tuple");
+            for (i, v) in element_val.into_iter().enumerate() {
+                unsafe {
+                    let ptr = ctx.builder.build_in_bounds_gep(
+                        tuple_ptr,
+                        &[zero, int32.const_int(i as u64, false)],
+                        "ptr",
+                    );
+                    ctx.builder.build_store(ptr, v);
+                }
+            }
+            ctx.builder.build_load(tuple_ptr, "tup_val").into()
         }
         ExprKind::Attribute { value, attr, .. } => {
             // note that we would handle class methods directly in calls
