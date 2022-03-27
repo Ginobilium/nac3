@@ -129,9 +129,9 @@ in rec {
       '';
     installPhase =
       ''
-      wine64 ninja install
-      mkdir $out/nix-support
-      echo file binary-dist $out/bin/lld.exe >> $out/nix-support/hydra-build-products
+      mkdir -p $out $out/nix-support
+      cp bin/ld.lld.exe $out
+      echo file binary-dist $out/ld.lld.exe >> $out/nix-support/hydra-build-products
       '';
     dontFixup = true;
   };
