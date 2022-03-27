@@ -74,6 +74,11 @@ pub extern "C" fn __nac3_personality(_state: u32, _exception_object: u32, _conte
     unimplemented!();
 }
 
+#[no_mangle]
+pub extern "C" fn __nac3_raise(_state: u32, _exception_object: u32, _context: u32) -> u32 {
+    unimplemented!();
+}
+
 extern "C" {
     fn run() -> i32;
 }
