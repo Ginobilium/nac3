@@ -411,6 +411,19 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
         params: [Option<IntValue<'ctx>>; 3],
         loc: Location,
     ) {
+        let err_msg = self.gen_string(generator, err_msg);
+        self.make_assert_impl(generator, cond, err_name, err_msg, params, loc)
+    }
+
+    pub fn make_assert_impl<G: CodeGenerator>(
+        &mut self,
+        generator: &mut G,
+        cond: IntValue<'ctx>,
+        err_name: &str,
+        err_msg: BasicValueEnum<'ctx>,
+        params: [Option<IntValue<'ctx>>; 3],
+        loc: Location,
+    ) {
         let i1 = self.ctx.bool_type();
         let i1_true = i1.const_all_ones();
         let expect_fun = self.module.get_function("llvm.expect.i1").unwrap_or_else(|| {
@@ -436,7 +449,6 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
         let exn_block = self.ctx.append_basic_block(current_fun, "fail");
         self.builder.build_conditional_branch(cond, then_block, exn_block);
         self.builder.position_at_end(exn_block);
-        let err_msg = self.gen_string(generator, err_msg);
         self.raise_exn(generator, err_name, err_msg, params, loc);
         self.builder.position_at_end(then_block);
     }

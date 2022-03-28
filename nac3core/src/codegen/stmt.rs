@@ -975,7 +975,25 @@ pub fn gen_stmt<'ctx, 'a, G: CodeGenerator>(
                 gen_raise(generator, ctx, None, stmt.location);
             }
         }
-        _ => unimplemented!(),
+        StmtKind::Assert { test, msg, .. } => {
+            let test =
+                generator.gen_expr(ctx, test)?.unwrap().to_basic_value_enum(ctx, generator)?;
+            let err_msg = match msg {
+                Some(msg) => {
+                    generator.gen_expr(ctx, msg)?.unwrap().to_basic_value_enum(ctx, generator)?
+                }
+                None => ctx.gen_string(generator, ""),
+            };
+            ctx.make_assert_impl(
+                generator,
+                test.into_int_value(),
+                "0:AssertionError",
+                err_msg,
+                [None, None, None],
+                stmt.location,
+            )
+        }
+        _ => unimplemented!()
     };
     Ok(())
 }

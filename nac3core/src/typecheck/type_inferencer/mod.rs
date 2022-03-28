@@ -426,6 +426,13 @@ impl<'a> fold::Fold<()> for Inferencer<'a> {
                 let res_ty = self.infer_bin_ops(stmt.location, target, op, value)?;
                 self.unify(res_ty, target.custom.unwrap(), &stmt.location)?;
             }
+            ast::StmtKind::Assert { test, msg, .. } => {
+                self.unify(test.custom.unwrap(), self.primitives.bool, &test.location)?;
+                match msg {
+                    Some(m) => self.unify(m.custom.unwrap(), self.primitives.str, &m.location)?,
+                    None => ()
+                }
+            }
             _ => return report_error("Unsupported statement type", stmt.location),
         };
         Ok(stmt)
