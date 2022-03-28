@@ -52,6 +52,8 @@ mv ld.lld.exe C:/msys64/mingw64/bin
 
 And you should be good to go.
 
+Note: This build of NAC3 cannot be used with Anaconda Python nor the python.org binaries for Windows. Those Python versions are compiled with Visual Studio (MSVC) and their ABI is incompatible with the GNU ABI used in this build. We have no plans to support Visual Studio nor the MSVC ABI. If you need a MSVC build, please install the requisite bloated spyware from Microsoft and compile NAC3 yourself.
+
 ## For developers
 
 This repository contains:
