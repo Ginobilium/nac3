@@ -180,13 +180,22 @@ fn test_primitives() {
         let expected = indoc! {"
             ; ModuleID = 'test'
             source_filename = \"test\"
-
+            
             define i32 @testing(i32 %0, i32 %1) {
             init:
               %add = add i32 %0, %1
               %cmp = icmp eq i32 %add, 1
-              %ifexpr = select i1 %cmp, i32 %0, i32 0
-              ret i32 %ifexpr
+              br i1 %cmp, label %then, label %else
+            
+            then:                                             ; preds = %init
+              br label %cont
+            
+            else:                                             ; preds = %init
+              br label %cont
+            
+            cont:                                             ; preds = %else, %then
+              %if_exp_result.0 = phi i32 [ %0, %then ], [ 0, %else ]
+              ret i32 %if_exp_result.0
             }
        "}
         .trim();
