@@ -29,20 +29,28 @@ impl TypeAnnotation {
                         {
                             (*name).into()
                         } else {
-                            format!("def_{}", id.0)
+                            unreachable!()
                         }
                     }
-                    None => format!("def_{}", id.0),
+                    None => format!("class_def_{}", id.0),
                 };
                 format!(
-                    "{{class: {}, params: {:?}}}",
+                    "{}{}",
                     class_name,
-                    params.iter().map(|p| p.stringify(unifier)).collect_vec()
+                    {
+                        let param_list = params.iter().map(|p| p.stringify(unifier)).collect_vec().join(", ");
+                        if param_list.is_empty() {
+                            "".into()
+                        } else {
+                            format!("[{}]", param_list)
+                        }
+                    }
                 )
             }
-            Virtual(ty) | List(ty) => ty.stringify(unifier),
+            Virtual(ty) => format!("virtual[{}]", ty.stringify(unifier)),
+            List(ty) => format!("list[{}]", ty.stringify(unifier)),
             Tuple(types) => {
-                format!("({:?})", types.iter().map(|p| p.stringify(unifier)).collect_vec())
+                format!("tuple[{}]", types.iter().map(|p| p.stringify(unifier)).collect_vec().join(", "))
             }
         }
     }

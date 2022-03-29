@@ -416,103 +416,77 @@ impl TopLevelComposer {
         primitive: &PrimitiveStore,
         unifier: &mut Unifier,
     ) -> Result<(), String> {
-        let res = match val {
-            SymbolValue::Bool(..) => {
-                if matches!(ty, TypeAnnotation::Primitive(t) if *t == primitive.bool) {
-                    None
-                } else {
-                    Some("bool".to_string())
+        fn type_default_param(
+            val: &SymbolValue,
+            primitive: &PrimitiveStore,
+            unifier: &mut Unifier,
+        ) -> TypeAnnotation {
+            match val {
+                SymbolValue::Bool(..) => TypeAnnotation::Primitive(primitive.bool),
+                SymbolValue::Double(..) => TypeAnnotation::Primitive(primitive.float),
+                SymbolValue::I32(..) => TypeAnnotation::Primitive(primitive.int32),
+                SymbolValue::I64(..) => TypeAnnotation::Primitive(primitive.int64),
+                SymbolValue::U32(..) => TypeAnnotation::Primitive(primitive.uint32),
+                SymbolValue::U64(..) => TypeAnnotation::Primitive(primitive.uint64),
+                SymbolValue::Str(..) => TypeAnnotation::Primitive(primitive.str),
+                SymbolValue::Tuple(vs) => {
+                    let vs_tys = vs
+                        .iter()
+                        .map(|v| type_default_param(v, primitive, unifier))
+                        .collect::<Vec<_>>();
+                    TypeAnnotation::Tuple(vs_tys)
                 }
-            }
-            SymbolValue::Double(..) => {
-                if matches!(ty, TypeAnnotation::Primitive(t) if *t == primitive.float) {
-                    None
-                } else {
-                    Some("float".to_string())
-                }
-            }
-            SymbolValue::I32(..) => {
-                if matches!(ty, TypeAnnotation::Primitive(t) if *t == primitive.int32) {
-                    None
-                } else {
-                    Some("int32".to_string())
-                }
-            }
-            SymbolValue::I64(..) => {
-                if matches!(ty, TypeAnnotation::Primitive(t) if *t == primitive.int64) {
-                    None
-                } else {
-                    Some("int64".to_string())
-                }
-            }
-            SymbolValue::U32(..) => {
-                if matches!(ty, TypeAnnotation::Primitive(t) if *t == primitive.uint32) {
-                    None
-                } else {
-                    Some("uint32".to_string())
-                }
-            }
-            SymbolValue::U64(..) => {
-                if matches!(ty, TypeAnnotation::Primitive(t) if *t == primitive.uint64) {
-                    None
-                } else {
-                    Some("uint64".to_string())
-                }
-            }
-            SymbolValue::Str(..) => {
-                if matches!(ty, TypeAnnotation::Primitive(t) if *t == primitive.str) {
-                    None
-                } else {
-                    Some("str".to_string())
-                }
-            }
-            SymbolValue::Tuple(elts) => {
-                if let TypeAnnotation::Tuple(elts_ty) = ty {
-                    for (e, t) in elts.iter().zip(elts_ty.iter()) {
-                        Self::check_default_param_type(e, t, primitive, unifier)?
+                SymbolValue::OptionNone => TypeAnnotation::CustomClass {
+                    id: primitive.option.get_obj_id(unifier),
+                    params: Default::default(),
+                },
+                SymbolValue::OptionSome(v) => {
+                    let ty = type_default_param(v, primitive, unifier);
+                    TypeAnnotation::CustomClass {
+                        id: primitive.option.get_obj_id(unifier),
+                        params: vec![ty],
                     }
-                    if elts.len() != elts_ty.len() {
-                        Some(format!("tuple of length {}", elts.len()))
-                    } else {
-                        None
-                    }
-                } else {
-                    Some("tuple".to_string())
                 }
             }
-            SymbolValue::OptionNone => {
-                if let TypeAnnotation::CustomClass { id, .. } = ty {
-                    if *id == primitive.option.get_obj_id(unifier) {
-                        None
-                    } else {
-                        Some("option".into())
-                    }
-                } else {
-                    Some("option".into())
+        }
+
+        fn is_compatible(
+            found: &TypeAnnotation,
+            expect: &TypeAnnotation,
+            unifier: &mut Unifier,
+            primitive: &PrimitiveStore,
+        ) -> bool {
+            match (found, expect) {
+                (TypeAnnotation::Primitive(f), TypeAnnotation::Primitive(e)) => {
+                    unifier.unioned(*f, *e)
                 }
-            }
-            SymbolValue::OptionSome(v) => {
-                if let TypeAnnotation::CustomClass { id, params } = ty {
-                    if *id == primitive.option.get_obj_id(unifier) {
-                        if params.len() == 1 {
-                            Self::check_default_param_type(v, &params[0], primitive, unifier)?;
-                            None
-                        } else {
-                            Some("option".into())
-                        }
-                    } else {
-                        Some("option".into())
-                    }
-                } else {
-                    Some("option".into())
+                (
+                    TypeAnnotation::CustomClass { id: f_id, params: f_param },
+                    TypeAnnotation::CustomClass { id: e_id, params: e_param },
+                ) => {
+                    *f_id == *e_id
+                        && *f_id == primitive.option.get_obj_id(unifier)
+                        && (f_param.is_empty()
+                            || (f_param.len() == 1
+                                && e_param.len() == 1
+                                && is_compatible(&f_param[0], &e_param[0], unifier, primitive)))
                 }
+                (TypeAnnotation::Tuple(f), TypeAnnotation::Tuple(e)) => {
+                    f.len() == e.len()
+                        && f.iter()
+                            .zip(e.iter())
+                            .all(|(f, e)| is_compatible(f, e, unifier, primitive))
+                }
+                _ => false,
             }
-        };
-        if let Some(found) = res {
+        }
+
+        let found = type_default_param(val, primitive, unifier);
+        if !is_compatible(&found, ty, unifier, primitive) {
             Err(format!(
                 "incompatible default parameter type, expect {}, found {}",
                 ty.stringify(unifier),
-                found
+                found.stringify(unifier),
             ))
         } else {
             Ok(())
