@@ -480,6 +480,33 @@ impl TopLevelComposer {
                     Some("tuple".to_string())
                 }
             }
+            SymbolValue::OptionNone => {
+                if let TypeAnnotation::CustomClass { id, .. } = ty {
+                    if *id == primitive.option.get_obj_id(unifier) {
+                        None
+                    } else {
+                        Some("option".into())
+                    }
+                } else {
+                    Some("option".into())
+                }
+            }
+            SymbolValue::OptionSome(v) => {
+                if let TypeAnnotation::CustomClass { id, params } = ty {
+                    if *id == primitive.option.get_obj_id(unifier) {
+                        if params.len() == 1 {
+                            Self::check_default_param_type(v, &params[0], primitive, unifier)?;
+                            None
+                        } else {
+                            Some("option".into())
+                        }
+                    } else {
+                        Some("option".into())
+                    }
+                } else {
+                    Some("option".into())
+                }
+            }
         };
         if let Some(found) = res {
             Err(format!(
@@ -510,6 +537,10 @@ pub fn parse_parameter_default_value(
             Constant::Bool(v) => Ok(SymbolValue::Bool(*v)),
             Constant::Tuple(tuple) => Ok(SymbolValue::Tuple(
                 tuple.iter().map(|x| handle_constant(x, loc)).collect::<Result<Vec<_>, _>>()?,
+            )),
+            Constant::None => Err(format!(
+                "`None` is not supported, use `none` for option type instead ({})",
+                loc
             )),
             _ => unimplemented!("this constant is not supported at {}", loc),
         }
@@ -548,6 +579,11 @@ pub fn parse_parameter_default_value(
                     }
                     _ => Err(format!("only allow constant integer here at {}", default.location))
                 }
+                ast::ExprKind::Name { id, .. } if *id == "Some".into() => Ok(
+                    SymbolValue::OptionSome(
+                        Box::new(parse_parameter_default_value(&args[0], resolver)?)
+                    )
+                ),
                 _ => Err(format!("unsupported default parameter at {}", default.location)),
             }
         }
@@ -556,15 +592,20 @@ pub fn parse_parameter_default_value(
             .map(|x| parse_parameter_default_value(x, resolver))
             .collect::<Result<Vec<_>, _>>()?
         )),
+        ast::ExprKind::Name { id, .. } if id == &"none".into() => Ok(SymbolValue::OptionNone),
         ast::ExprKind::Name { id, .. } => {
             resolver.get_default_param_value(default).ok_or_else(
                 || format!(
-                    "`{}` cannot be used as a default parameter at {} (not primitive type or tuple / not defined?)",
+                    "`{}` cannot be used as a default parameter at {} \
+                    (not primitive type, option or tuple / not defined?)",
                     id,
                     default.location
                 )
             )
         }
-        _ => Err(format!("unsupported default parameter at {}", default.location))
+        _ => Err(format!(
+            "unsupported default parameter (not primitive type, option or tuple) at {}",
+            default.location
+        ))
     }
 }

@@ -361,7 +361,10 @@ fn rpc_codegen_callback_fn<'ctx, 'a>(
     }
     // default value handling
     for k in keys.into_iter() {
-        mapping.insert(k.name, ctx.gen_symbol_val(generator, &k.default_value.unwrap()).into());
+        mapping.insert(
+            k.name,
+            ctx.gen_symbol_val(generator, &k.default_value.unwrap(), k.ty).into()
+        );
     }
     // reorder the parameters
     let mut real_params = fun

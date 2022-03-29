@@ -91,6 +91,7 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
         &mut self,
         generator: &mut dyn CodeGenerator,
         val: &SymbolValue,
+        ty: Type,
     ) -> BasicValueEnum<'ctx> {
         match val {
             SymbolValue::I32(v) => self.ctx.i32_type().const_int(*v as u64, true).into(),
@@ -107,7 +108,7 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
                 ty.const_named_struct(&[str_ptr, size.into()]).into()
             }
             SymbolValue::Tuple(ls) => {
-                let vals = ls.iter().map(|v| self.gen_symbol_val(generator, v)).collect_vec();
+                let vals = ls.iter().map(|v| self.gen_symbol_val(generator, v, ty)).collect_vec();
                 let fields = vals.iter().map(|v| v.get_type()).collect_vec();
                 let ty = self.ctx.struct_type(&fields, false);
                 let ptr = self.builder.build_alloca(ty, "tuple");
@@ -123,6 +124,37 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
                     }
                 }
                 self.builder.build_load(ptr, "tup_val")
+            }
+            SymbolValue::OptionSome(v) => {
+                let ty = match self.unifier.get_ty_immutable(ty).as_ref() {
+                    TypeEnum::TObj { obj_id, params, .. }
+                        if *obj_id == self.primitives.option.get_obj_id(&self.unifier) =>
+                    {
+                        *params.iter().next().unwrap().1
+                    }
+                    _ => unreachable!("must be option type"),
+                };
+                let val = self.gen_symbol_val(generator, v, ty);
+                let ptr = self.builder.build_alloca(val.get_type(), "default_opt_some");
+                self.builder.build_store(ptr, val);
+                ptr.into()
+            }
+            SymbolValue::OptionNone => {
+                let ty = match self.unifier.get_ty_immutable(ty).as_ref() {
+                    TypeEnum::TObj { obj_id, params, .. }
+                        if *obj_id == self.primitives.option.get_obj_id(&self.unifier) =>
+                    {
+                        *params.iter().next().unwrap().1
+                    }
+                    _ => unreachable!("must be option type"),
+                };
+                let actual_ptr_type =
+                    self.get_llvm_type(generator, ty).ptr_type(AddressSpace::Generic);
+                self.builder.build_bitcast(
+                    self.ctx.i8_type().ptr_type(AddressSpace::Generic).const_null(),
+                    actual_ptr_type,
+                    "default_opt_none",
+                )
             }
         }
     }
@@ -605,7 +637,7 @@ pub fn gen_call<'ctx, 'a, G: CodeGenerator>(
                     }
                     mapping.insert(
                         k.name,
-                        ctx.gen_symbol_val(generator, &k.default_value.unwrap()).into(),
+                        ctx.gen_symbol_val(generator, &k.default_value.unwrap(), k.ty).into(),
                     );
                 }
                 // reorder the parameters

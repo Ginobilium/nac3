@@ -29,6 +29,8 @@ pub enum SymbolValue {
     Double(f64),
     Bool(bool),
     Tuple(Vec<SymbolValue>),
+    OptionSome(Box<SymbolValue>),
+    OptionNone,
 }
 
 impl Display for SymbolValue {
@@ -50,6 +52,8 @@ impl Display for SymbolValue {
             SymbolValue::Tuple(t) => {
                 write!(f, "({})", t.iter().map(|v| format!("{}", v)).collect::<Vec<_>>().join(", "))
             }
+            SymbolValue::OptionSome(v) => write!(f, "Some({})", v),
+            SymbolValue::OptionNone => write!(f, "none"),
         }
     }
 }

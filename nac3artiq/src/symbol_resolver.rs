@@ -922,6 +922,7 @@ impl InnerResolver {
         py: Python,
         obj: &PyAny,
     ) -> PyResult<Result<SymbolValue, String>> {
+        let id: u64 = self.helper.id_fn.call1(py, (obj,))?.extract(py)?;
         let ty_id: u64 =
             self.helper.id_fn.call1(py, (self.helper.type_fn.call1(py, (obj,))?,))?.extract(py)?;
         Ok(if ty_id == self.primitive_ids.int || ty_id == self.primitive_ids.int32 {
@@ -940,13 +941,17 @@ impl InnerResolver {
             let elements: &PyTuple = obj.cast_as()?;
             let elements: Result<Result<Vec<_>, String>, _> =
                 elements.iter().map(|elem| self.get_default_param_obj_value(py, elem)).collect();
-            let elements = match elements? {
-                Ok(el) => el,
-                Err(err) => return Ok(Err(err)),
-            };
-            Ok(SymbolValue::Tuple(elements))
+            elements?.map(SymbolValue::Tuple)
+        } else if ty_id == self.primitive_ids.option {
+            if id == self.primitive_ids.none {
+                Ok(SymbolValue::OptionNone)
+            } else {
+                self
+                    .get_default_param_obj_value(py, obj.getattr("_nac3_option").unwrap())?
+                    .map(|v| SymbolValue::OptionSome(Box::new(v)))
+            }
         } else {
-            Err("only primitives values and tuple can be default parameter value".into())
+            Err("only primitives values, option and tuple can be default parameter value".into())
         })
     }
 }
@@ -962,8 +967,9 @@ impl SymbolResolver for Resolver {
                     for (key, val) in members.iter() {
                         let key: &str = key.extract()?;
                         if key == id.to_string() {
-                            sym_value =
-                                Some(self.0.get_default_param_obj_value(py, val).unwrap().unwrap());
+                            if let Ok(Ok(v)) = self.0.get_default_param_obj_value(py, val) {
+                                sym_value = Some(v)
+                            }
                             break;
                         }
                     }
@@ -971,7 +977,7 @@ impl SymbolResolver for Resolver {
                 })
                 .unwrap()
             }
-            _ => unimplemented!("other type of expr not supported at {}", expr.location),
+            _ => unreachable!("only for resolving names"),
         }
     }
 
