@@ -931,6 +931,12 @@ impl InnerResolver {
         } else if ty_id == self.primitive_ids.int64 {
             let val: i64 = obj.extract()?;
             Ok(SymbolValue::I64(val))
+        } else if ty_id == self.primitive_ids.uint32 {
+            let val: u32 = obj.extract()?;
+            Ok(SymbolValue::U32(val))
+        } else if ty_id == self.primitive_ids.uint64 {
+            let val: u64 = obj.extract()?;
+            Ok(SymbolValue::U64(val))
         } else if ty_id == self.primitive_ids.bool {
             let val: bool = obj.extract()?;
             Ok(SymbolValue::Bool(val))
