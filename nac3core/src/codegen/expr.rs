@@ -1002,21 +1002,22 @@ pub fn gen_expr<'ctx, 'a, G: CodeGenerator>(
                 let resolver = ctx.resolver.clone();
                 let val = resolver.get_symbol_value(*id, ctx).unwrap();
                 // if is option, need to cast pointer to handle None
-                match (
-                    &*ctx.unifier.get_ty(expr.custom.unwrap()),
-                    val.to_basic_value_enum(ctx, generator)?
-                ) {
-                    (TypeEnum::TObj { obj_id, params, .. }, BasicValueEnum::PointerValue(ptr))
+                match &*ctx.unifier.get_ty(expr.custom.unwrap()) {
+                    TypeEnum::TObj { obj_id, params, .. }
                         if *obj_id == ctx.primitives.option.get_obj_id(&ctx.unifier) =>
                     {
-                        let actual_ptr_ty = ctx.get_llvm_type(
-                            generator,
-                            *params.iter().next().unwrap().1,
-                        )
-                        .ptr_type(AddressSpace::Generic);
-                        ctx.builder.build_bitcast(ptr, actual_ptr_ty, "option_ptr_cast").into()
+                        if let BasicValueEnum::PointerValue(ptr) = val.to_basic_value_enum(ctx, generator)? {
+                            let actual_ptr_ty = ctx.get_llvm_type(
+                                generator,
+                                *params.iter().next().unwrap().1,
+                            )
+                            .ptr_type(AddressSpace::Generic);
+                            ctx.builder.build_bitcast(ptr, actual_ptr_ty, "option_ptr_cast").into()
+                        } else {
+                            unreachable!("option obj must be ptr")
+                        }
                     }
-                    val => val.1.into(),
+                    _ => val,
                 }
             }
         },
