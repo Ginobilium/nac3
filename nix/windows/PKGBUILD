@@ -10,6 +10,7 @@ license=("LGPL")
 source=("nac3artiq.pyd")
 noextract=("nac3artiq.pyd")
 sha256sums=("SKIP")
+depends=("mingw-w64-x86_64-python")
 
 prepare() {
   true
