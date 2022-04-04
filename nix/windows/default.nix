@@ -117,7 +117,7 @@ in rec {
       ''
       mkdir $out $out/nix-support
       cp *.pkg.tar.zst $out
-      echo file binary-dist $out/*.pkg.tar.zst >> $out/nix-support/hydra-build-products
+      echo file msys2 $out/*.pkg.tar.zst >> $out/nix-support/hydra-build-products
       '';
   };
   lld = pkgs.stdenvNoCC.mkDerivation rec {
