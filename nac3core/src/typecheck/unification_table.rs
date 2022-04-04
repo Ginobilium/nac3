@@ -3,7 +3,7 @@ use std::rc::Rc;
 use itertools::izip;
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]
-pub struct UnificationKey(usize);
+pub struct UnificationKey(pub(crate) usize);
 
 #[derive(Clone)]
 pub struct UnificationTable<V> {
@@ -44,6 +44,12 @@ impl<V> UnificationTable<V> {
         UnificationTable { parents: Vec::new(), ranks: Vec::new(), values: Vec::new(), log: Vec::new(), generation: 0 }
     }
 
+    fn log_action(&mut self, action: Action<V>) {
+        if !self.log.is_empty() {
+            self.log.push(action);
+        }
+    }
+
     pub fn new_key(&mut self, v: V) -> UnificationKey {
         let index = self.parents.len();
         self.parents.push(index);
@@ -61,10 +67,10 @@ impl<V> UnificationTable<V> {
         if self.ranks[a] < self.ranks[b] {
             std::mem::swap(&mut a, &mut b);
         }
-        self.log.push(Action::Parent { key: b, original_parent: self.parents[b] });
+        self.log_action(Action::Parent { key: b, original_parent: self.parents[b] });
         self.parents[b] = a;
         if self.ranks[a] == self.ranks[b] {
-            self.log.push(Action::Rank { key: a, original_rank: self.ranks[a] });
+            self.log_action(Action::Rank { key: a, original_rank: self.ranks[a] });
             self.ranks[a] += 1;
         }
     }
@@ -88,7 +94,7 @@ impl<V> UnificationTable<V> {
     pub fn set_value(&mut self, a: UnificationKey, v: V) {
         let index = self.find(a);
         let original_value = self.values[index].replace(v);
-        self.log.push(Action::Value { key: index, original_value });
+        self.log_action(Action::Value { key: index, original_value });
     }
 
     pub fn unioned(&mut self, a: UnificationKey, b: UnificationKey) -> bool {
@@ -106,7 +112,7 @@ impl<V> UnificationTable<V> {
             // a = parent.parent
             let a = self.parents[parent];
             // root.parent = parent.parent
-            self.log.push(Action::Parent { key: root, original_parent: self.parents[root] });
+            self.log_action(Action::Parent { key: root, original_parent: self.parents[root] });
             self.parents[root] = a;
             root = parent;
             // parent = root.parent
