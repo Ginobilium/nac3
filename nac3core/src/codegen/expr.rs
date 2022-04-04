@@ -948,15 +948,12 @@ pub fn gen_binop_expr<'ctx, 'a, G: CodeGenerator>(
     } else if ty1 == ctx.primitives.float && ty2 == ctx.primitives.int32 {
         // Pow is the only operator that would pass typecheck between float and int
         assert!(*op == Operator::Pow);
-        // TODO: throw exception when rhs is out of i16 bound
-        // since llvm intrinsic only support to i16 for f64
-        let i16_t = ctx.ctx.i16_type();
-        let pow_intr = ctx.module.get_function("llvm.powi.f64.i16").unwrap_or_else(|| {
+        let i32_t = ctx.ctx.i32_type();
+        let pow_intr = ctx.module.get_function("llvm.powi.f64.i32").unwrap_or_else(|| {
             let f64_t = ctx.ctx.f64_type();
-            let ty = f64_t.fn_type(&[f64_t.into(), i16_t.into()], false);
-            ctx.module.add_function("llvm.powi.f64.i16", ty, None)
+            let ty = f64_t.fn_type(&[f64_t.into(), i32_t.into()], false);
+            ctx.module.add_function("llvm.powi.f64.i32", ty, None)
         });
-        let right = ctx.builder.build_int_truncate(right.into_int_value(), i16_t, "r_pow");
         ctx.builder
             .build_call(pow_intr, &[left.into(), right.into()], "f_pow_i")
             .try_as_basic_value()
