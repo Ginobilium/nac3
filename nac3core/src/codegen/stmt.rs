@@ -422,8 +422,8 @@ pub fn final_proxy<'ctx, 'a>(
     final_paths.push(block);
 }
 
-pub fn get_builtins<'ctx, 'a, G: CodeGenerator>(
-    generator: &mut G,
+pub fn get_builtins<'ctx, 'a>(
+    generator: &mut dyn CodeGenerator,
     ctx: &mut CodeGenContext<'ctx, 'a>,
     symbol: &str,
 ) -> FunctionValue<'ctx> {
@@ -519,8 +519,8 @@ pub fn exn_constructor<'ctx, 'a>(
     Ok(Some(zelf.into()))
 }
 
-pub fn gen_raise<'ctx, 'a, G: CodeGenerator>(
-    generator: &mut G,
+pub fn gen_raise<'ctx, 'a>(
+    generator: &mut dyn CodeGenerator,
     ctx: &mut CodeGenContext<'ctx, 'a>,
     exception: Option<&BasicValueEnum<'ctx>>,
     loc: Location,
@@ -931,6 +931,7 @@ pub fn gen_stmt<'ctx, 'a, G: CodeGenerator>(
     ctx: &mut CodeGenContext<'ctx, 'a>,
     stmt: &Stmt<Option<Type>>,
 ) -> Result<(), String> {
+    ctx.current_loc = stmt.location;
     match &stmt.node {
         StmtKind::Pass { .. } => {}
         StmtKind::Expr { value, .. } => {

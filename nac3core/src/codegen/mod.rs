@@ -20,7 +20,7 @@ use inkwell::{
     values::{BasicValueEnum, FunctionValue, PhiValue, PointerValue}
 };
 use itertools::Itertools;
-use nac3parser::ast::{Stmt, StrRef};
+use nac3parser::ast::{Stmt, StrRef, Location};
 use parking_lot::{Condvar, Mutex};
 use std::collections::{HashMap, HashSet};
 use std::sync::{
@@ -77,6 +77,7 @@ pub struct CodeGenContext<'ctx, 'a> {
     pub outer_catch_clauses:
         Option<(Vec<Option<BasicValueEnum<'ctx>>>, BasicBlock<'ctx>, PhiValue<'ctx>)>,
     pub need_sret: bool,
+    pub current_loc: Location,
 }
 
 impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
@@ -570,7 +571,8 @@ pub fn gen_func_impl<'ctx, G: CodeGenerator, F: FnOnce(&mut G, &mut CodeGenConte
         module,
         unifier,
         static_value_store,
-        need_sret: has_sret
+        need_sret: has_sret,
+        current_loc: Default::default(),
     };
 
     let result = codegen_function(generator, &mut code_gen_context);

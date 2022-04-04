@@ -395,9 +395,9 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
         self.gen_const(generator, &nac3parser::ast::Constant::Str(s.into()), self.primitives.str)
     }
 
-    pub fn raise_exn<G: CodeGenerator>(
+    pub fn raise_exn(
         &mut self,
-        generator: &mut G,
+        generator: &mut dyn CodeGenerator,
         name: &str,
         msg: BasicValueEnum<'ctx>,
         params: [Option<IntValue<'ctx>>; 3],
@@ -434,9 +434,9 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
         gen_raise(generator, self, Some(&zelf.into()), loc);
     }
 
-    pub fn make_assert<G: CodeGenerator>(
+    pub fn make_assert(
         &mut self,
-        generator: &mut G,
+        generator: &mut dyn CodeGenerator,
         cond: IntValue<'ctx>,
         err_name: &str,
         err_msg: &str,
@@ -447,9 +447,9 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
         self.make_assert_impl(generator, cond, err_name, err_msg, params, loc)
     }
 
-    pub fn make_assert_impl<G: CodeGenerator>(
+    pub fn make_assert_impl(
         &mut self,
-        generator: &mut G,
+        generator: &mut dyn CodeGenerator,
         cond: IntValue<'ctx>,
         err_name: &str,
         err_msg: BasicValueEnum<'ctx>,
@@ -969,6 +969,7 @@ pub fn gen_expr<'ctx, 'a, G: CodeGenerator>(
     ctx: &mut CodeGenContext<'ctx, 'a>,
     expr: &Expr<Option<Type>>,
 ) -> Result<Option<ValueEnum<'ctx>>, String> {
+    ctx.current_loc = expr.location;
     let int32 = ctx.ctx.i32_type();
     let zero = int32.const_int(0, false);
     Ok(Some(match &expr.node {
