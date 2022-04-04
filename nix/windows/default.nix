@@ -111,7 +111,7 @@ in rec {
       ''
       ln -s ${./PKGBUILD} PKGBUILD
       ln -s $src/nac3artiq.pyd nac3artiq.pyd
-      makepkg --config ${./makepkg.conf}
+      makepkg --config ${./makepkg.conf} --nodeps
       '';
     installPhase =
       ''
