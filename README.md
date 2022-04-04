@@ -37,14 +37,13 @@ cd artiq
 python setup.py install
 ```
 
-Locate a recent build of ``nac3artiq-msys2`` from [Hydra](https://nixbld.m-labs.hk) and download ``nac3artiq.zip``. Then extract the contents in the appropriate location:
+Locate a recent build of ``nac3artiq-msys2-pkg`` from [Hydra](https://nixbld.m-labs.hk), download the package, and install it manually with pacman:
 ```
-pacman -S unzip
-wget https://nixbld.m-labs.hk/build/115529/download/1/nac3artiq.zip  # edit the build number
-unzip nac3artiq.zip -d C:/msys64/mingw64/lib/python3.9/site-packages
+wget https://nixbld.m-labs.hk/build/116315/download/1/mingw-w64-x86_64-nac3artiq-1.0-1-any.pkg.tar.zst  # edit the build number
+pacman -U mingw-w64-x86_64-nac3artiq-1.0-1-any.pkg.tar.zst
 ```
 
-Do the same for ``lld-msys2``:
+Install ``lld-msys2`` manually:
 ```
 wget https://nixbld.m-labs.hk/build/115527/download/1/ld.lld.exe
 mv ld.lld.exe C:/msys64/mingw64/bin
