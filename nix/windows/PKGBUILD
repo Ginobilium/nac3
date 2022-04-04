@@ -1,0 +1,25 @@
+pkgbase="mingw-w64-nac3artiq"
+pkgname="mingw-w64-x86_64-nac3artiq"
+pkgver=1.0
+pkgrel=1
+pkgdesc="New ARTIQ compiler 3"
+arch=("any")
+mingw_arch=("mingw64")
+url="https://m-labs.hk"
+license=("LGPL")
+source=("nac3artiq.pyd")
+noextract=("nac3artiq.pyd")
+sha256sums=("SKIP")
+
+prepare() {
+  true
+}
+
+build() {
+  true
+}
+
+package() {
+  mkdir -p $pkgdir/mingw64/lib/python3.9/site-packages
+  cp ${srcdir}/nac3artiq.pyd $pkgdir/mingw64/lib/python3.9/site-packages
+}

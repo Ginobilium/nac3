@@ -80,7 +80,7 @@ in rec {
     name = "nac3artiq-msys2";
     src = ../../.;
     cargoLock = { lockFile = ../../Cargo.lock; };
-    nativeBuildInputs = [ pkgs.wineWowPackages.stable pkgs.zip ];
+    nativeBuildInputs = [ pkgs.wineWowPackages.stable ];
     buildPhase =
       ''
       export HOME=`mktemp -d`
@@ -92,16 +92,33 @@ in rec {
       '';
     installPhase =
       ''
-      mkdir -p $out $out/nix-support
-      ln -s target/release/nac3artiq.dll nac3artiq.pyd
-      zip $out/nac3artiq.zip nac3artiq.pyd
-      echo file binary-dist $out/nac3artiq.zip >> $out/nix-support/hydra-build-products
+      mkdir $out $out/nix-support
+      cp target/release/nac3artiq.dll $out/nac3artiq.pyd
+      echo file binary-dist $out/nac3artiq.pyd >> $out/nix-support/hydra-build-products
       '';
     checkPhase =
       ''
       wine64 cargo test --release
       '';
     dontFixup = true;
+  };
+  nac3artiq-pkg = pkgs.stdenvNoCC.mkDerivation {
+    name = "nac3artiq-msys2-pkg";
+    nativeBuildInputs = [ pkgs.pacman pkgs.fakeroot pkgs.libarchive pkgs.zstd ];
+    src = nac3artiq;
+    phases = [ "buildPhase" "installPhase" ];
+    buildPhase =
+      ''
+      ln -s ${./PKGBUILD} PKGBUILD
+      ln -s $src/nac3artiq.pyd nac3artiq.pyd
+      makepkg --config ${./makepkg.conf}
+      '';
+    installPhase =
+      ''
+      mkdir $out $out/nix-support
+      cp *.pkg.tar.zst $out
+      echo file binary-dist $out/*.pkg.tar.zst >> $out/nix-support/hydra-build-products
+      '';
   };
   lld = pkgs.stdenvNoCC.mkDerivation rec {
     pname = "lld-msys2";
