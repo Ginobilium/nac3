@@ -16,31 +16,19 @@ NAC3 is packaged using the [Nix](https://nixos.org) Flakes system. Install Nix 2
 
 After setting up Nix as above, use ``nix shell git+https://github.com/m-labs/artiq.git?ref=nac3`` to get a shell with the NAC3 version of ARTIQ. See the ``examples`` directory in ARTIQ (``nac3`` Git branch) for some samples of NAC3 kernel code.
 
-### Windows (work in progress)
+### Windows
 
-NAC3 ARTIQ packaging for MSYS2/Windows is not yet complete so installation involves many manual steps. It is also less tested and you may encounter problems.
-
-Install [MSYS2](https://www.msys2.org/) and run the following commands:
+Install [MSYS2](https://www.msys2.org/), and open "MSYS2 MinGW x64". Edit ``/etc/pacman.conf`` to add:
 ```
-pacman -S mingw-w64-x86_64-python-h5py mingw-w64-x86_64-python-pyqt5 mingw-w64-x86_64-python-scipy mingw-w64-x86_64-python-prettytable mingw-w64-x86_64-python-pygit2
-pacman -S mingw-w64-x86_64-python-pip
-pip install qasync
-pip install pyqtgraph
-pacman -S patch git
-git clone https://github.com/m-labs/sipyco
-cd sipyco
-git show 20c946aad78872fe60b78d9b57a624d69f3eea47 | patch -p1 -R
-python setup.py install
-cd ..
-git clone -b nac3 https://github.com/m-labs/artiq
-cd artiq
-python setup.py install
+[artiq]
+SigLevel = Optional TrustAll
+Server = https://lab.m-labs.hk/msys2
 ```
 
-Locate a recent build of ``nac3artiq-msys2-pkg`` from [Hydra](https://nixbld.m-labs.hk), download the package, and install it manually with pacman:
+Then run the following commands:
 ```
-wget https://nixbld.m-labs.hk/build/116315/download/1/mingw-w64-x86_64-nac3artiq-1.0-1-any.pkg.tar.zst  # edit the build number
-pacman -U mingw-w64-x86_64-nac3artiq-1.0-1-any.pkg.tar.zst
+pacman -Syu
+pacman -S mingw-w64-x86_64-artiq
 ```
 
 Install ``lld-msys2`` manually:
@@ -48,8 +36,6 @@ Install ``lld-msys2`` manually:
 wget https://nixbld.m-labs.hk/build/115527/download/1/ld.lld.exe
 mv ld.lld.exe C:/msys64/mingw64/bin
 ```
-
-And you should be good to go.
 
 Note: This build of NAC3 cannot be used with Anaconda Python nor the python.org binaries for Windows. Those Python versions are compiled with Visual Studio (MSVC) and their ABI is incompatible with the GNU ABI used in this build. We have no plans to support Visual Studio nor the MSVC ABI. If you need a MSVC build, please install the requisite bloated spyware from Microsoft and compile NAC3 yourself.
 
