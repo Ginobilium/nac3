@@ -11,7 +11,7 @@ use nac3parser::parser::parse_program;
 use parking_lot::RwLock;
 use test_case::test_case;
 
-struct Resolver {
+pub(crate) struct Resolver {
     id_to_type: HashMap<StrRef, Type>,
     id_to_def: HashMap<StrRef, DefinitionId>,
     class_names: HashMap<StrRef, Type>,
@@ -56,7 +56,7 @@ impl SymbolResolver for Resolver {
     }
 }
 
-struct TestEnvironment {
+pub(crate) struct TestEnvironment {
     pub unifier: Unifier,
     pub function_data: FunctionData,
     pub primitives: PrimitiveStore,
@@ -192,7 +192,7 @@ impl TestEnvironment {
         }
     }
 
-    fn new() -> TestEnvironment {
+    pub fn new() -> TestEnvironment {
         let mut unifier = Unifier::new();
         let mut identifier_mapping = HashMap::new();
         let mut top_level_defs: Vec<Arc<RwLock<TopLevelDef>>> = Vec::new();
@@ -447,7 +447,7 @@ impl TestEnvironment {
         }
     }
 
-    fn get_inferencer(&mut self) -> Inferencer {
+    pub fn get_inferencer(&mut self) -> Inferencer {
         Inferencer {
             top_level: &self.top_level,
             function_data: &mut self.function_data,

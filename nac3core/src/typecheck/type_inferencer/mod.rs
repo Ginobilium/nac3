@@ -14,7 +14,7 @@ use nac3parser::ast::{
 };
 
 #[cfg(test)]
-mod test;
+pub(crate) mod test;
 
 #[derive(PartialEq, Eq, Hash, Copy, Clone, Debug)]
 pub struct CodeLocation {
