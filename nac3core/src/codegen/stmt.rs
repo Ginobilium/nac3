@@ -134,8 +134,8 @@ pub fn gen_assign<'ctx, 'a, G: CodeGenerator>(
                     };
                 let src_ind = handle_slice_indices(&None, &None, &None, ctx, generator, value)?;
                 list_slice_assignment(
+                    generator,
                     ctx,
-                    generator.get_size_type(ctx.ctx),
                     ty,
                     ls,
                     (start, end, step),

@@ -238,6 +238,7 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
 
     pub fn gen_int_ops(
         &mut self,
+        generator: &mut dyn CodeGenerator,
         op: &Operator,
         lhs: BasicValueEnum<'ctx>,
         rhs: BasicValueEnum<'ctx>,
@@ -273,7 +274,7 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
             (Operator::RShift, _) => self.builder.build_right_shift(lhs, rhs, true, "rshift").into(),
             (Operator::FloorDiv, true) => self.builder.build_int_signed_div(lhs, rhs, "floordiv").into(),
             (Operator::FloorDiv, false) => self.builder.build_int_unsigned_div(lhs, rhs, "floordiv").into(),
-            (Operator::Pow, s) => integer_power(self, lhs, rhs, s).into(),
+            (Operator::Pow, s) => integer_power(generator, self, lhs, rhs, s).into(),
             // special implementation?
             (Operator::MatMult, _) => unreachable!(),
         }
@@ -940,9 +941,9 @@ pub fn gen_binop_expr<'ctx, 'a, G: CodeGenerator>(
     // which would be unchanged until further unification, which we would never do
     // when doing code generation for function instances
     Ok(if ty1 == ty2 && [ctx.primitives.int32, ctx.primitives.int64].contains(&ty1) {
-        ctx.gen_int_ops(op, left, right, true)
+        ctx.gen_int_ops(generator, op, left, right, true)
     } else if ty1 == ty2 && [ctx.primitives.uint32, ctx.primitives.uint64].contains(&ty1) {
-        ctx.gen_int_ops(op, left, right, false)
+        ctx.gen_int_ops(generator, op, left, right, false)
     } else if ty1 == ty2 && ctx.primitives.float == ty1 {
         ctx.gen_float_ops(op, left, right)
     } else if ty1 == ctx.primitives.float && ty2 == ctx.primitives.int32 {
@@ -1415,6 +1416,7 @@ pub fn gen_expr<'ctx, 'a, G: CodeGenerator>(
                     let (start, end, step) =
                         handle_slice_indices(lower, upper, step, ctx, generator, v)?;
                     let length = calculate_len_for_slice_range(
+                        generator,
                         ctx,
                         start,
                         ctx.builder
@@ -1436,8 +1438,8 @@ pub fn gen_expr<'ctx, 'a, G: CodeGenerator>(
                     let res_ind =
                         handle_slice_indices(&None, &None, &None, ctx, generator, res_array_ret)?;
                     list_slice_assignment(
+                        generator,
                         ctx,
-                        generator.get_size_type(ctx.ctx),
                         ty,
                         res_array_ret,
                         res_ind,

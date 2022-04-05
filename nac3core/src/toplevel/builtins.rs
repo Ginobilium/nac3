@@ -670,8 +670,28 @@ pub fn get_builtins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
                             step = Some(arg.1.clone().to_basic_value_enum(ctx, generator)?);
                         }
                     }
-                    // TODO: error when step == 0
-                    let step = step.unwrap_or_else(|| int32.const_int(1, false).into());
+                    let step = match step {
+                        Some(step) => {
+                            let step = step.into_int_value();
+                            // assert step != 0, throw exception if not
+                            let not_zero = ctx.builder.build_int_compare(
+                                IntPredicate::NE,
+                                step,
+                                step.get_type().const_zero(),
+                                "range_step_ne",
+                            );
+                            ctx.make_assert(
+                                generator,
+                                not_zero,
+                                "0:ValueError",
+                                "range() step must not be zero",
+                                [None, None, None],
+                                ctx.current_loc,
+                            );
+                            step
+                        }
+                        None => int32.const_int(1, false),
+                    };
                     let stop = stop.unwrap_or_else(|| {
                         let v = start.unwrap();
                         start = None;
@@ -973,7 +993,7 @@ pub fn get_builtins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
                         Ok(if ctx.unifier.unioned(arg_ty, range_ty) {
                             let arg = arg.into_pointer_value();
                             let (start, end, step) = destructure_range(ctx, arg);
-                            Some(calculate_len_for_slice_range(ctx, start, end, step).into())
+                            Some(calculate_len_for_slice_range(generator, ctx, start, end, step).into())
                         } else {
                             let int32 = ctx.ctx.i32_type();
                             let zero = int32.const_zero();
