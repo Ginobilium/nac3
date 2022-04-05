@@ -229,7 +229,7 @@ def list_slice_assignment():
     bl5[3:-5] = []
     output_int32_list([int32(b) for b in bl5])
     bl6 = bl[:]
-    bl6[3:-5] = [True, False, False]
+    bl6[3:-5] = [True, False]
     output_int32_list([int32(b) for b in bl6])
     bl7 = bl[:]
     bl7[:-2] = [False]
