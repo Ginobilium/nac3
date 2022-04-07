@@ -328,8 +328,9 @@ impl Nac3 {
                     ret: primitive.none,
                     vars: HashMap::new(),
                 },
-                Arc::new(GenCall::new(Box::new(move |ctx, _, _, args, generator| {
-                    let arg = args[0].1.clone().to_basic_value_enum(ctx, generator).unwrap();
+                Arc::new(GenCall::new(Box::new(move |ctx, _, fun, args, generator| {
+                    let arg_ty = fun.0.args[0].ty;
+                    let arg = args[0].1.clone().to_basic_value_enum(ctx, generator, arg_ty).unwrap();
                     time_fns.emit_at_mu(ctx, arg);
                     Ok(None)
                 }))),
@@ -345,8 +346,9 @@ impl Nac3 {
                     ret: primitive.none,
                     vars: HashMap::new(),
                 },
-                Arc::new(GenCall::new(Box::new(move |ctx, _, _, args, generator| {
-                    let arg = args[0].1.clone().to_basic_value_enum(ctx, generator).unwrap();
+                Arc::new(GenCall::new(Box::new(move |ctx, _, fun, args, generator| {
+                    let arg_ty = fun.0.args[0].ty;
+                    let arg = args[0].1.clone().to_basic_value_enum(ctx, generator, arg_ty).unwrap();
                     time_fns.emit_delay_mu(ctx, arg);
                     Ok(None)
                 }))),

@@ -131,6 +131,7 @@ impl StaticValue for PythonValue {
         &self,
         ctx: &mut CodeGenContext<'ctx, 'a>,
         generator: &mut dyn CodeGenerator,
+        _expected_ty: Type,
     ) -> Result<BasicValueEnum<'ctx>, String> {
         if let Some(val) = self.resolver.id_to_primitive.read().get(&self.id) {
             return Ok(match val {
@@ -544,7 +545,7 @@ impl InnerResolver {
                 let len: usize = self.helper.len_fn.call1(py, (obj,))?.extract(py)?;
                 if len == 0 {
                     assert!(matches!(
-                        &*unifier.get_ty(extracted_ty),
+                        &*unifier.get_ty(*ty),
                         TypeEnum::TVar { fields: None, range, .. }
                             if range.is_empty()
                     ));
@@ -728,11 +729,9 @@ impl InnerResolver {
             Ok(Some(ctx.ctx.f64_type().const_float(val).into()))
         } else if ty_id == self.primitive_ids.list {
             let id_str = id.to_string();
-
             if let Some(global) = ctx.module.get_global(&id_str) {
                 return Ok(Some(global.as_pointer_value().into()));
             }
-
             let len: usize = self.helper.len_fn.call1(py, (obj,))?.extract(py)?;
             let ty = if len == 0 {
                 ctx.primitives.int32
@@ -752,7 +751,6 @@ impl InnerResolver {
             let arr_ty = ctx
                 .ctx
                 .struct_type(&[ty.ptr_type(AddressSpace::Generic).into(), size_t.into()], false);
-
             {
                 if self.global_value_ids.read().contains_key(&id) {
                     let global = ctx.module.get_global(&id_str).unwrap_or_else(|| {
@@ -763,7 +761,6 @@ impl InnerResolver {
                     self.global_value_ids.write().insert(id, obj.into());
                 }
             }
-
             let arr: Result<Option<Vec<_>>, _> = (0..len)
                 .map(|i| {
                     obj.get_item(i).and_then(|elem| self.get_obj_value(py, elem, ctx, generator).map_err(
@@ -771,7 +768,6 @@ impl InnerResolver {
                 })
                 .collect();
             let arr = arr?.unwrap();
-
             let arr_global = ctx.module.add_global(
                 ty.array_type(len as u32),
                 Some(AddressSpace::Generic),
@@ -797,15 +793,12 @@ impl InnerResolver {
             }
             .into();
             arr_global.set_initializer(&arr);
-
             let val = arr_ty.const_named_struct(&[
                 arr_global.as_pointer_value().const_cast(ty.ptr_type(AddressSpace::Generic)).into(),
                 size_t.const_int(len as u64, false).into(),
             ]);
-
             let global = ctx.module.add_global(arr_ty, Some(AddressSpace::Generic), &id_str);
             global.set_initializer(&val);
-
             Ok(Some(global.as_pointer_value().into()))
         } else if ty_id == self.primitive_ids.tuple {
             let elements: &PyTuple = obj.cast_as()?;
@@ -850,11 +843,9 @@ impl InnerResolver {
             }
         } else {
             let id_str = id.to_string();
-
             if let Some(global) = ctx.module.get_global(&id_str) {
                 return Ok(Some(global.as_pointer_value().into()));
             }
-
             let top_level_defs = ctx.top_level.definitions.read();
             let ty = self
                 .get_obj_type(py, obj, &mut ctx.unifier, &top_level_defs, &ctx.primitives)?

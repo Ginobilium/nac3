@@ -224,7 +224,12 @@ pub fn get_builtins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
             resolver: None,
             codegen_callback: Some(Arc::new(GenCall::new(Box::new(
                 |ctx, obj, _, _, generator| {
-                    let obj_val = obj.unwrap().1.clone().to_basic_value_enum(ctx, generator)?;
+                    let expect_ty = obj.clone().unwrap().0;
+                    let obj_val = obj.unwrap().1.clone().to_basic_value_enum(
+                        ctx,
+                        generator,
+                        expect_ty,
+                    )?;
                     if let BasicValueEnum::PointerValue(ptr) = obj_val {
                         Ok(Some(ctx.builder.build_is_not_null(ptr, "is_some").into()))
                     } else {
@@ -244,7 +249,12 @@ pub fn get_builtins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
             resolver: None,
             codegen_callback: Some(Arc::new(GenCall::new(Box::new(
                 |ctx, obj, _, _, generator| {
-                    let obj_val = obj.unwrap().1.clone().to_basic_value_enum(ctx, generator)?;
+                    let expect_ty = obj.clone().unwrap().0;
+                    let obj_val = obj.unwrap().1.clone().to_basic_value_enum(
+                        ctx,
+                        generator,
+                        expect_ty,
+                    )?;
                     if let BasicValueEnum::PointerValue(ptr) = obj_val {
                         Ok(Some(ctx.builder.build_is_null(ptr, "is_none").into()))
                     } else {
@@ -290,7 +300,7 @@ pub fn get_builtins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
                     let float = ctx.primitives.float;
                     let boolean = ctx.primitives.bool;
                     let arg_ty = fun.0.args[0].ty;
-                    let arg = args[0].1.clone().to_basic_value_enum(ctx, generator)?;
+                    let arg = args[0].1.clone().to_basic_value_enum(ctx, generator, arg_ty)?;
                     Ok(if ctx.unifier.unioned(arg_ty, boolean) {
                         Some(
                             ctx.builder
@@ -355,7 +365,7 @@ pub fn get_builtins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
                     let float = ctx.primitives.float;
                     let boolean = ctx.primitives.bool;
                     let arg_ty = fun.0.args[0].ty;
-                    let arg = args[0].1.clone().to_basic_value_enum(ctx, generator)?;
+                    let arg = args[0].1.clone().to_basic_value_enum(ctx, generator, arg_ty)?;
                     Ok(
                         if ctx.unifier.unioned(arg_ty, boolean)
                             || ctx.unifier.unioned(arg_ty, uint32)
@@ -422,7 +432,7 @@ pub fn get_builtins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
                     let float = ctx.primitives.float;
                     let boolean = ctx.primitives.bool;
                     let arg_ty = fun.0.args[0].ty;
-                    let arg = args[0].1.clone().to_basic_value_enum(ctx, generator)?;
+                    let arg = args[0].1.clone().to_basic_value_enum(ctx, generator, arg_ty)?;
                     let res = if ctx.unifier.unioned(arg_ty, boolean) {
                         ctx.builder
                             .build_int_z_extend(arg.into_int_value(), ctx.ctx.i64_type(), "zext")
@@ -474,7 +484,7 @@ pub fn get_builtins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
                     let float = ctx.primitives.float;
                     let boolean = ctx.primitives.bool;
                     let arg_ty = fun.0.args[0].ty;
-                    let arg = args[0].1.clone().to_basic_value_enum(ctx, generator)?;
+                    let arg = args[0].1.clone().to_basic_value_enum(ctx, generator, arg_ty)?;
                     let res = if ctx.unifier.unioned(arg_ty, int32)
                         || ctx.unifier.unioned(arg_ty, uint32)
                         || ctx.unifier.unioned(arg_ty, boolean)
@@ -521,7 +531,7 @@ pub fn get_builtins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
                     let boolean = ctx.primitives.bool;
                     let float = ctx.primitives.float;
                     let arg_ty = fun.0.args[0].ty;
-                    let arg = args[0].1.clone().to_basic_value_enum(ctx, generator)?;
+                    let arg = args[0].1.clone().to_basic_value_enum(ctx, generator, arg_ty)?;
                     Ok(
                         if ctx.unifier.unioned(arg_ty, boolean)
                             || ctx.unifier.unioned(arg_ty, int32)
@@ -557,7 +567,7 @@ pub fn get_builtins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
             resolver: None,
             codegen_callback: Some(Arc::new(GenCall::new(Box::new(
                 |ctx, _, _, args, generator| {
-                    let arg = args[0].1.clone().to_basic_value_enum(ctx, generator)?;
+                    let arg = args[0].1.clone().to_basic_value_enum(ctx, generator, ctx.primitives.float)?;
                     let round_intrinsic =
                         ctx.module.get_function("llvm.round.f64").unwrap_or_else(|| {
                             let float = ctx.ctx.f64_type();
@@ -597,7 +607,7 @@ pub fn get_builtins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
             resolver: None,
             codegen_callback: Some(Arc::new(GenCall::new(Box::new(
                 |ctx, _, _, args, generator| {
-                    let arg = args[0].1.clone().to_basic_value_enum(ctx, generator)?;
+                    let arg = args[0].1.clone().to_basic_value_enum(ctx, generator, ctx.primitives.float)?;
                     let round_intrinsic =
                         ctx.module.get_function("llvm.round.f64").unwrap_or_else(|| {
                             let float = ctx.ctx.f64_type();
@@ -655,19 +665,20 @@ pub fn get_builtins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
                     let mut step = None;
                     let int32 = ctx.ctx.i32_type();
                     let zero = int32.const_zero();
+                    let ty_i32 = ctx.primitives.int32;
                     for (i, arg) in args.iter().enumerate() {
                         if arg.0 == Some("start".into()) {
-                            start = Some(arg.1.clone().to_basic_value_enum(ctx, generator)?);
+                            start = Some(arg.1.clone().to_basic_value_enum(ctx, generator, ty_i32)?);
                         } else if arg.0 == Some("stop".into()) {
-                            stop = Some(arg.1.clone().to_basic_value_enum(ctx, generator)?);
+                            stop = Some(arg.1.clone().to_basic_value_enum(ctx, generator, ty_i32)?);
                         } else if arg.0 == Some("step".into()) {
-                            step = Some(arg.1.clone().to_basic_value_enum(ctx, generator)?);
+                            step = Some(arg.1.clone().to_basic_value_enum(ctx, generator, ty_i32)?);
                         } else if i == 0 {
-                            start = Some(arg.1.clone().to_basic_value_enum(ctx, generator)?);
+                            start = Some(arg.1.clone().to_basic_value_enum(ctx, generator, ty_i32)?);
                         } else if i == 1 {
-                            stop = Some(arg.1.clone().to_basic_value_enum(ctx, generator)?);
+                            stop = Some(arg.1.clone().to_basic_value_enum(ctx, generator, ty_i32)?);
                         } else if i == 2 {
-                            step = Some(arg.1.clone().to_basic_value_enum(ctx, generator)?);
+                            step = Some(arg.1.clone().to_basic_value_enum(ctx, generator, ty_i32)?);
                         }
                     }
                     let step = match step {
@@ -734,8 +745,9 @@ pub fn get_builtins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
             instance_to_stmt: Default::default(),
             resolver: None,
             codegen_callback: Some(Arc::new(GenCall::new(Box::new(
-                |ctx, _, _, args, generator| {
-                    Ok(Some(args[0].1.clone().to_basic_value_enum(ctx, generator)?))
+                |ctx, _, fun, args, generator| {
+                    let arg_ty = fun.0.args[0].ty;
+                    Ok(Some(args[0].1.clone().to_basic_value_enum(ctx, generator, arg_ty)?))
                 },
             )))),
             loc: None,
@@ -759,7 +771,7 @@ pub fn get_builtins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
                     let float = ctx.primitives.float;
                     let boolean = ctx.primitives.bool;
                     let arg_ty = fun.0.args[0].ty;
-                    let arg = args[0].1.clone().to_basic_value_enum(ctx, generator)?;
+                    let arg = args[0].1.clone().to_basic_value_enum(ctx, generator, arg_ty)?;
                     Ok(if ctx.unifier.unioned(arg_ty, boolean) {
                         Some(arg)
                     } else if ctx.unifier.unioned(arg_ty, int32) {
@@ -817,7 +829,7 @@ pub fn get_builtins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
             resolver: None,
             codegen_callback: Some(Arc::new(GenCall::new(Box::new(
                 |ctx, _, _, args, generator| {
-                    let arg = args[0].1.clone().to_basic_value_enum(ctx, generator)?;
+                    let arg = args[0].1.clone().to_basic_value_enum(ctx, generator, ctx.primitives.float)?;
                     let floor_intrinsic =
                         ctx.module.get_function("llvm.floor.f64").unwrap_or_else(|| {
                             let float = ctx.ctx.f64_type();
@@ -857,7 +869,7 @@ pub fn get_builtins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
             resolver: None,
             codegen_callback: Some(Arc::new(GenCall::new(Box::new(
                 |ctx, _, _, args, generator| {
-                    let arg = args[0].1.clone().to_basic_value_enum(ctx, generator)?;
+                    let arg = args[0].1.clone().to_basic_value_enum(ctx, generator, ctx.primitives.float)?;
                     let floor_intrinsic =
                         ctx.module.get_function("llvm.floor.f64").unwrap_or_else(|| {
                             let float = ctx.ctx.f64_type();
@@ -897,7 +909,7 @@ pub fn get_builtins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
             resolver: None,
             codegen_callback: Some(Arc::new(GenCall::new(Box::new(
                 |ctx, _, _, args, generator| {
-                    let arg = args[0].1.clone().to_basic_value_enum(ctx, generator)?;
+                    let arg = args[0].1.clone().to_basic_value_enum(ctx, generator, ctx.primitives.float)?;
                     let ceil_intrinsic =
                         ctx.module.get_function("llvm.ceil.f64").unwrap_or_else(|| {
                             let float = ctx.ctx.f64_type();
@@ -937,7 +949,7 @@ pub fn get_builtins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
             resolver: None,
             codegen_callback: Some(Arc::new(GenCall::new(Box::new(
                 |ctx, _, _, args, generator| {
-                    let arg = args[0].1.clone().to_basic_value_enum(ctx, generator)?;
+                    let arg = args[0].1.clone().to_basic_value_enum(ctx, generator, ctx.primitives.float)?;
                     let ceil_intrinsic =
                         ctx.module.get_function("llvm.ceil.f64").unwrap_or_else(|| {
                             let float = ctx.ctx.f64_type();
@@ -989,7 +1001,7 @@ pub fn get_builtins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
                     |ctx, _, fun, args, generator| {
                         let range_ty = ctx.primitives.range;
                         let arg_ty = fun.0.args[0].ty;
-                        let arg = args[0].1.clone().to_basic_value_enum(ctx, generator)?;
+                        let arg = args[0].1.clone().to_basic_value_enum(ctx, generator, arg_ty)?;
                         Ok(if ctx.unifier.unioned(arg_ty, range_ty) {
                             let arg = arg.into_pointer_value();
                             let (start, end, step) = destructure_range(ctx, arg);
@@ -1043,8 +1055,8 @@ pub fn get_builtins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
                     let llvm_f64 = ctx.ctx.f64_type().as_basic_type_enum();
                     let m_ty = fun.0.args[0].ty;
                     let n_ty = fun.0.args[1].ty;
-                    let m_val = args[0].1.clone().to_basic_value_enum(ctx, generator)?;
-                    let n_val = args[1].1.clone().to_basic_value_enum(ctx, generator)?;
+                    let m_val = args[0].1.clone().to_basic_value_enum(ctx, generator, m_ty)?;
+                    let n_val = args[1].1.clone().to_basic_value_enum(ctx, generator, n_ty)?;
                     let mut is_type = |a: Type, b: Type| ctx.unifier.unioned(a, b);
                     let (fun_name, arg_ty) = if is_type(m_ty, n_ty) && is_type(n_ty, boolean) {
                         ("llvm.umin.i1", llvm_i1)
@@ -1105,8 +1117,8 @@ pub fn get_builtins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
                     let llvm_f64 = ctx.ctx.f64_type().as_basic_type_enum();
                     let m_ty = fun.0.args[0].ty;
                     let n_ty = fun.0.args[1].ty;
-                    let m_val = args[0].1.clone().to_basic_value_enum(ctx, generator)?;
-                    let n_val = args[1].1.clone().to_basic_value_enum(ctx, generator)?;
+                    let m_val = args[0].1.clone().to_basic_value_enum(ctx, generator, m_ty)?;
+                    let n_val = args[1].1.clone().to_basic_value_enum(ctx, generator, n_ty)?;
                     let mut is_type = |a: Type, b: Type| ctx.unifier.unioned(a, b);
                     let (fun_name, arg_ty) = if is_type(m_ty, n_ty) && is_type(n_ty, boolean) {
                         ("llvm.umax.i1", llvm_i1)
@@ -1163,7 +1175,7 @@ pub fn get_builtins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
                     let llvm_i64 = ctx.ctx.i64_type().as_basic_type_enum();
                     let llvm_f64 = ctx.ctx.f64_type().as_basic_type_enum();
                     let n_ty = fun.0.args[0].ty;
-                    let n_val = args[0].1.clone().to_basic_value_enum(ctx, generator)?;
+                    let n_val = args[0].1.clone().to_basic_value_enum(ctx, generator, n_ty)?;
                     let mut is_type = |a: Type, b: Type| ctx.unifier.unioned(a, b);
                     let mut is_float = false;
                     let (fun_name, arg_ty) =
@@ -1220,8 +1232,9 @@ pub fn get_builtins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
             instance_to_stmt: Default::default(),
             resolver: None,
             codegen_callback: Some(Arc::new(GenCall::new(Box::new(
-                |ctx, _, _fun, args, generator| {
-                    let arg_val = args[0].1.clone().to_basic_value_enum(ctx, generator)?;
+                |ctx, _, fun, args, generator| {
+                    let arg_ty = fun.0.args[0].ty;
+                    let arg_val = args[0].1.clone().to_basic_value_enum(ctx, generator, arg_ty)?;
                     let alloca = ctx.builder.build_alloca(arg_val.get_type(), "alloca_some");
                     ctx.builder.build_store(alloca, arg_val);
                     Ok(Some(alloca.into()))

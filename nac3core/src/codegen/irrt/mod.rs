@@ -183,7 +183,7 @@ pub fn handle_slice_indices<'a, 'ctx, G: CodeGenerator>(
             let step = generator
                 .gen_expr(ctx, step)?
                 .unwrap()
-                .to_basic_value_enum(ctx, generator)?
+                .to_basic_value_enum(ctx, generator, ctx.primitives.int32)?
                 .into_int_value();
             // assert step != 0, throw exception if not
             let not_zero = ctx.builder.build_int_compare(
@@ -261,7 +261,7 @@ pub fn handle_slice_index_bound<'a, 'ctx, G: CodeGenerator>(
         ctx.module.add_function(SYMBOL, fn_t, None)
     });
 
-    let i = generator.gen_expr(ctx, i)?.unwrap().to_basic_value_enum(ctx, generator)?;
+    let i = generator.gen_expr(ctx, i)?.unwrap().to_basic_value_enum(ctx, generator, i.custom.unwrap())?;
     Ok(ctx
         .builder
         .build_call(func, &[i.into(), length.into()], "bounded_ind")
