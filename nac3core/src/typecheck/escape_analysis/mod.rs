@@ -1,45 +1,46 @@
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 
-use nac3parser::ast::{Constant, Expr, ExprKind, Stmt, StmtKind, StrRef};
+use itertools::chain;
+use nac3parser::ast::{Comprehension, Constant, Expr, ExprKind, Location, Stmt, StmtKind, StrRef};
+
+use lifetime::{BasicBlockId, LifetimeIR, LifetimeIRBuilder, LifetimeId, LifetimeKind};
 
 use crate::{
     symbol_resolver::SymbolResolver,
     toplevel::{TopLevelContext, TopLevelDef},
 };
 
-use self::lifetime::{BlockLifetimeContext, Lifetime, LifetimeTable};
-
 use super::{
     type_inferencer::PrimitiveStore,
     typedef::{Type, TypeEnum, Unifier},
 };
 
-pub mod lifetime;
-
 #[cfg(test)]
 mod test;
 
-struct LifetimeContext<'a> {
-    variable_mapping: HashMap<StrRef, (Lifetime, bool)>,
-    scope_ctx: BlockLifetimeContext,
-    lifetime_table: LifetimeTable,
-    primitive_store: &'a PrimitiveStore,
+mod lifetime;
+
+pub struct EscapeAnalyzer<'a> {
+    builder: LifetimeIRBuilder,
+    loop_head: Option<BasicBlockId>,
+    loop_tail: Option<BasicBlockId>,
     unifier: &'a mut Unifier,
+    primitive_store: &'a PrimitiveStore,
     resolver: Arc<dyn SymbolResolver + Send + Sync>,
     top_level: &'a TopLevelContext,
 }
 
-impl<'a> LifetimeContext<'a> {
+impl<'a> EscapeAnalyzer<'a> {
     pub fn new(
         unifier: &'a mut Unifier,
         primitive_store: &'a PrimitiveStore,
         resolver: Arc<dyn SymbolResolver + Send + Sync>,
         top_level: &'a TopLevelContext,
-    ) -> LifetimeContext<'a> {
-        LifetimeContext {
-            variable_mapping: HashMap::new(),
-            scope_ctx: BlockLifetimeContext::new(),
-            lifetime_table: LifetimeTable::new(),
+    ) -> Self {
+        Self {
+            builder: LifetimeIRBuilder::new(),
+            loop_head: None,
+            loop_tail: None,
             primitive_store,
             unifier,
             resolver,
@@ -47,272 +48,305 @@ impl<'a> LifetimeContext<'a> {
         }
     }
 
-    fn get_expr_lifetime(
-        &mut self,
-        expr: &Expr<Option<Type>>,
-    ) -> Result<Option<(Lifetime, bool)>, String> {
-        let ty = expr.custom.unwrap();
-        let is_primitive = self.unifier.unioned(ty, self.primitive_store.int32)
+    pub fn check_function_lifetime(
+        unifier: &'a mut Unifier,
+        primitive_store: &'a PrimitiveStore,
+        resolver: Arc<dyn SymbolResolver + Send + Sync>,
+        top_level: &'a TopLevelContext,
+        args: &[(StrRef, Type)],
+        body: &[Stmt<Option<Type>>],
+        loc: Location,
+    ) -> Result<(), String> {
+        use LifetimeIR::{CreateLifetime, VarAssign};
+        let mut zelf = Self::new(unifier, primitive_store, resolver, top_level);
+        let nonlocal_lifetime =
+            zelf.builder.append_ir(CreateLifetime { kind: LifetimeKind::NonLocal }, loc);
+        for (name, ty) in args.iter().copied() {
+            if zelf.need_alloca(ty) {
+                zelf.builder.append_ir(VarAssign { var: name, lifetime: nonlocal_lifetime }, loc);
+            }
+        }
+        zelf.handle_statements(body)?;
+        zelf.builder.analyze()
+    }
+
+    fn need_alloca(&mut self, ty: Type) -> bool {
+        !(self.unifier.unioned(ty, self.primitive_store.int32)
             || self.unifier.unioned(ty, self.primitive_store.int64)
             || self.unifier.unioned(ty, self.primitive_store.uint32)
             || self.unifier.unioned(ty, self.primitive_store.uint64)
             || self.unifier.unioned(ty, self.primitive_store.float)
             || self.unifier.unioned(ty, self.primitive_store.bool)
             || self.unifier.unioned(ty, self.primitive_store.none)
-            || self.unifier.unioned(ty, self.primitive_store.range);
+            || self.unifier.unioned(ty, self.primitive_store.range))
+    }
 
+    fn is_terminated(&self) -> bool {
+        self.builder.is_terminated(self.builder.get_current_block())
+    }
+
+    fn handle_unknown_function_call<P: std::borrow::Borrow<Expr<Option<Type>>>>(
+        &mut self,
+        params: &[P],
+        ret_need_alloca: bool,
+        loc: Location,
+    ) -> Result<Option<LifetimeId>, String> {
+        let param_lifetimes = params
+            .iter()
+            .filter_map(|p| self.handle_expr(p.borrow()).transpose())
+            .collect::<Result<Vec<_>, _>>()?;
+        self.builder.append_ir(LifetimeIR::PassedToFunc { param_lifetimes }, loc);
+        if ret_need_alloca {
+            Ok(Some(
+                self.builder
+                    .append_ir(LifetimeIR::CreateLifetime { kind: LifetimeKind::Unknown }, loc),
+            ))
+        } else {
+            Ok(None)
+        }
+    }
+
+    fn handle_expr(&mut self, expr: &Expr<Option<Type>>) -> Result<Option<LifetimeId>, String> {
+        use LifetimeIR::*;
+        use LifetimeKind::*;
+        let need_alloca = self.need_alloca(expr.custom.unwrap());
+        let loc = expr.location;
         Ok(match &expr.node {
             ExprKind::Name { id, .. } => {
-                if let Some(lifetime) = self.variable_mapping.get(id) {
-                    Some(*lifetime)
+                if need_alloca {
+                    Some(self.builder.append_ir(VarAccess { var: *id }, loc))
                 } else {
-                    if is_primitive {
-                        None
-                    } else {
-                        let lifetime =
-                            self.lifetime_table.add_lifetime(lifetime::LifetimeKind::Global);
-                        self.variable_mapping.insert(id.clone(), (lifetime, false));
-                        Some((lifetime, false))
-                    }
+                    None
                 }
             }
             ExprKind::Attribute { value, attr, .. } => {
-                if is_primitive {
-                    self.get_expr_lifetime(value)?;
-                    None
+                if need_alloca {
+                    let val = self.handle_expr(value)?.unwrap();
+                    Some(self.builder.append_ir(FieldAccess { obj: val, field: *attr }, loc))
                 } else {
-                    self.get_expr_lifetime(value)?.map(|lifetime| {
-                        (
-                            self.lifetime_table.get_field_lifetime(
-                                lifetime.0,
-                                *attr,
-                                &mut self.scope_ctx,
-                            ),
-                            false, // not sure if it is strong update for now...
-                        )
-                    })
+                    self.handle_expr(value)?;
+                    None
                 }
             }
             ExprKind::Constant { .. } => {
-                if is_primitive {
-                    None
+                if need_alloca {
+                    Some(self.builder.append_ir(CreateLifetime { kind: Static }, loc))
                 } else {
-                    Some((self.lifetime_table.add_lifetime(lifetime::LifetimeKind::Global), false))
+                    None
                 }
             }
             ExprKind::List { elts, .. } => {
                 let elems =
-                    elts.iter()
-                        .map(|expr| self.get_expr_lifetime(expr))
-                        .collect::<Result<Vec<_>, _>>()?;
-                let elem = elems.into_iter().reduce(|prev, next| {
-                    if prev.is_some() {
-                        self.lifetime_table.unify(
-                            prev.unwrap().0,
-                            next.unwrap().0,
-                            &mut self.scope_ctx,
+                    elts.iter().map(|e| self.handle_expr(e)).collect::<Result<Vec<_>, _>>()?;
+                let list_lifetime =
+                    self.builder.append_ir(CreateLifetime { kind: PreciseLocal }, loc);
+                if !elems.is_empty() {
+                    if elems[0].is_some() {
+                        let elems = elems.into_iter().map(|e| e.unwrap()).collect::<Vec<_>>();
+                        let elem_lifetime =
+                            self.builder.append_ir(UnifyLifetimes { lifetimes: elems }, loc);
+                        self.builder.append_ir(
+                            FieldAssign {
+                                obj: list_lifetime,
+                                field: "$elem".into(),
+                                new: elem_lifetime,
+                            },
+                            loc,
                         );
                     }
-                    prev
-                });
-                let list_lifetime = self.lifetime_table.add_lifetime(lifetime::LifetimeKind::Local);
-
-                if let Some(Some(elem)) = elem {
-                    self.lifetime_table
-                        .set_field_lifetime(
-                            list_lifetime,
-                            "elem".into(),
-                            elem.0,
-                            true,
-                            &mut self.scope_ctx,
-                        )
-                        .unwrap();
+                } else {
+                    let elem_lifetime =
+                        self.builder.append_ir(CreateLifetime { kind: PreciseLocal }, loc);
+                    self.builder.append_ir(
+                        FieldAssign {
+                            obj: list_lifetime,
+                            field: "$elem".into(),
+                            new: elem_lifetime,
+                        },
+                        loc,
+                    );
                 }
-                Some((list_lifetime, true))
-            }
-            ExprKind::Subscript { value, slice, .. } => {
-                // value must be a list, so lifetime cannot be None
-                let (value_lifetime, _) = self.get_expr_lifetime(value)?.unwrap();
-                match &slice.node {
-                    ExprKind::Slice { lower, upper, step } => {
-                        for expr in [lower, upper, step].iter().filter_map(|x| x.as_ref()) {
-                            // account for side effects when computing the slice
-                            self.get_expr_lifetime(expr)?;
-                        }
-                        Some((
-                            self.lifetime_table.add_lifetime(lifetime::LifetimeKind::Local),
-                            true,
-                        ))
-                    }
-                    ExprKind::Constant { value: Constant::Int(v), .. } => {
-                        if is_primitive {
-                            None
-                        } else if let TypeEnum::TList { .. } =
-                            &*self.unifier.get_ty(value.custom.unwrap())
-                        {
-                            Some((
-                                self.lifetime_table.get_field_lifetime(
-                                    value_lifetime,
-                                    "elem".into(),
-                                    &mut self.scope_ctx,
-                                ),
-                                false,
-                            ))
-                        } else {
-                            // tuple
-                            Some((
-                                self.lifetime_table.get_field_lifetime(
-                                    value_lifetime,
-                                    format!("elem{}", v).into(),
-                                    &mut self.scope_ctx,
-                                ),
-                                false,
-                            ))
-                        }
-                    }
-                    _ => {
-                        // account for side effects when computing the index
-                        self.get_expr_lifetime(slice)?;
-                        if is_primitive {
-                            None
-                        } else {
-                            Some((
-                                self.lifetime_table.get_field_lifetime(
-                                    value_lifetime,
-                                    "elem".into(),
-                                    &mut self.scope_ctx,
-                                ),
-                                false,
-                            ))
-                        }
-                    }
-                }
+                Some(list_lifetime)
             }
             ExprKind::Tuple { elts, .. } => {
                 let elems =
-                    elts.iter()
-                        .map(|expr| self.get_expr_lifetime(expr))
-                        .collect::<Result<Vec<_>, _>>()?;
+                    elts.iter().map(|e| self.handle_expr(e)).collect::<Result<Vec<_>, _>>()?;
                 let tuple_lifetime =
-                    self.lifetime_table.add_lifetime(lifetime::LifetimeKind::Local);
+                    self.builder.append_ir(CreateLifetime { kind: PreciseLocal }, loc);
                 for (i, lifetime) in elems.into_iter().enumerate() {
-                    if let Some((lifetime, _)) = lifetime {
-                        self.lifetime_table
-                            .set_field_lifetime(
-                                tuple_lifetime,
-                                format!("elem{}", i).into(),
-                                lifetime,
-                                true,
-                                &mut self.scope_ctx,
-                            )
-                            .unwrap();
+                    if let Some(lifetime) = lifetime {
+                        self.builder.append_ir(
+                            FieldAssign {
+                                obj: tuple_lifetime,
+                                field: format!("$elem{}", i).into(),
+                                new: lifetime,
+                            },
+                            loc,
+                        );
                     }
                 }
-                Some((tuple_lifetime, true))
+                Some(tuple_lifetime)
+            }
+            ExprKind::Subscript { value, slice, .. } => {
+                let value_lifetime = self.handle_expr(value)?.unwrap();
+                match &slice.node {
+                    ExprKind::Slice { lower, upper, step } => {
+                        for expr in [lower, upper, step].iter().filter_map(|x| x.as_ref()) {
+                            self.handle_expr(expr)?;
+                        }
+                        let slice_lifetime =
+                            self.builder.append_ir(CreateLifetime { kind: PreciseLocal }, loc);
+                        let slice_elem = self.builder.append_ir(
+                            FieldAccess { obj: value_lifetime, field: "$elem".into() },
+                            loc,
+                        );
+                        self.builder.append_ir(
+                            FieldAssign {
+                                obj: slice_lifetime,
+                                field: "$elem".into(),
+                                new: slice_elem,
+                            },
+                            loc,
+                        );
+                        Some(slice_lifetime)
+                    }
+                    ExprKind::Constant { value: Constant::Int(v), .. }
+                        if matches!(
+                            &*self.unifier.get_ty(value.custom.unwrap()),
+                            TypeEnum::TTuple { .. }
+                        ) =>
+                    {
+                        Some(self.builder.append_ir(
+                            FieldAccess {
+                                obj: value_lifetime,
+                                field: format!("$elem{}", v).into(),
+                            },
+                            loc,
+                        ))
+                    }
+                    _ => {
+                        self.handle_expr(slice)?;
+                        if need_alloca {
+                            Some(self.builder.append_ir(
+                                FieldAccess { obj: value_lifetime, field: "$elem".into() },
+                                loc,
+                            ))
+                        } else {
+                            None
+                        }
+                    }
+                }
             }
             ExprKind::Call { func, args, keywords } => {
-                let mut lifetimes = Vec::new();
-                for arg in args.iter() {
-                    if let Some(lifetime) = self.get_expr_lifetime(arg)? {
-                        lifetimes.push(lifetime.0);
-                    }
-                }
-                for keyword in keywords.iter() {
-                    if let Some(lifetime) = self.get_expr_lifetime(&keyword.node.value)? {
-                        lifetimes.push(lifetime.0);
+                let mut lifetimes = vec![];
+                for arg in chain!(args.iter(), keywords.iter().map(|k| k.node.value.as_ref())) {
+                    if let Some(lifetime) = self.handle_expr(arg)? {
+                        lifetimes.push(lifetime);
                     }
                 }
                 match &func.node {
                     ExprKind::Name { id, .. } => {
-                        for lifetime in lifetimes.into_iter() {
-                            self.lifetime_table.set_function_params(lifetime, &mut self.scope_ctx);
-                        }
-                        if is_primitive {
-                            None
-                        } else {
+                        self.builder.append_ir(PassedToFunc { param_lifetimes: lifetimes }, loc);
+                        if need_alloca {
                             let id = self
                                 .resolver
                                 .get_identifier_def(*id)
                                 .map_err(|e| format!("{} (at {})", e, func.location))?;
-                            // constructors
                             if let TopLevelDef::Class { .. } =
                                 &*self.top_level.definitions.read()[id.0].read()
                             {
-                                Some((
-                                    self.lifetime_table.add_lifetime(lifetime::LifetimeKind::Local),
-                                    true,
-                                ))
+                                Some(
+                                    self.builder
+                                        .append_ir(CreateLifetime { kind: PreciseLocal }, loc),
+                                )
                             } else {
-                                Some((self.lifetime_table.get_unknown_lifetime(), false))
+                                Some(self.builder.append_ir(CreateLifetime { kind: Unknown }, loc))
                             }
+                        } else {
+                            None
                         }
                     }
                     ExprKind::Attribute { value, .. } => {
-                        if let Some(lifetime) = self.get_expr_lifetime(value)? {
-                            lifetimes.push(lifetime.0);
-                        }
-                        for lifetime in lifetimes.into_iter() {
-                            self.lifetime_table.set_function_params(lifetime, &mut self.scope_ctx);
-                        }
-                        if is_primitive {
-                            None
+                        let obj_lifetime = self.handle_expr(value)?.unwrap();
+                        lifetimes.push(obj_lifetime);
+                        self.builder.append_ir(PassedToFunc { param_lifetimes: lifetimes }, loc);
+                        if need_alloca {
+                            Some(self.builder.append_ir(CreateLifetime { kind: Unknown }, loc))
                         } else {
-                            Some((self.lifetime_table.get_unknown_lifetime(), false))
+                            None
                         }
                     }
                     _ => unimplemented!(),
                 }
             }
-            ExprKind::BinOp { left, right, .. } => {
-                let mut lifetimes = Vec::new();
-                if let Some(l) = self.get_expr_lifetime(left)? {
-                    lifetimes.push(l.0);
-                }
-                if let Some(l) = self.get_expr_lifetime(right)? {
-                    lifetimes.push(l.0);
-                }
-                for lifetime in lifetimes.into_iter() {
-                    self.lifetime_table.set_function_params(lifetime, &mut self.scope_ctx);
-                }
-                if is_primitive {
-                    None
-                } else {
-                    Some((self.lifetime_table.get_unknown_lifetime(), false))
-                }
-            }
+            ExprKind::BinOp { left, right, .. } => self.handle_unknown_function_call(
+                &[left.as_ref(), right.as_ref()],
+                need_alloca,
+                loc,
+            )?,
             ExprKind::BoolOp { values, .. } => {
-                for v in values {
-                    self.get_expr_lifetime(v)?;
-                }
-                None
+                self.handle_unknown_function_call(&values, need_alloca, loc)?
             }
             ExprKind::UnaryOp { operand, .. } => {
-                if let Some(l) = self.get_expr_lifetime(operand)? {
-                    self.lifetime_table.set_function_params(l.0, &mut self.scope_ctx);
-                }
-                if is_primitive {
-                    None
-                } else {
-                    Some((self.lifetime_table.get_unknown_lifetime(), false))
-                }
+                self.handle_unknown_function_call(&[operand.as_ref()], need_alloca, loc)?
             }
             ExprKind::Compare { left, comparators, .. } => {
-                let mut lifetimes = Vec::new();
-                if let Some(l) = self.get_expr_lifetime(left)? {
-                    lifetimes.push(l.0);
-                }
-                for c in comparators {
-                    if let Some(l) = self.get_expr_lifetime(c)? {
-                        lifetimes.push(l.0);
-                    }
-                }
-                for lifetime in lifetimes.into_iter() {
-                    self.lifetime_table.set_function_params(lifetime, &mut self.scope_ctx);
-                }
-                // compare should give bool output, which does not have lifetime
-                None
+                self.handle_unknown_function_call(&[left.as_ref()], false, loc)?;
+                self.handle_unknown_function_call(&comparators, need_alloca, loc)?
             }
-            // TODO: listcomp, ifexpr
+            ExprKind::IfExp { test, body, orelse } => {
+                self.handle_expr(test)?;
+                let body_bb = self.builder.append_block();
+                let else_bb = self.builder.append_block();
+                let tail_bb = self.builder.append_block();
+                self.builder.append_ir(Branch { targets: vec![body_bb, else_bb] }, test.location);
+                self.builder.position_at_end(body_bb);
+                let body_lifetime = self.handle_expr(body)?;
+                self.builder.append_ir(Branch { targets: vec![tail_bb] }, body.location);
+                self.builder.position_at_end(else_bb);
+                let else_lifetime = self.handle_expr(body)?;
+                self.builder.append_ir(Branch { targets: vec![tail_bb] }, orelse.location);
+                self.builder.position_at_end(tail_bb);
+                if let (Some(body_lifetime), Some(else_lifetime)) = (body_lifetime, else_lifetime) {
+                    Some(self.builder.append_ir(
+                        UnifyLifetimes { lifetimes: vec![body_lifetime, else_lifetime] },
+                        loc,
+                    ))
+                } else {
+                    None
+                }
+            }
+            ExprKind::ListComp { elt, generators } => {
+                let Comprehension { target, iter, ifs, .. } = &generators[0];
+                let list_lifetime =
+                    self.builder.append_ir(CreateLifetime { kind: PreciseLocal }, loc);
+                let iter_elem_lifetime = self.handle_expr(iter)?.map(|obj| {
+                    self.builder
+                        .append_ir(FieldAccess { obj, field: "$elem".into() }, iter.location)
+                });
+                let loop_body = self.builder.append_block();
+                let loop_tail = self.builder.append_block();
+                self.builder.append_ir(Branch { targets: vec![loop_body] }, loc);
+                self.builder.position_at_end(loop_body);
+                self.handle_assignment(target, iter_elem_lifetime)?;
+                for ifexpr in ifs.iter() {
+                    self.handle_expr(ifexpr)?;
+                }
+                let elem_lifetime = self.handle_expr(elt)?;
+                if let Some(elem_lifetime) = elem_lifetime {
+                    self.builder.append_ir(
+                        FieldAssign {
+                            obj: list_lifetime,
+                            field: "$elem".into(),
+                            new: elem_lifetime,
+                        },
+                        elt.location,
+                    );
+                }
+                self.builder.append_ir(Branch { targets: vec![loop_body, loop_tail] }, loc);
+                self.builder.position_at_end(loop_tail);
+                Some(list_lifetime)
+            }
             _ => unimplemented!(),
         })
     }
@@ -320,65 +354,63 @@ impl<'a> LifetimeContext<'a> {
     fn handle_assignment(
         &mut self,
         lhs: &Expr<Option<Type>>,
-        rhs_lifetime: Option<(Lifetime, bool)>,
+        rhs_lifetime: Option<LifetimeId>,
     ) -> Result<(), String> {
+        use LifetimeIR::*;
         match &lhs.node {
             ExprKind::Attribute { value, attr, .. } => {
-                let (lhs_lifetime, is_strong_update) = self.get_expr_lifetime(value)?.unwrap();
-                if let Some((lifetime, _)) = rhs_lifetime {
-                    self.lifetime_table
-                        .set_field_lifetime(
-                            lhs_lifetime,
-                            *attr,
-                            lifetime,
-                            is_strong_update,
-                            &mut self.scope_ctx,
-                        )
-                        .map_err(|_| format!("illegal field assignment in {}", lhs.location))?;
+                let value_lifetime = self.handle_expr(value)?.unwrap();
+                if let Some(field_lifetime) = rhs_lifetime {
+                    self.builder.append_ir(
+                        FieldAssign { obj: value_lifetime, field: *attr, new: field_lifetime },
+                        lhs.location,
+                    );
                 }
             }
             ExprKind::Subscript { value, slice, .. } => {
-                let (list_lifetime, _) = self.get_expr_lifetime(value)?.unwrap();
+                let value_lifetime = self.handle_expr(value)?.unwrap();
                 let elem_lifetime = if let ExprKind::Slice { lower, upper, step } = &slice.node {
-                    // compute side effects
                     for expr in [lower, upper, step].iter().filter_map(|x| x.as_ref()) {
-                        // account for side effects when computing the slice
-                        self.get_expr_lifetime(expr)?;
+                        self.handle_expr(expr)?;
                     }
-                    // slice assignment will copy elements from rhs to lhs
-                    self.lifetime_table.get_field_lifetime(
-                        rhs_lifetime.unwrap().0,
-                        "elem".into(),
-                        &mut self.scope_ctx,
-                    )
+                    if let Some(rhs_lifetime) = rhs_lifetime {
+                        // must be a list
+                        Some(self.builder.append_ir(
+                            FieldAccess { obj: rhs_lifetime, field: "$elem".into() },
+                            lhs.location,
+                        ))
+                    } else {
+                        None
+                    }
                 } else {
-                    // must be list element, as assignment to tuple element is prohibited
-                    self.get_expr_lifetime(slice)?;
-                    rhs_lifetime.unwrap().0
+                    self.handle_expr(slice)?;
+                    rhs_lifetime
                 };
-                self.lifetime_table
-                    .set_field_lifetime(
-                        list_lifetime,
-                        "elem".into(),
-                        elem_lifetime,
-                        false,
-                        &mut self.scope_ctx,
-                    )
-                    .map_err(|_| format!("illegal element assignment in {}", lhs.location))?;
+                // must be a list
+                if let Some(elem_lifetime) = elem_lifetime {
+                    self.builder.append_ir(
+                        FieldAssign {
+                            obj: value_lifetime,
+                            field: "$elem".into(),
+                            new: elem_lifetime,
+                        },
+                        lhs.location,
+                    );
+                }
             }
             ExprKind::Name { id, .. } => {
                 if let Some(lifetime) = rhs_lifetime {
-                    self.variable_mapping.insert(*id, lifetime);
+                    self.builder.append_ir(VarAssign { var: *id, lifetime }, lhs.location);
                 }
             }
             ExprKind::Tuple { elts, .. } => {
+                let rhs_lifetime = rhs_lifetime.unwrap();
                 for (i, e) in elts.iter().enumerate() {
-                    let elem_lifetime = self.lifetime_table.get_field_lifetime(
-                        rhs_lifetime.unwrap().0,
-                        format!("elem{}", i).into(),
-                        &mut self.scope_ctx,
+                    let elem_lifetime = self.builder.append_ir(
+                        FieldAccess { obj: rhs_lifetime, field: format!("$elem{}", i).into() },
+                        e.location,
                     );
-                    self.handle_assignment(e, Some((elem_lifetime, false)))?;
+                    self.handle_assignment(e, Some(elem_lifetime))?;
                 }
             }
             _ => unreachable!(),
@@ -386,18 +418,151 @@ impl<'a> LifetimeContext<'a> {
         Ok(())
     }
 
-    pub fn handle_statement(&mut self, stmt: &Stmt<Option<Type>>) -> Result<(), String> {
+    fn handle_statement(&mut self, stmt: &Stmt<Option<Type>>) -> Result<(), String> {
+        use LifetimeIR::*;
         match &stmt.node {
             StmtKind::Expr { value, .. } => {
-                self.get_expr_lifetime(value)?;
+                self.handle_expr(value)?;
             }
             StmtKind::Assign { targets, value, .. } => {
-                let rhs_lifetime = self.get_expr_lifetime(value)?;
-                for target in targets.iter() {
+                let rhs_lifetime = self.handle_expr(value)?;
+                for target in targets {
                     self.handle_assignment(target, rhs_lifetime)?;
                 }
             }
-            _ => unimplemented!(),
+            StmtKind::If { test, body, orelse, .. } => {
+                // test should return bool
+                self.handle_expr(test)?;
+                let body_bb = self.builder.append_block();
+                let else_bb = self.builder.append_block();
+                self.builder.append_ir(Branch { targets: vec![body_bb, else_bb] }, stmt.location);
+                self.builder.position_at_end(body_bb);
+                self.handle_statements(&body)?;
+                let body_terminated = self.is_terminated();
+                if orelse.is_empty() {
+                    if !body_terminated {
+                        // else_bb is the basic block after this if statement
+                        self.builder.append_ir(Branch { targets: vec![else_bb] }, stmt.location);
+                        self.builder.position_at_end(else_bb);
+                    }
+                } else {
+                    let tail_bb = self.builder.append_block();
+                    if !body_terminated {
+                        self.builder.append_ir(Branch { targets: vec![tail_bb] }, stmt.location);
+                    }
+                    self.builder.position_at_end(else_bb);
+                    self.handle_statements(&orelse)?;
+                    if !self.is_terminated() {
+                        self.builder.append_ir(Branch { targets: vec![tail_bb] }, stmt.location);
+                    }
+                    self.builder.position_at_end(tail_bb);
+                }
+            }
+            StmtKind::While { test, body, orelse, .. } => {
+                let old_loop_head = self.loop_head;
+                let old_loop_tail = self.loop_tail;
+                let loop_head = self.builder.append_block();
+                let loop_body = self.builder.append_block();
+                let loop_else =
+                    if orelse.is_empty() { None } else { Some(self.builder.append_block()) };
+                let loop_tail = self.builder.append_block();
+                self.loop_head = Some(loop_head);
+                self.loop_tail = Some(loop_tail);
+                self.builder.append_ir(Branch { targets: vec![loop_head] }, stmt.location);
+                self.builder.position_at_end(loop_head);
+                self.handle_expr(test)?;
+                self.builder.append_ir(
+                    Branch { targets: vec![loop_body, loop_else.unwrap_or(loop_tail)] },
+                    stmt.location,
+                );
+                self.builder.position_at_end(loop_body);
+                self.handle_statements(&body)?;
+                if !self.is_terminated() {
+                    self.builder.append_ir(Branch { targets: vec![loop_head] }, stmt.location);
+                }
+
+                self.loop_head = old_loop_head;
+                self.loop_tail = old_loop_tail;
+                if let Some(loop_else) = loop_else {
+                    self.builder.position_at_end(loop_else);
+                    self.handle_statements(&orelse)?;
+                    if !self.is_terminated() {
+                        self.builder.append_ir(Branch { targets: vec![loop_tail] }, stmt.location);
+                    }
+                }
+                self.builder.position_at_end(loop_tail);
+            }
+            StmtKind::For { target, iter, body, orelse, .. } => {
+                let old_loop_head = self.loop_head;
+                let old_loop_tail = self.loop_tail;
+                let loop_head = self.builder.append_block();
+                let loop_body = self.builder.append_block();
+                let loop_else =
+                    if orelse.is_empty() { None } else { Some(self.builder.append_block()) };
+                let loop_tail = self.builder.append_block();
+                self.loop_head = Some(loop_head);
+                self.loop_tail = Some(loop_tail);
+                let iter_lifetime = self.handle_expr(iter)?.map(|obj| {
+                    self.builder
+                        .append_ir(FieldAccess { obj, field: "$elem".into() }, iter.location)
+                });
+                self.builder.append_ir(Branch { targets: vec![loop_head] }, stmt.location);
+                self.builder.position_at_end(loop_head);
+                if let Some(iter_lifetime) = iter_lifetime {
+                    self.handle_assignment(target, Some(iter_lifetime))?;
+                }
+                self.builder.append_ir(
+                    Branch { targets: vec![loop_body, loop_else.unwrap_or(loop_tail)] },
+                    stmt.location,
+                );
+                self.builder.position_at_end(loop_body);
+                self.handle_statements(&body)?;
+                if !self.is_terminated() {
+                    self.builder.append_ir(Branch { targets: vec![loop_head] }, stmt.location);
+                }
+
+                self.loop_head = old_loop_head;
+                self.loop_tail = old_loop_tail;
+                if let Some(loop_else) = loop_else {
+                    self.builder.position_at_end(loop_else);
+                    self.handle_statements(&orelse)?;
+                    if !self.is_terminated() {
+                        self.builder.append_ir(Branch { targets: vec![loop_tail] }, stmt.location);
+                    }
+                }
+                self.builder.position_at_end(loop_tail);
+            }
+
+            StmtKind::Continue { .. } => {
+                if let Some(loop_head) = self.loop_head {
+                    self.builder.append_ir(Branch { targets: vec![loop_head] }, stmt.location);
+                } else {
+                    return Err(format!("break outside loop"));
+                }
+            }
+            StmtKind::Break { .. } => {
+                if let Some(loop_tail) = self.loop_tail {
+                    self.builder.append_ir(Branch { targets: vec![loop_tail] }, stmt.location);
+                } else {
+                    return Err(format!("break outside loop"));
+                }
+            }
+            StmtKind::Return { value, .. } => {
+                let val = if let Some(value) = value { self.handle_expr(value)? } else { None };
+                self.builder.append_ir(Return { val }, stmt.location);
+            }
+            StmtKind::Pass { .. } => {}
+            _ => unimplemented!("{:?}", stmt.node),
+        }
+        Ok(())
+    }
+
+    fn handle_statements(&mut self, stmts: &[Stmt<Option<Type>>]) -> Result<(), String> {
+        for stmt in stmts.iter() {
+            if self.builder.is_terminated(self.builder.get_current_block()) {
+                break;
+            }
+            self.handle_statement(stmt)?;
         }
         Ok(())
     }

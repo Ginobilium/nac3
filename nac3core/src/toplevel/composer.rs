@@ -4,7 +4,7 @@ use std::rc::Rc;
 use crate::{
     codegen::{expr::get_subst_key, stmt::exn_constructor},
     symbol_resolver::SymbolValue,
-    typecheck::type_inferencer::{FunctionData, Inferencer},
+    typecheck::{type_inferencer::{FunctionData, Inferencer}, escape_analysis::EscapeAnalyzer},
 };
 
 use super::*;
@@ -1792,6 +1792,7 @@ impl TopLevelComposer {
                             result
                         };
                         let mut calls: HashMap<CodeLocation, CallId> = HashMap::new();
+                        let mut args = vec![];
                         let mut inferencer = Inferencer {
                             top_level: ctx.as_ref(),
                             defined_identifiers: identifiers.clone(),
@@ -1812,6 +1813,7 @@ impl TopLevelComposer {
                                     result.insert("self".into(), self_ty);
                                 }
                                 result.extend(inst_args.iter().map(|x| (x.name, x.ty)));
+                                args.extend(result.iter().map(|(&a, &b)| (a, b)));
                                 result
                             },
                             primitives: primitives_ty,
@@ -1915,6 +1917,18 @@ impl TopLevelComposer {
                                 name,
                                 ast.as_ref().unwrap().location
                             ));
+                        }
+
+                        if simple_name.to_string() != "__init__" {
+                            EscapeAnalyzer::check_function_lifetime(
+                                unifier,
+                                &primitives_ty,
+                                resolver.as_ref().unwrap().clone(),
+                                ctx.as_ref(),
+                                &args,
+                                &fun_body,
+                                ast.as_ref().unwrap().location,
+                            ).map_err(|e| format!("Escape analysis error: {}\n  in function {}", e, name))?;
                         }
 
                         instance_to_stmt.insert(
