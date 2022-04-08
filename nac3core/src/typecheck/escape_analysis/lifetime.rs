@@ -396,6 +396,13 @@ impl<'a> LifetimeAnalyzer<'a> {
                         // unify with unknown lifetime
                         self.unify(LifetimeId(0), field_lifetime);
                     }
+                    if field == "$elem".into() {
+                        let field_lifetime_id = *self.lifetime_to_id.get(&field_lifetime).unwrap();
+                        let field_lifetime = self.lifetime_stores.get_mut(field_lifetime_id).unwrap();
+                        if field_lifetime.kind == PreciseLocal {
+                            field_lifetime.to_mut().kind = ImpreciseLocal;
+                        }
+                    }
                 }
             }
             _ => (),
