@@ -37,7 +37,7 @@ pub struct BasicBlockId(usize);
 pub enum LifetimeIR {
     VarAssign { var: StrRef, lifetime: LifetimeId },
     VarAccess { var: StrRef },
-    FieldAssign { obj: LifetimeId, field: StrRef, new: LifetimeId },
+    FieldAssign { obj: LifetimeId, field: StrRef, new: LifetimeId, is_init: bool },
     FieldAccess { obj: LifetimeId, field: StrRef },
     CreateLifetime { kind: LifetimeKind },
     PassedToFunc { param_lifetimes: Vec<LifetimeId> },
@@ -123,7 +123,7 @@ impl LifetimeIRBuilder {
                     LifetimeIR::Branch { targets } => {
                         destination_mapping.insert(i, targets);
                     }
-                    _ => ()
+                    _ => (),
                 }
             }
         }
@@ -339,14 +339,23 @@ impl<'a> LifetimeAnalyzer<'a> {
         self.lifetime_stores.remove(rhs_id);
     }
 
-    fn get_field_lifetime(&self, obj: LifetimeId, field: StrRef) -> LifetimeId {
+    fn get_field_lifetime(&mut self, obj: LifetimeId, field: StrRef) -> LifetimeId {
         use LifetimeKind::*;
         let id = *self.lifetime_to_id.get(&obj).unwrap();
-        let store = &self.lifetime_stores.get(id).unwrap();
-        if let Some(lifetime) = store.fields.get(&field) {
-            *lifetime
-        } else if matches!(store.kind, PreciseLocal | ImpreciseLocal) {
-            LifetimeId(0)
+        let store = self.lifetime_stores.get(id).unwrap();
+        if matches!(store.kind, PreciseLocal | ImpreciseLocal) {
+            if let Some(&lifetime) = store.fields.get(&field) {
+                let field_lifetime_kind = self.get_lifetime_kind(lifetime);
+                if field_lifetime_kind == PreciseLocal
+                    && (store.kind == ImpreciseLocal || field == "$elem".into())
+                {
+                    let id = *self.lifetime_to_id.get(&lifetime).unwrap();
+                    self.lifetime_stores.get_mut(id).unwrap().to_mut().kind = ImpreciseLocal;
+                }
+                lifetime
+            } else {
+                LifetimeId(0)
+            }
         } else {
             obj
         }
@@ -357,6 +366,7 @@ impl<'a> LifetimeAnalyzer<'a> {
         obj: LifetimeId,
         field: StrRef,
         field_lifetime: LifetimeId,
+        is_init: bool,
     ) -> Result<(), String> {
         use LifetimeKind::*;
         let obj_id = *self.lifetime_to_id.get(&obj).unwrap();
@@ -377,15 +387,15 @@ impl<'a> LifetimeAnalyzer<'a> {
             }
             PreciseLocal | ImpreciseLocal => {
                 // weak update
-                let old_lifetime = obj_store
-                    .to_mut()
-                    .fields
-                    .get(&field)
-                    .copied();
+                let old_lifetime = obj_store.to_mut().fields.get(&field).copied();
                 if let Some(old_lifetime) = old_lifetime {
                     self.unify(old_lifetime, field_lifetime);
                 } else {
                     obj_store.to_mut().fields.insert(field, field_lifetime);
+                    if !is_init {
+                        // unify with unknown lifetime
+                        self.unify(LifetimeId(0), field_lifetime);
+                    }
                 }
             }
             _ => (),
@@ -455,8 +465,8 @@ impl<'a> LifetimeAnalyzer<'a> {
                         self.add_lifetime(id, LifetimeKind::Static)
                     }
                 }
-                FieldAssign { obj, field, new } => {
-                    self.set_field_lifetime(*obj, *field, *new)
+                FieldAssign { obj, field, new, is_init } => {
+                    self.set_field_lifetime(*obj, *field, *new, *is_init)
                         .map_err(|e| format!("{} in {}", e, loc))?;
                 }
                 FieldAccess { obj, field } => {
@@ -490,7 +500,7 @@ impl<'a> LifetimeAnalyzer<'a> {
                     }
                     return Ok(None);
                 }
-                Branch { targets } => return Ok(Some(targets))
+                Branch { targets } => return Ok(Some(targets)),
             }
         }
         Ok(None)

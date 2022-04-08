@@ -153,6 +153,7 @@ impl<'a> EscapeAnalyzer<'a> {
                                 obj: list_lifetime,
                                 field: "$elem".into(),
                                 new: elem_lifetime,
+                                is_init: true,
                             },
                             loc,
                         );
@@ -165,6 +166,7 @@ impl<'a> EscapeAnalyzer<'a> {
                             obj: list_lifetime,
                             field: "$elem".into(),
                             new: elem_lifetime,
+                            is_init: true,
                         },
                         loc,
                     );
@@ -183,6 +185,7 @@ impl<'a> EscapeAnalyzer<'a> {
                                 obj: tuple_lifetime,
                                 field: format!("$elem{}", i).into(),
                                 new: lifetime,
+                                is_init: true,
                             },
                             loc,
                         );
@@ -208,6 +211,7 @@ impl<'a> EscapeAnalyzer<'a> {
                                 obj: slice_lifetime,
                                 field: "$elem".into(),
                                 new: slice_elem,
+                                is_init: true
                             },
                             loc,
                         );
@@ -249,7 +253,9 @@ impl<'a> EscapeAnalyzer<'a> {
                 }
                 match &func.node {
                     ExprKind::Name { id, .. } => {
-                        self.builder.append_ir(PassedToFunc { param_lifetimes: lifetimes }, loc);
+                        if !lifetimes.is_empty() {
+                            self.builder.append_ir(PassedToFunc { param_lifetimes: lifetimes }, loc);
+                        }
                         if need_alloca {
                             let id = self
                                 .resolver
@@ -342,6 +348,7 @@ impl<'a> EscapeAnalyzer<'a> {
                             obj: list_lifetime,
                             field: "$elem".into(),
                             new: elem_lifetime,
+                            is_init: true
                         },
                         elt.location,
                     );
@@ -365,7 +372,7 @@ impl<'a> EscapeAnalyzer<'a> {
                 let value_lifetime = self.handle_expr(value)?.unwrap();
                 if let Some(field_lifetime) = rhs_lifetime {
                     self.builder.append_ir(
-                        FieldAssign { obj: value_lifetime, field: *attr, new: field_lifetime },
+                        FieldAssign { obj: value_lifetime, field: *attr, new: field_lifetime, is_init: false },
                         lhs.location,
                     );
                 }
@@ -396,6 +403,7 @@ impl<'a> EscapeAnalyzer<'a> {
                             obj: value_lifetime,
                             field: "$elem".into(),
                             new: elem_lifetime,
+                            is_init: false
                         },
                         lhs.location,
                     );
