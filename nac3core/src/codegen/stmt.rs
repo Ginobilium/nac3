@@ -72,17 +72,58 @@ pub fn gen_store_target<'ctx, 'a, G: CodeGenerator>(
             }
         }
         ExprKind::Subscript { value, slice, .. } => {
+            assert!(matches!(
+                ctx.unifier.get_ty_immutable(value.custom.unwrap()).as_ref(),
+                TypeEnum::TList { .. },
+            ));
             let i32_type = ctx.ctx.i32_type();
+            let zero = i32_type.const_zero();
             let v = generator
                 .gen_expr(ctx, value)?
                 .unwrap()
                 .to_basic_value_enum(ctx, generator)?
                 .into_pointer_value();
-            let index = generator
+            let len = ctx
+                .build_gep_and_load(v, &[zero, i32_type.const_int(1, false)])
+                .into_int_value();
+            let raw_index = generator
                 .gen_expr(ctx, slice)?
                 .unwrap()
                 .to_basic_value_enum(ctx, generator)?
                 .into_int_value();
+            let raw_index = ctx.builder.build_int_s_extend(
+                raw_index,
+                generator.get_size_type(ctx.ctx),
+                "sext",
+            );
+            // handle negative index
+            let is_negative = ctx.builder.build_int_compare(
+                inkwell::IntPredicate::SLT,
+                raw_index,
+                generator.get_size_type(ctx.ctx).const_zero(),
+                "is_neg",
+            );
+            let adjusted = ctx.builder.build_int_add(raw_index, len, "adjusted");
+            let index = ctx
+                .builder
+                .build_select(is_negative, adjusted, raw_index, "index")
+                .into_int_value();
+            // unsigned less than is enough, because negative index after adjustment is
+            // bigger than the length (for unsigned cmp)
+            let bound_check = ctx.builder.build_int_compare(
+                inkwell::IntPredicate::ULT,
+                index,
+                len,
+                "inbound",
+            );
+            ctx.make_assert(
+                generator,
+                bound_check,
+                "0:IndexError",
+                "index {0} out of bounds 0:{1}",
+                [Some(raw_index), Some(len), None],
+                slice.location,
+            );
             unsafe {
                 let arr_ptr = ctx
                     .build_gep_and_load(v, &[i32_type.const_zero(), i32_type.const_zero()])
