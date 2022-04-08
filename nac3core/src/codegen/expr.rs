@@ -150,11 +150,7 @@ impl<'ctx, 'a> CodeGenContext<'ctx, 'a> {
                 };
                 let actual_ptr_type =
                     self.get_llvm_type(generator, ty).ptr_type(AddressSpace::Generic);
-                self.builder.build_bitcast(
-                    self.ctx.i8_type().ptr_type(AddressSpace::Generic).const_null(),
-                    actual_ptr_type,
-                    "default_opt_none",
-                )
+                actual_ptr_type.const_null().into()
             }
         }
     }
