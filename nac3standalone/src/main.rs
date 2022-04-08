@@ -220,7 +220,11 @@ fn main() {
     let signature = store.from_signature(&mut composer.unifier, &primitive, &signature, &mut cache);
     let signature = store.add_cty(signature);
 
-    composer.start_analysis(true).unwrap();
+    if let Err(e) = composer.start_analysis(true) {
+        eprintln!("{}", e);
+        std::process::exit(1);
+    }
+
 
     let top_level = Arc::new(composer.make_top_level_context());
 

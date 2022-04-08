@@ -123,7 +123,7 @@ impl LifetimeIRBuilder {
                     LifetimeIR::Branch { targets } => {
                         destination_mapping.insert(i, targets);
                     }
-                    _ => unreachable!(),
+                    _ => ()
                 }
             }
         }
@@ -155,28 +155,30 @@ impl LifetimeIRBuilder {
 
     pub fn analyze(&self) -> Result<(), String> {
         let mut analyzers = HashMap::new();
-        analyzers.insert(0, LifetimeAnalyzer::new());
+        analyzers.insert(0, (0, true, LifetimeAnalyzer::new()));
         let mut worklist = vec![0];
-        let mut counter = 0;
         while let Some(bb) = worklist.pop() {
-            counter += 1;
-            if counter > 100 {
-                return Err(format!("escape analyzer stuck in infinite loop?"));
+            let (counter, updated, analyzer) = analyzers.get_mut(&bb).unwrap();
+            *counter += 1;
+            if *counter > 100 {
+                return Err(format!("infinite loop detected at basic block {}", bb));
             }
-            let mut analyzer = analyzers.get(&bb).unwrap().clone();
+            *updated = false;
+            let mut analyzer = analyzer.clone();
             let block = &self.basic_blocks[bb];
             let ir_iter = block.iter().filter_map(|&id| {
                 self.irs[id].as_ref().map(|(ir, loc)| (LifetimeId(id), ir, *loc))
             });
             if let Some(branch) = analyzer.analyze_basic_block(ir_iter)? {
                 for &target in branch.iter() {
-                    if let Some(successor) = analyzers.get_mut(&target.0) {
-                        if successor.merge(&analyzer) {
+                    if let Some((_, updated, successor)) = analyzers.get_mut(&target.0) {
+                        if successor.merge(&analyzer) && !*updated {
                             // changed
                             worklist.push(target.0);
+                            *updated = true;
                         }
                     } else {
-                        analyzers.insert(target.0, analyzer.clone());
+                        analyzers.insert(target.0, (0, true, analyzer.clone()));
                         worklist.push(target.0);
                     }
                 }

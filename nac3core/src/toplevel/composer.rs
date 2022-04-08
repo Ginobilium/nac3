@@ -1928,7 +1928,7 @@ impl TopLevelComposer {
                                 &args,
                                 &fun_body,
                                 ast.as_ref().unwrap().location,
-                            ).map_err(|e| format!("Escape analysis error: {}\n  in function {}", e, name))?;
+                            ).map_err(|e| format!("Escape analysis error: {}\n  ... in function {}", e, name))?;
                         }
 
                         instance_to_stmt.insert(

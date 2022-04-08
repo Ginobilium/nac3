@@ -67,7 +67,10 @@ impl<'a> EscapeAnalyzer<'a> {
             }
         }
         zelf.handle_statements(body)?;
-        zelf.builder.analyze()
+        zelf.builder.remove_empty_bb();
+        zelf.builder.analyze().map_err(|e| {
+            format!("{}\nIR: {}", e, zelf.builder.print_ir())
+        })
     }
 
     fn need_alloca(&mut self, ty: Type) -> bool {
