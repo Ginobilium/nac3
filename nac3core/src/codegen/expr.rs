@@ -1354,23 +1354,66 @@ pub fn gen_expr<'ctx, 'a, G: CodeGenerator>(
                         }
                     };
                     // directly generate code for option.unwrap
-                    // since it needs location information from ast
+                    // since it needs to return static value to optimize for kernel invariant
                     if attr == &"unwrap".into()
                         && id == ctx.primitives.option.get_obj_id(&ctx.unifier)
                     {
-                        if let BasicValueEnum::PointerValue(ptr) = val.to_basic_value_enum(ctx, generator, value.custom.unwrap())? {
-                            let not_null = ctx.builder.build_is_not_null(ptr, "unwrap_not_null");
-                            ctx.make_assert(
-                                generator,
-                                not_null,
-                                "0:UnwrapNoneError",
-                                "",
-                                [None, None, None],
-                                expr.location,
-                            );
-                            return Ok(Some(ctx.builder.build_load(ptr, "unwrap_some").into()))
-                        } else {
-                            unreachable!("option must be ptr")
+                        match val {
+                            ValueEnum::Static(v) => match v.get_field("_nac3_option".into(), ctx) {
+                                // if is none, raise exception directly
+                                None => {
+                                    let err_msg = ctx.gen_string(generator, "");
+                                    let current_fun = ctx
+                                        .builder
+                                        .get_insert_block()
+                                        .unwrap()
+                                        .get_parent()
+                                        .unwrap();
+                                    let unreachable_block = ctx.ctx.append_basic_block(
+                                        current_fun,
+                                        "unwrap_none_unreachable"
+                                    );
+                                    let exn_block = ctx.ctx.append_basic_block(
+                                        current_fun,
+                                        "unwrap_none_exception"
+                                    );
+                                    ctx.builder.build_unconditional_branch(exn_block);
+                                    ctx.builder.position_at_end(exn_block);
+                                    ctx.raise_exn(
+                                        generator,
+                                        "0:UnwrapNoneError",
+                                        err_msg,
+                                        [None, None, None],
+                                        ctx.current_loc
+                                    );
+                                    ctx.builder.position_at_end(unreachable_block);
+                                    let ptr = ctx
+                                        .get_llvm_type(generator, value.custom.unwrap())
+                                        .into_pointer_type()
+                                        .const_null();
+                                    return Ok(Some(ctx.builder.build_load(
+                                        ptr,
+                                        "unwrap_none_unreachable_load"
+                                    ).into()));
+                                }
+                                Some(v) => return Ok(Some(v)),
+                            }
+                            ValueEnum::Dynamic(BasicValueEnum::PointerValue(ptr)) => {
+                                let not_null = ctx.builder.build_is_not_null(ptr, "unwrap_not_null");
+                                ctx.make_assert(
+                                    generator,
+                                    not_null,
+                                    "0:UnwrapNoneError",
+                                    "",
+                                    [None, None, None],
+                                    expr.location,
+                                );
+                                return Ok(Some(ctx.builder.build_load(
+                                    ptr,
+                                    "unwrap_some_load"
+                                ).into()))
+                            }
+                            _ => unreachable!("option must be static or ptr")
                         }
                     }
                     return Ok(generator

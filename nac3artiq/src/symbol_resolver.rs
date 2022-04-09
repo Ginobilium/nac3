@@ -170,6 +170,16 @@ impl StaticValue for PythonValue {
                 let helper = &self.resolver.helper;
                 let ty = helper.type_fn.call1(py, (&self.value,))?;
                 let ty_id: u64 = helper.id_fn.call1(py, (ty,))?.extract(py)?;
+                // for optimizing unwrap KernelInvariant
+                if ty_id == self.resolver.primitive_ids.option && name == "_nac3_option".into() {
+                    let obj = self.value.getattr(py, &name.to_string())?;
+                    let id = self.resolver.helper.id_fn.call1(py, (&obj,))?.extract(py)?;
+                    if self.id == self.resolver.primitive_ids.none {
+                        return Ok(None)
+                    } else {
+                        return Ok(Some((id, obj)))
+                    }
+                }
                 let def_id = { *self.resolver.pyid_to_def.read().get(&ty_id).unwrap() };
                 let mut mutable = true;
                 let defs = ctx.top_level.definitions.read();
