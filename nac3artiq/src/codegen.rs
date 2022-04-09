@@ -517,7 +517,7 @@ pub fn attributes_writeback<'ctx, 'a>(
                     // we only care about primitive attributes
                     // for non-primitive attributes, they should be in another global
                     let mut attributes = Vec::new();
-                    let obj = inner_resolver.get_obj_value(py, val, ctx, generator)?.unwrap();
+                    let obj = inner_resolver.get_obj_value(py, val, ctx, generator, ty)?.unwrap();
                     for (name, (field_ty, is_mutable)) in fields.iter() {
                         if !is_mutable {
                             continue
@@ -542,7 +542,7 @@ pub fn attributes_writeback<'ctx, 'a>(
                         let pydict = PyDict::new(py);
                         pydict.set_item("obj", val)?;
                         host_attributes.append(pydict)?;
-                        values.push((ty, inner_resolver.get_obj_value(py, val, ctx, generator)?.unwrap()));
+                        values.push((ty, inner_resolver.get_obj_value(py, val, ctx, generator, ty)?.unwrap()));
                     }
                 },
                 _ => {}
