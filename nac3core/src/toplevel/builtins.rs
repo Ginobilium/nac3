@@ -92,6 +92,18 @@ pub fn get_builtins(primitives: &mut (PrimitiveStore, Unifier)) -> BuiltinInfo {
         Some("N".into()),
         None,
     );
+    let any_ty = primitives.1.get_fresh_var_with_range(
+        &[int32, int64, float, boolean, uint32, uint64, string, range, boolean],
+        Some("A".into()),
+        None,
+    );
+    let tuple_ty = primitives.1.add_ty(TypeEnum::TTuple {ty: vec![num_ty.0, any_ty.0]});
+    let any_tuple_ty = primitives.1.get_fresh_var_with_range(
+        &[int32, int64, float, boolean, uint32, uint64, string, tuple_ty, range, boolean],
+        Some("A".into()),
+        None,
+    );
+    let list_ty = primitives.1.add_ty(TypeEnum::TList {ty: any_ty.0});
     let var_map: HashMap<_, _> = vec![(num_ty.1, num_ty.0)].into_iter().collect();
     let exception_fields = vec![
         ("__name__".into(), int32, true),
