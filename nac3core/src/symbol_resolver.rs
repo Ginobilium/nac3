@@ -79,6 +79,8 @@ pub trait StaticValue {
         name: StrRef,
         ctx: &mut CodeGenContext<'ctx, 'a>,
     ) -> Option<ValueEnum<'ctx>>;
+
+    fn get_tuple_element<'ctx>(&self, index: u32) -> Option<ValueEnum<'ctx>>;
 }
 
 #[derive(Clone)]

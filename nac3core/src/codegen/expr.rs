@@ -1515,26 +1515,39 @@ pub fn gen_expr<'ctx, 'a, G: CodeGenerator>(
                         [Some(raw_index), Some(len), None],
                         expr.location,
                     );
-                    ctx.build_gep_and_load(arr_ptr, &[index])
+                    ctx.build_gep_and_load(arr_ptr, &[index]).into()
                 }
             } else if let TypeEnum::TTuple { .. } = &*ctx.unifier.get_ty(value.custom.unwrap()) {
-                let v = generator
-                    .gen_expr(ctx, value)?
-                    .unwrap()
-                    .to_basic_value_enum(ctx, generator, value.custom.unwrap())?
-                    .into_struct_value();
                 let index: u32 =
                     if let ExprKind::Constant { value: ast::Constant::Int(v), .. } = &slice.node {
                         (*v).try_into().unwrap()
                     } else {
                         unreachable!("tuple subscript must be const int after type check");
                     };
-                ctx.builder.build_extract_value(v, index, "tup_elem").unwrap()
+                let v = generator
+                    .gen_expr(ctx, value)?
+                    .unwrap();
+                match v {
+                    ValueEnum::Dynamic(v) => {
+                        let v = v.into_struct_value();
+                        ctx.builder.build_extract_value(v, index, "tup_elem").unwrap().into()
+                    }
+                    ValueEnum::Static(v) => {
+                        match v.get_tuple_element(index) {
+                            Some(v) => v,
+                            None => {
+                                let tup = v
+                                    .to_basic_value_enum(ctx, generator, value.custom.unwrap())?
+                                    .into_struct_value();
+                                ctx.builder.build_extract_value(tup, index, "tup_elem").unwrap().into()
+                            }
+                        }
+                    }
+                }
             } else {
                 unreachable!("should not be other subscriptable types after type check");
             }
-        }
-        .into(),
+        },
         ExprKind::ListComp { .. } => gen_comprehension(generator, ctx, expr)?.into(),
         _ => unimplemented!(),
     }))

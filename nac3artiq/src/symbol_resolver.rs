@@ -212,6 +212,28 @@ impl StaticValue for PythonValue {
             }))
         })
     }
+
+    fn get_tuple_element<'ctx>(&self, index: u32) -> Option<ValueEnum<'ctx>> {
+        Python::with_gil(|py| -> PyResult<Option<(u64, PyObject)>> {
+            let helper = &self.resolver.helper;
+            let ty = helper.type_fn.call1(py, (&self.value,))?;
+            let ty_id: u64 = helper.id_fn.call1(py, (ty,))?.extract(py)?;
+            assert_eq!(ty_id, self.resolver.primitive_ids.tuple);
+            let tup: &PyTuple = self.value.extract(py)?;
+            let elem = tup.get_item(index as usize);
+            let id = self.resolver.helper.id_fn.call1(py, (elem,))?.extract(py)?;
+            Ok(Some((id, elem.into())))
+        })
+        .unwrap()
+        .map(|(id, obj)| {
+            ValueEnum::Static(Arc::new(PythonValue {
+                id,
+                value: obj,
+                store_obj: self.store_obj.clone(),
+                resolver: self.resolver.clone(),
+            }))
+        })
+    }
 }
 
 impl InnerResolver {
