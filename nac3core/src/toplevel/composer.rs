@@ -70,6 +70,7 @@ impl TopLevelComposer {
             "none".into(),
             "None".into(),
             "range".into(),
+            "enumerate".into(),
             "str".into(),
             "self".into(),
             "Kernel".into(),
