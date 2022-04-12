@@ -302,6 +302,8 @@ impl InnerResolver {
             Ok(Ok((primitives.bool, true)))
         } else if ty_id == self.primitive_ids.float {
             Ok(Ok((primitives.float, true)))
+        } else if ty_id == self.primitive_ids.float64 {
+            Ok(Ok((primitives.float, true)))
         } else if ty_id == self.primitive_ids.exception {
             Ok(Ok((primitives.exception, true)))
         } else if ty_id == self.primitive_ids.list {
@@ -755,7 +757,7 @@ impl InnerResolver {
                     format!("{} is not in the range of bool", obj)))?;
             self.id_to_primitive.write().insert(id, PrimitiveValue::Bool(val));
             Ok(Some(ctx.ctx.bool_type().const_int(val as u64, false).into()))
-        } else if ty_id == self.primitive_ids.float {
+        } else if ty_id == self.primitive_ids.float || ty_id == self.primitive_ids.float64 {
             let val: f64 = obj.extract().map_err(|_| super::CompileError::new_err(
                     format!("{} is not in the range of float64", obj)))?;
             self.id_to_primitive.write().insert(id, PrimitiveValue::F64(val));
@@ -985,7 +987,7 @@ impl InnerResolver {
         } else if ty_id == self.primitive_ids.bool {
             let val: bool = obj.extract()?;
             Ok(SymbolValue::Bool(val))
-        } else if ty_id == self.primitive_ids.float {
+        } else if ty_id == self.primitive_ids.float || ty_id == self.primitive_ids.float64 {
             let val: f64 = obj.extract()?;
             Ok(SymbolValue::Double(val))
         } else if ty_id == self.primitive_ids.tuple {
