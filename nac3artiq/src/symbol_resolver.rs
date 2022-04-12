@@ -717,7 +717,42 @@ impl InnerResolver {
                 };
                 result
             }
-            _ => Ok(Ok(extracted_ty)),
+            _ => {
+                // check integer bounds
+                if unifier.unioned(extracted_ty, primitives.int32) {
+                    obj.extract::<i32>().map_or_else(
+                        |_| Ok(Err(format!("{} is not in the range of int32", obj))),
+                        |_| Ok(Ok(extracted_ty))
+                    )
+                } else if unifier.unioned(extracted_ty, primitives.int64) {
+                    obj.extract::<i64>().map_or_else(
+                        |_| Ok(Err(format!("{} is not in the range of int64", obj))),
+                        |_| Ok(Ok(extracted_ty))
+                    )
+                } else if unifier.unioned(extracted_ty, primitives.uint32) {
+                    obj.extract::<u32>().map_or_else(
+                        |_| Ok(Err(format!("{} is not in the range of uint32", obj))),
+                        |_| Ok(Ok(extracted_ty))
+                    )
+                } else if unifier.unioned(extracted_ty, primitives.uint64) {
+                    obj.extract::<u64>().map_or_else(
+                        |_| Ok(Err(format!("{} is not in the range of uint64", obj))),
+                        |_| Ok(Ok(extracted_ty))
+                    )
+                } else if unifier.unioned(extracted_ty, primitives.bool) {
+                    obj.extract::<bool>().map_or_else(
+                        |_| Ok(Err(format!("{} is not in the range of bool", obj))),
+                        |_| Ok(Ok(extracted_ty))
+                    )
+                } else if unifier.unioned(extracted_ty, primitives.float) {
+                    obj.extract::<f64>().map_or_else(
+                        |_| Ok(Err(format!("{} is not in the range of float64", obj))),
+                        |_| Ok(Ok(extracted_ty))
+                    )
+                } else {
+                    Ok(Ok(extracted_ty))
+                }
+            }
         }
     }
 
@@ -733,33 +768,27 @@ impl InnerResolver {
             self.helper.id_fn.call1(py, (self.helper.type_fn.call1(py, (obj,))?,))?.extract(py)?;
         let id: u64 = self.helper.id_fn.call1(py, (obj,))?.extract(py)?;
         if ty_id == self.primitive_ids.int || ty_id == self.primitive_ids.int32 {
-            let val: i32 = obj.extract().map_err(|_| super::CompileError::new_err(
-                    format!("{} is not in the range of int32", obj)))?;
+            let val: i32 = obj.extract().unwrap();
             self.id_to_primitive.write().insert(id, PrimitiveValue::I32(val));
             Ok(Some(ctx.ctx.i32_type().const_int(val as u64, false).into()))
         } else if ty_id == self.primitive_ids.int64 {
-            let val: i64 = obj.extract().map_err(|_| super::CompileError::new_err(
-                    format!("{} is not in the range of int64", obj)))?;
+            let val: i64 = obj.extract().unwrap();
             self.id_to_primitive.write().insert(id, PrimitiveValue::I64(val));
             Ok(Some(ctx.ctx.i64_type().const_int(val as u64, false).into()))
         } else if ty_id == self.primitive_ids.uint32 {
-            let val: u32 = obj.extract().map_err(|_| super::CompileError::new_err(
-                    format!("{} is not in the range of uint32", obj)))?;
+            let val: u32 = obj.extract().unwrap();
             self.id_to_primitive.write().insert(id, PrimitiveValue::U32(val));
             Ok(Some(ctx.ctx.i32_type().const_int(val as u64, false).into()))
         } else if ty_id == self.primitive_ids.uint64 {
-            let val: u64 = obj.extract().map_err(|_| super::CompileError::new_err(
-                    format!("{} is not in the range of uint64", obj)))?;
+            let val: u64 = obj.extract().unwrap();
             self.id_to_primitive.write().insert(id, PrimitiveValue::U64(val));
             Ok(Some(ctx.ctx.i64_type().const_int(val, false).into()))
         } else if ty_id == self.primitive_ids.bool {
-            let val: bool = obj.extract().map_err(|_| super::CompileError::new_err(
-                    format!("{} is not in the range of bool", obj)))?;
+            let val: bool = obj.extract().unwrap();
             self.id_to_primitive.write().insert(id, PrimitiveValue::Bool(val));
             Ok(Some(ctx.ctx.bool_type().const_int(val as u64, false).into()))
         } else if ty_id == self.primitive_ids.float || ty_id == self.primitive_ids.float64 {
-            let val: f64 = obj.extract().map_err(|_| super::CompileError::new_err(
-                    format!("{} is not in the range of float64", obj)))?;
+            let val: f64 = obj.extract().unwrap();
             self.id_to_primitive.write().insert(id, PrimitiveValue::F64(val));
             Ok(Some(ctx.ctx.f64_type().const_float(val).into()))
         } else if ty_id == self.primitive_ids.list {
