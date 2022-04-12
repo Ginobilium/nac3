@@ -302,7 +302,7 @@ fn test_unify(
         ("v1", "Record[a=float,b=int]"),
         ("v2", "Foo[v3]"),
     ],
-    (("v1", "v2"), "`3[var4]::b` field/method does not exist")
+    (("v1", "v2"), "`3[typevar4]::b` field/method does not exist")
     ; "record obj merge"
 )]
 /// Test cases for invalid unifications.
@@ -445,7 +445,7 @@ fn test_typevar_range() {
     // where v in (int, list[v1]), v1 in (int, bool)
     assert_eq!(
         env.unify(float_list, v),
-        Err("Expected any one of these types: 0, list[var5], but got list[1]\n\nNotes:\n    var5 ∈ {0, 2}".to_string())
+        Err("Expected any one of these types: 0, list[typevar5], but got list[1]\n\nNotes:\n    typevar5 ∈ {0, 2}".to_string())
     );
 
     let a = env.unifier.get_fresh_var_with_range(&[int, float], None, None).0;
@@ -504,9 +504,9 @@ fn test_rigid_var() {
     let int = env.parse("int", &HashMap::new());
     let list_int = env.parse("list[int]", &HashMap::new());
 
-    assert_eq!(env.unify(a, b), Err("Incompatible types: var3 and var2".to_string()));
+    assert_eq!(env.unify(a, b), Err("Incompatible types: typevar3 and typevar2".to_string()));
     env.unifier.unify(list_a, list_x).unwrap();
-    assert_eq!(env.unify(list_x, list_int), Err("Incompatible types: 0 and var2".to_string()));
+    assert_eq!(env.unify(list_x, list_int), Err("Incompatible types: 0 and typevar2".to_string()));
 
     env.unifier.replace_rigid_var(a, int);
     env.unifier.unify(list_x, list_int).unwrap();
