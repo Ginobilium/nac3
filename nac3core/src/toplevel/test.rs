@@ -763,7 +763,7 @@ fn make_internal_resolver_with_tvar(
                 (name, {
                     let (ty, id) = unifier.get_fresh_var_with_range(range.as_slice(), None, None);
                     if print {
-                        println!("{}: {:?}, tvar{}", name, ty, id);
+                        println!("{}: {:?}, typevar{}", name, ty, id);
                     }
                     ty
                 })
@@ -791,7 +791,7 @@ impl<'a> Fold<Option<Type>> for TypeToStringFolder<'a> {
             self.unifier.internal_stringify(
                 ty,
                 &mut |id| format!("class{}", id.to_string()),
-                &mut |id| format!("tvar{}", id.to_string()),
+                &mut |id| format!("typevar{}", id.to_string()),
                 &mut None,
             )
         } else {

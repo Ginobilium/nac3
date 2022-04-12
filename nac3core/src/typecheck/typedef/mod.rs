@@ -830,7 +830,7 @@ impl Unifier {
                     },
                 )
             },
-            &mut |id| format!("var{}", id),
+            &mut |id| format!("typevar{}", id),
             notes,
         )
     }

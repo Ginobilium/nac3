@@ -367,7 +367,7 @@ impl dyn SymbolResolver + Send + Sync {
                     unreachable!("expected class definition")
                 }
             },
-            &mut |id| format!("var{}", id),
+            &mut |id| format!("typevar{}", id),
             &mut None,
         )
     }

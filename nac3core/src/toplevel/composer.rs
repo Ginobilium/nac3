@@ -1906,7 +1906,7 @@ impl TopLevelComposer {
                                         unreachable!("must be class id here")
                                     }
                                 },
-                                &mut |id| format!("tvar{}", id),
+                                &mut |id| format!("typevar{}", id),
                                 &mut None,
                             );
                             return Err(format!(

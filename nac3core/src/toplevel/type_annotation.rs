@@ -356,7 +356,7 @@ pub fn get_type_from_type_annotation_kinds(
                                         unifier.internal_stringify(
                                             p,
                                             &mut |id| format!("class{}", id),
-                                            &mut |id| format!("tvar{}", id),
+                                            &mut |id| format!("typevar{}", id),
                                             &mut None
                                         ),
                                         *id
