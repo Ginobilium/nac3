@@ -1,10 +1,4 @@
 from min_artiq import *
-from numpy import int32, int64
-
-
-@extern
-def output_int(x: int32):
-    ...
 
 
 @nac3
