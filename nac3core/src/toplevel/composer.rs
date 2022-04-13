@@ -434,11 +434,11 @@ impl TopLevelComposer {
 
                         // check if all are unique type vars
                         let all_unique_type_var = {
-                            let mut occured_type_var_id: HashSet<u32> = HashSet::new();
+                            let mut occurred_type_var_id: HashSet<u32> = HashSet::new();
                             type_vars.iter().all(|x| {
                                 let ty = unifier.get_ty(*x);
                                 if let TypeEnum::TVar { id, .. } = ty.as_ref() {
-                                    occured_type_var_id.insert(*id)
+                                    occurred_type_var_id.insert(*id)
                                 } else {
                                     false
                                 }
@@ -536,7 +536,7 @@ impl TopLevelComposer {
                     }
                     has_base = true;
 
-                    // the function parse_ast_to make sure that no type var occured in
+                    // the function parse_ast_to make sure that no type var occurred in
                     // bast_ty if it is a CustomClassKind
                     let base_ty = parse_ast_to_type_annotation_kinds(
                         class_resolver,
@@ -696,7 +696,7 @@ impl TopLevelComposer {
             return Err(errors.into_iter().sorted().join("\n----------\n"));
         }
 
-        // handle the inheritanced methods and fields
+        // handle the inherited methods and fields
         // Note: we cannot defer error handling til the end of the loop, because there is loop
         // carried dependency, ignoring the error (temporarily) will cause all assumptions to break
         // and produce weird error messages
@@ -825,9 +825,9 @@ impl TopLevelComposer {
                     let mut function_var_map: HashMap<u32, Type> = HashMap::new();
                     let arg_types = {
                         // make sure no duplicate parameter
-                        let mut defined_paramter_name: HashSet<_> = HashSet::new();
+                        let mut defined_parameter_name: HashSet<_> = HashSet::new();
                         for x in args.args.iter() {
-                            if !defined_paramter_name.insert(x.node.arg)
+                            if !defined_parameter_name.insert(x.node.arg)
                                 || keyword_list.contains(&x.node.arg)
                             {
                                 return Err(format!(
@@ -1074,10 +1074,10 @@ impl TopLevelComposer {
 
                     let arg_types: Vec<FuncArg> = {
                         // check method parameters cannot have same name
-                        let mut defined_paramter_name: HashSet<_> = HashSet::new();
+                        let mut defined_parameter_name: HashSet<_> = HashSet::new();
                         let zelf: StrRef = "self".into();
                         for x in args.args.iter() {
-                            if !defined_paramter_name.insert(x.node.arg)
+                            if !defined_parameter_name.insert(x.node.arg)
                                 || (keyword_list.contains(&x.node.arg) && x.node.arg != zelf)
                             {
                                 return Err(format!(
@@ -1227,7 +1227,7 @@ impl TopLevelComposer {
                             dummy_return_type
                         } else {
                             // if do not have return annotation, return none
-                            // for uniform handling, still use type annoatation
+                            // for uniform handling, still use type annotation
                             let dummy_return_type = unifier.get_dummy_var().0;
                             type_var_to_concrete_def.insert(
                                 dummy_return_type,
@@ -1468,7 +1468,7 @@ impl TopLevelComposer {
         Ok(())
     }
 
-    /// step 5, analyze and call type inferecer to fill the `instance_to_stmt` of topleveldef::function
+    /// step 5, analyze and call type inferencer to fill the `instance_to_stmt` of topleveldef::function
     fn analyze_function_instance(&mut self) -> Result<(), String> {
         // first get the class contructor type correct for the following type check in function body
         // also do class field instantiation check

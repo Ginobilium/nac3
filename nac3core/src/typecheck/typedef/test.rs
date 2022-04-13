@@ -309,7 +309,7 @@ fn test_unify(
 fn test_invalid_unification(
     variable_count: u32,
     unify_pairs: &[(&'static str, &'static str)],
-    errornous_pair: ((&'static str, &'static str), &'static str),
+    erroneous_pair: ((&'static str, &'static str), &'static str),
 ) {
     let mut env = TestEnvironment::new();
     let mut mapping = HashMap::new();
@@ -326,11 +326,11 @@ fn test_invalid_unification(
         pairs.push((t1, t2));
     }
     let (t1, t2) =
-        (env.parse(errornous_pair.0 .0, &mapping), env.parse(errornous_pair.0 .1, &mapping));
+        (env.parse(erroneous_pair.0 .0, &mapping), env.parse(erroneous_pair.0 .1, &mapping));
     for (a, b) in pairs {
         env.unifier.unify(a, b).unwrap();
     }
-    assert_eq!(env.unify(t1, t2), Err(errornous_pair.1.to_string()));
+    assert_eq!(env.unify(t1, t2), Err(erroneous_pair.1.to_string()));
 }
 
 #[test]

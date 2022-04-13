@@ -16,7 +16,7 @@ use crate::toplevel::{DefinitionId, TopLevelContext, TopLevelDef};
 #[cfg(test)]
 mod test;
 
-/// Handle for a type, implementated as a key in the unification table.
+/// Handle for a type, implemented as a key in the unification table.
 pub type Type = UnificationKey;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

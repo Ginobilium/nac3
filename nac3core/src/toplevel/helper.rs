@@ -149,7 +149,7 @@ impl TopLevelComposer {
     }
 
     /// already include the definition_id of itself inside the ancestors vector
-    /// when first regitering, the type_vars, fields, methods, ancestors are invalid
+    /// when first registering, the type_vars, fields, methods, ancestors are invalid
     pub fn make_top_level_class_def(
         index: usize,
         resolver: Option<Arc<dyn SymbolResolver + Send + Sync>>,

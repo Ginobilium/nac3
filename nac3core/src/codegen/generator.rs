@@ -36,7 +36,7 @@ pub trait CodeGenerator {
     }
 
     /// Generate object constructor and returns the constructed object.
-    /// - signature: Function signature of the contructor.
+    /// - signature: Function signature of the constructor.
     /// - def: Class definition for the constructor class.
     /// - params: Function parameters.
     fn gen_constructor<'ctx, 'a>(

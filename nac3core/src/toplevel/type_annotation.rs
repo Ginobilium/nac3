@@ -436,7 +436,7 @@ pub fn get_type_from_type_annotation_kinds(
 /// the type of `self` should be similar to `A[T, V]`, where `T`, `V`
 /// considered to be type variables associated with the class \
 /// \
-/// But note that here we do not make a duplication of `T`, `V`, we direclty
+/// But note that here we do not make a duplication of `T`, `V`, we directly
 /// use them as they are in the TopLevelDef::Class since those in the
 /// TopLevelDef::Class.type_vars will be substitute later when seeing applications/instantiations
 /// the Type of their fields and methods will also be subst when application/instantiation
