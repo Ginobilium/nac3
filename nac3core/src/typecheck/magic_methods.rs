@@ -83,7 +83,7 @@ where
 
 pub fn impl_binop(
     unifier: &mut Unifier,
-    store: &PrimitiveStore,
+    _store: &PrimitiveStore,
     ty: Type,
     other_ty: &[Type],
     ret_ty: Type,
@@ -120,7 +120,7 @@ pub fn impl_binop(
             fields.insert(binop_assign_name(op).into(), {
                 (
                     unifier.add_ty(TypeEnum::TFunc(FunSignature {
-                        ret: store.none,
+                        ret: ret_ty,
                         vars: function_vars.clone(),
                         args: vec![FuncArg {
                             ty: other_ty,

@@ -423,7 +423,7 @@ impl<'a> fold::Fold<()> for Inferencer<'a> {
                 (None, None) => {}
             },
             ast::StmtKind::AugAssign { target, op, value, .. } => {
-                let res_ty = self.infer_bin_ops(stmt.location, target, op, value)?;
+                let res_ty = self.infer_bin_ops(stmt.location, target, op, value, true)?;
                 self.unify(res_ty, target.custom.unwrap(), &stmt.location)?;
             }
             ast::StmtKind::Assert { test, msg, .. } => {
@@ -505,7 +505,7 @@ impl<'a> fold::Fold<()> for Inferencer<'a> {
             }
             ast::ExprKind::BoolOp { values, .. } => Some(self.infer_bool_ops(values)?),
             ast::ExprKind::BinOp { left, op, right } => {
-                Some(self.infer_bin_ops(expr.location, left, op, right)?)
+                Some(self.infer_bin_ops(expr.location, left, op, right, false)?)
             }
             ast::ExprKind::UnaryOp { op, operand } => Some(self.infer_unary_ops(op, operand)?),
             ast::ExprKind::Compare { left, ops, comparators } => {
@@ -1028,8 +1028,24 @@ impl<'a> Inferencer<'a> {
         left: &ast::Expr<Option<Type>>,
         op: &ast::Operator,
         right: &ast::Expr<Option<Type>>,
+        is_aug_assign: bool,
     ) -> InferenceResult {
-        let method = binop_name(op).into();
+        let method = if let TypeEnum::TObj { fields, .. } =
+            self.unifier.get_ty_immutable(left.custom.unwrap()).as_ref()
+        {
+            let (binop_name, binop_assign_name) = (
+                binop_name(op).into(),
+                binop_assign_name(op).into()
+            );
+            // if is aug_assign, try aug_assign operator first
+            if is_aug_assign && fields.contains_key(&binop_assign_name) {
+                binop_assign_name
+            } else {
+                binop_name
+            }
+        } else {
+            binop_name(op).into()
+        };
         self.build_method_call(
             location,
             method,
