@@ -1088,13 +1088,13 @@ impl TopLevelComposer {
                             }
                         }
 
-                        if name == &"__init__".into() && !defined_paramter_name.contains(&zelf) {
+                        if name == &"__init__".into() && !defined_parameter_name.contains(&zelf) {
                             return Err(format!(
                                 "__init__ method must have a `self` parameter (at {})",
                                 b.location
                             ));
                         }
-                        if !defined_paramter_name.contains(&zelf) {
+                        if !defined_parameter_name.contains(&zelf) {
                             return Err(format!(
                                 "class method must have a `self` parameter (at {})",
                                 b.location
