@@ -167,7 +167,7 @@ impl TopLevelComposer {
     ) -> Result<(StrRef, DefinitionId, Option<Type>), String> {
         let defined_names = &mut self.defined_names;
         match &ast.node {
-            ast::StmtKind::ClassDef { name: class_name, bases, body, .. } => {
+            ast::StmtKind::ClassDef { name: class_name, body, .. } => {
                 if self.keyword_list.contains(class_name) {
                     return Err(format!(
                         "cannot use keyword `{}` as a class name (at {})",
@@ -221,18 +221,9 @@ impl TopLevelComposer {
                 // we do not push anything to the def list, so we keep track of the index
                 // and then push in the correct order after the for loop
                 let mut class_method_index_offset = 0;
-                let init_id = "__init__".into();
-                let exception_id = "Exception".into();
-                // TODO: Fix this hack. We will generate constructor for classes that inherit
-                // from Exception class (directly or indirectly), but this code cannot handle
-                // subclass of other exception classes.
-                let mut contains_constructor = bases
-                    .iter().any(|base| matches!(base.node, ast::ExprKind::Name { id, .. } if id == exception_id));
+
                 for b in body {
                     if let ast::StmtKind::FunctionDef { name: method_name, .. } = &b.node {
-                        if method_name == &init_id {
-                            contains_constructor = true;
-                        }
                         if self.keyword_list.contains(method_name) {
                             return Err(format!(
                                 "cannot use keyword `{}` as a method name (at {})",
@@ -298,7 +289,7 @@ impl TopLevelComposer {
                     self.definition_ast_list.push((def, Some(ast)));
                 }
 
-                let result_ty = if contains_constructor { Some(constructor_ty) } else { None };
+                let result_ty = Some(constructor_ty);
                 Ok((class_name, DefinitionId(class_def_id), result_ty))
             }
 
@@ -1470,7 +1461,7 @@ impl TopLevelComposer {
 
     /// step 5, analyze and call type inferecer to fill the `instance_to_stmt` of topleveldef::function
     fn analyze_function_instance(&mut self) -> Result<(), String> {
-        // first get the class contructor type correct for the following type check in function body
+        // first get the class constructor type correct for the following type check in function body
         // also do class field instantiation check
         let init_str_id = "__init__".into();
         let mut definition_extension = Vec::new();
@@ -1581,7 +1572,7 @@ impl TopLevelComposer {
                     return Ok(());
                 }
                 let mut init_id: Option<DefinitionId> = None;
-                // get the class contructor type correct
+                // get the class constructor type correct
                 let (contor_args, contor_type_vars) = {
                     let mut constructor_args: Vec<FuncArg> = Vec::new();
                     let mut type_vars: HashMap<u32, Type> = HashMap::new();
