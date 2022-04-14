@@ -989,6 +989,16 @@ pub fn gen_stmt<'ctx, 'a, G: CodeGenerator>(
     stmt: &Stmt<Option<Type>>,
 ) -> Result<(), String> {
     ctx.current_loc = stmt.location;
+
+    let loc = ctx.debug_info.0.create_debug_location(
+        ctx.ctx,
+        ctx.current_loc.row as u32,
+        ctx.current_loc.column as u32,
+        ctx.debug_info.2,
+        None,
+    );
+    ctx.builder.set_current_debug_location(ctx.ctx, loc);
+
     match &stmt.node {
         StmtKind::Pass { .. } => {}
         StmtKind::Expr { value, .. } => {

@@ -17,7 +17,10 @@ use inkwell::{
     module::Module,
     passes::{PassManager, PassManagerBuilder},
     types::{AnyType, BasicType, BasicTypeEnum},
-    values::{BasicValueEnum, FunctionValue, PhiValue, PointerValue}
+    values::{BasicValueEnum, FunctionValue, PhiValue, PointerValue},
+    debug_info::{
+        DebugInfoBuilder, DICompileUnit, DISubprogram, AsDIScope, DIFlagsConstants, DIScope
+    },
 };
 use itertools::Itertools;
 use nac3parser::ast::{Stmt, StrRef, Location};
@@ -52,6 +55,7 @@ pub type VarValue<'ctx> = (PointerValue<'ctx>, Option<Arc<dyn StaticValue + Send
 pub struct CodeGenContext<'ctx, 'a> {
     pub ctx: &'ctx Context,
     pub builder: Builder<'ctx>,
+    pub debug_info: (DebugInfoBuilder<'ctx>, DICompileUnit<'ctx>, DIScope<'ctx>),
     pub module: Module<'ctx>,
     pub top_level: &'a TopLevelContext,
     pub unifier: Unifier,
@@ -202,6 +206,17 @@ impl WorkerRegistry {
         let context = Context::create();
         let mut builder = context.create_builder();
         let module = context.create_module(generator.get_name());
+
+        module.add_basic_value_flag(
+            "Debug Info Version",
+            inkwell::module::FlagBehavior::Warning,
+            context.i32_type().const_int(3, false),
+        );
+        module.add_basic_value_flag(
+            "Dwarf Version",
+            inkwell::module::FlagBehavior::Warning,
+            context.i32_type().const_int(4, false),
+        );
 
         let pass_builder = PassManagerBuilder::create();
         pass_builder.set_optimization_level(OptimizationLevel::Default);
@@ -551,6 +566,58 @@ pub fn gen_func_impl<'ctx, G: CodeGenerator, F: FnOnce(&mut G, &mut CodeGenConte
     builder.build_unconditional_branch(body_bb);
     builder.position_at_end(body_bb);
 
+    let (dibuilder, compile_unit) = module.create_debug_info_builder(
+        /* allow_unresolved */ true,
+        /* language */ inkwell::debug_info::DWARFSourceLanguage::Python,
+        /* filename */
+        &task
+            .body
+            .get(0)
+            .map_or_else(
+                || "<nac3_internal>".to_string(),
+                |f| f.location.file.0.to_string(),
+            ),
+        /* directory */ "",
+        /* producer */ "NAC3",
+        /* is_optimized */ true,
+        /* compiler command line flags */ "",
+        /* runtime_ver */ 0,
+        /* split_name */ "",
+        /* kind */ inkwell::debug_info::DWARFEmissionKind::Full,
+        /* dwo_id */ 0,
+        /* split_debug_inling */ true,
+        /* debug_info_for_profiling */ false,
+        /* sysroot */ "",
+        /* sdk */ "",
+    );
+    let subroutine_type = dibuilder.create_subroutine_type(
+        compile_unit.get_file(),
+        Some(
+            dibuilder
+                .create_basic_type("_", 0_u64, 0x00, inkwell::debug_info::DIFlags::PUBLIC)
+                .unwrap()
+                .as_type(),
+        ),
+        &[],
+        inkwell::debug_info::DIFlags::PUBLIC,
+    );
+    let (row, col) =
+        task.body.get(0).map_or_else(|| (0, 0), |b| (b.location.row, b.location.column));
+    let func_scope: DISubprogram<'_> = dibuilder.create_function(
+        /* scope */ compile_unit.as_debug_info_scope(),
+        /* func name */ symbol,
+        /* linkage_name */ None,
+        /* file */ compile_unit.get_file(),
+        /* line_no */ row as u32,
+        /* DIType */ subroutine_type,
+        /* is_local_to_unit */ false,
+        /* is_definition */ true,
+        /* scope_line */ row as u32,
+        /* flags */ inkwell::debug_info::DIFlags::PUBLIC,
+        /* is_optimized */ true,
+    );
+    fn_val.set_subprogram(func_scope);
+
     let mut code_gen_context = CodeGenContext {
         ctx: context,
         resolver: task.resolver,
@@ -573,14 +640,27 @@ pub fn gen_func_impl<'ctx, G: CodeGenerator, F: FnOnce(&mut G, &mut CodeGenConte
         static_value_store,
         need_sret: has_sret,
         current_loc: Default::default(),
+        debug_info: (dibuilder, compile_unit, func_scope.as_debug_info_scope()),
     };
 
+    let loc = code_gen_context.debug_info.0.create_debug_location(
+        context,
+        row as u32,
+        col as u32,
+        func_scope.as_debug_info_scope(),
+        None
+    );
+    code_gen_context.builder.set_current_debug_location(context, loc);
+    
     let result = codegen_function(generator, &mut code_gen_context);
 
     // after static analysis, only void functions can have no return at the end.
     if !code_gen_context.is_terminated() {
         code_gen_context.builder.build_return(None);
     }
+
+    code_gen_context.builder.unset_current_debug_location();
+    code_gen_context.debug_info.0.finalize();
 
     let CodeGenContext { builder, module, .. } = code_gen_context;
     if let Err(e) = result {

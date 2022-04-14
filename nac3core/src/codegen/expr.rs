@@ -1023,6 +1023,16 @@ pub fn gen_expr<'ctx, 'a, G: CodeGenerator>(
     ctx.current_loc = expr.location;
     let int32 = ctx.ctx.i32_type();
     let zero = int32.const_int(0, false);
+    
+    let loc = ctx.debug_info.0.create_debug_location(
+        ctx.ctx,
+        ctx.current_loc.row as u32,
+        ctx.current_loc.column as u32,
+        ctx.debug_info.2,
+        None,
+    );
+    ctx.builder.set_current_debug_location(ctx.ctx, loc);
+
     Ok(Some(match &expr.node {
         ExprKind::Constant { value, .. } => {
             let ty = expr.custom.unwrap();
