@@ -205,6 +205,14 @@ fn main() {
             continue;
         }
 
+        // still needs to skip this `from __future__ import annotations` because this seems to be
+        // magic in python and there seems no way to patch it from another module..
+        if matches!(
+            &stmt.node,
+            StmtKind::ImportFrom { module, names, .. }
+                if module == &Some("__future__".into()) && names[0].name == "annotations".into()
+        ) { continue; }
+
         let (name, def_id, ty) =
             composer.register_top_level(stmt, Some(resolver.clone()), "__main__".into()).unwrap();
 
