@@ -496,12 +496,7 @@ pub fn gen_constructor<'ctx, 'a, G: CodeGenerator>(
     match def {
         TopLevelDef::Class { methods, .. } => {
             // TODO: what about other fields that require alloca?
-            let mut fun_id = None;
-            for (name, _, id) in methods.iter() {
-                if name == &"__init__".into() {
-                    fun_id = Some(*id);
-                }
-            }
+            let fun_id = methods.iter().find(|method| method.0 == "__init__".into()).and_then(|method| Some(method.2));
             let ty = ctx.get_llvm_type(generator, signature.ret).into_pointer_type();
             let zelf_ty: BasicTypeEnum = ty.get_element_type().try_into().unwrap();
             let zelf: BasicValueEnum<'ctx> = ctx.builder.build_alloca(zelf_ty, "alloca").into();
@@ -1005,13 +1000,7 @@ pub fn gen_binop_expr<'ctx, 'a, G: CodeGenerator>(
             let defs = ctx.top_level.definitions.read();
             let obj_def = defs.get(id.0).unwrap().read();
             if let TopLevelDef::Class { methods, .. } = &*obj_def {
-                let mut fun_id = None;
-                for (name, _, id) in methods.iter() {
-                    if name == &op_name {
-                        fun_id = Some(*id);
-                    }
-                }
-                fun_id.unwrap()
+                methods.iter().find(|method| method.0 == op_name).unwrap().2
             } else {
                 unreachable!()
             }
@@ -1409,13 +1398,7 @@ pub fn gen_expr<'ctx, 'a, G: CodeGenerator>(
                         let defs = ctx.top_level.definitions.read();
                         let obj_def = defs.get(id.0).unwrap().read();
                         if let TopLevelDef::Class { methods, .. } = &*obj_def {
-                            let mut fun_id = None;
-                            for (name, _, id) in methods.iter() {
-                                if name == attr {
-                                    fun_id = Some(*id);
-                                }
-                            }
-                            fun_id.unwrap()
+                            methods.iter().find(|method| method.0 == *attr).unwrap().2
                         } else {
                             unreachable!()
                         }
