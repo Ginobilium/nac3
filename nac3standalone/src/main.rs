@@ -30,6 +30,130 @@ use nac3parser::{
 mod basic_symbol_resolver;
 use basic_symbol_resolver::*;
 
+fn handle_typevar_definition(
+    var: &Expr,
+    resolver: &(dyn SymbolResolver + Send + Sync),
+    def_list: &[Arc<RwLock<TopLevelDef>>],
+    unifier: &mut Unifier,
+    primitives: &PrimitiveStore,
+) -> Result<Type, String> {
+    if let ExprKind::Call { func, args, .. } = &var.node {
+        if matches!(&func.node, ExprKind::Name { id, .. } if id == &"TypeVar".into()) {
+            let constraints = args
+                .iter()
+                .skip(1)
+                .map(|x| -> Result<Type, String> {
+                    let ty = parse_ast_to_type_annotation_kinds(
+                        resolver,
+                        def_list,
+                        unifier,
+                        primitives,
+                        x,
+                        Default::default(),
+                    )?;
+                    get_type_from_type_annotation_kinds(
+                        def_list, unifier, primitives, &ty, &mut None
+                    )
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(unifier.get_fresh_var_with_range(&constraints, None, None).0)
+        } else {
+            Err(format!(
+                "expression {:?} cannot be handled as a TypeVar in global scope",
+                var
+            ))
+        }
+    } else {
+        Err(format!(
+            "expression {:?} cannot be handled as a TypeVar in global scope",
+            var
+        ))
+    }
+}
+
+fn handle_assignment_pattern(
+    targets: &[Expr],
+    value: &Expr,
+    resolver: &(dyn SymbolResolver + Send + Sync),
+    internal_resolver: &ResolverInternal,
+    def_list: &[Arc<RwLock<TopLevelDef>>],
+    unifier: &mut Unifier,
+    primitives: &PrimitiveStore,
+) -> Result<(), String> {
+    if targets.len() == 1 {
+        match &targets[0].node {
+            ExprKind::Name { id, .. } => {
+                if let Ok(var) = handle_typevar_definition(
+                    value.borrow(),
+                    resolver,
+                    def_list,
+                    unifier,
+                    primitives,
+                ) {
+                    internal_resolver.add_id_type(*id, var);
+                    Ok(())
+                } else if let Ok(val) =
+                    parse_parameter_default_value(value.borrow(), resolver)
+                {
+                    internal_resolver.add_module_global(*id, val);
+                    Ok(())
+                } else {
+                    Err(format!("fails to evaluate this expression `{:?}` as a constant or TypeVar at {}",
+                        targets[0].node,
+                        targets[0].location,
+                    ))
+                }
+            }
+            ExprKind::List { elts, .. } | ExprKind::Tuple { elts, .. } => {
+                handle_assignment_pattern(
+                    elts,
+                    value,
+                    resolver,
+                    internal_resolver,
+                    def_list,
+                    unifier,
+                    primitives,
+                )?;
+                Ok(())
+            }
+            _ => Err(format!(
+                "assignment to {:?} is not supported at {}",
+                targets[0], targets[0].location
+            )),
+        }
+    } else {
+        match &value.node {
+            ExprKind::List { elts, .. } | ExprKind::Tuple { elts, .. } => {
+                if elts.len() != targets.len() {
+                    Err(format!(
+                        "number of elements to unpack does not match (expect {}, found {}) at {}",
+                        targets.len(),
+                        elts.len(),
+                        value.location
+                    ))
+                } else {
+                    for (tar, val) in targets.iter().zip(elts) {
+                        handle_assignment_pattern(
+                            std::slice::from_ref(tar),
+                            val,
+                            resolver,
+                            internal_resolver,
+                            def_list,
+                            unifier,
+                            primitives,
+                        )?;
+                    }
+                    Ok(())
+                }
+            }
+            _ => Err(format!(
+                "unpack of this expression is not supported at {}",
+                value.location
+            )),
+        }
+    }
+}
+
 fn main() {
     let file_name = env::args().nth(1).unwrap();
     let threads: u32 = env::args().nth(2).map(|s| str::parse(&s).unwrap()).unwrap_or(1);
@@ -54,172 +178,42 @@ fn main() {
         class_names: Default::default(),
         module_globals: Default::default(),
         str_store: Default::default(),
-    }
-    .into();
+    }.into();
     let resolver =
         Arc::new(Resolver(internal_resolver.clone())) as Arc<dyn SymbolResolver + Send + Sync>;
 
     let parser_result = parser::parse_program(&program, file_name.into()).unwrap();
 
     for stmt in parser_result.into_iter() {
-        if let StmtKind::Assign { targets, value, .. } = &stmt.node {
-            fn handle_typevar_definition(
-                var: &Expr,
-                resolver: &(dyn SymbolResolver + Send + Sync),
-                def_list: &[Arc<RwLock<TopLevelDef>>],
-                unifier: &mut Unifier,
-                primitives: &PrimitiveStore,
-            ) -> Result<Type, String> {
-                if let ExprKind::Call { func, args, .. } = &var.node {
-                    if matches!(&func.node, ExprKind::Name { id, .. } if id == &"TypeVar".into()) {
-                        let constraints = args
-                            .iter()
-                            .skip(1)
-                            .map(|x| -> Result<Type, String> {
-                                let ty = parse_ast_to_type_annotation_kinds(
-                                    resolver,
-                                    def_list,
-                                    unifier,
-                                    primitives,
-                                    x,
-                                    Default::default(),
-                                )?;
-                                get_type_from_type_annotation_kinds(
-                                    def_list, unifier, primitives, &ty, &mut None
-                                )
-                            })
-                            .collect::<Result<Vec<_>, _>>()?;
-                        Ok(unifier.get_fresh_var_with_range(&constraints, None, None).0)
-                    } else {
-                        Err(format!(
-                            "expression {:?} cannot be handled as a TypeVar in global scope",
-                            var
-                        ))
-                    }
-                } else {
-                    Err(format!(
-                        "expression {:?} cannot be handled as a TypeVar in global scope",
-                        var
-                    ))
+        match &stmt.node {
+            StmtKind::Assign { targets, value, .. } => {
+                let def_list = composer.extract_def_list();
+                let unifier = &mut composer.unifier;
+                let primitives = &composer.primitives_ty;
+                if let Err(err) = handle_assignment_pattern(
+                    targets,
+                    value,
+                    resolver.as_ref(),
+                    internal_resolver.as_ref(),
+                    &def_list,
+                    unifier,
+                    primitives,
+                ) {
+                    eprintln!("{}", err);
+                    return;
                 }
-            }
-
-            fn handle_assignment_pattern(
-                targets: &[Expr],
-                value: &Expr,
-                resolver: &(dyn SymbolResolver + Send + Sync),
-                internal_resolver: &ResolverInternal,
-                def_list: &[Arc<RwLock<TopLevelDef>>],
-                unifier: &mut Unifier,
-                primitives: &PrimitiveStore,
-            ) -> Result<(), String> {
-                if targets.len() == 1 {
-                    match &targets[0].node {
-                        ExprKind::Name { id, .. } => {
-                            if let Ok(var) = handle_typevar_definition(
-                                value.borrow(),
-                                resolver,
-                                def_list,
-                                unifier,
-                                primitives,
-                            ) {
-                                internal_resolver.add_id_type(*id, var);
-                                Ok(())
-                            } else if let Ok(val) =
-                                parse_parameter_default_value(value.borrow(), resolver)
-                            {
-                                internal_resolver.add_module_global(*id, val);
-                                Ok(())
-                            } else {
-                                Err(format!("fails to evaluate this expression `{:?}` as a constant or TypeVar at {}",
-                                    targets[0].node,
-                                    targets[0].location,
-                                ))
-                            }
-                        }
-                        ExprKind::List { elts, .. } | ExprKind::Tuple { elts, .. } => {
-                            handle_assignment_pattern(
-                                elts,
-                                value,
-                                resolver,
-                                internal_resolver,
-                                def_list,
-                                unifier,
-                                primitives,
-                            )?;
-                            Ok(())
-                        }
-                        _ => Err(format!(
-                            "assignment to {:?} is not supported at {}",
-                            targets[0], targets[0].location
-                        )),
-                    }
-                } else {
-                    match &value.node {
-                        ExprKind::List { elts, .. } | ExprKind::Tuple { elts, .. } => {
-                            if elts.len() != targets.len() {
-                                Err(format!(
-                                    "number of elements to unpack does not match (expect {}, found {}) at {}",
-                                    targets.len(),
-                                    elts.len(),
-                                    value.location
-                                ))
-                            } else {
-                                for (tar, val) in targets.iter().zip(elts) {
-                                    handle_assignment_pattern(
-                                        std::slice::from_ref(tar),
-                                        val,
-                                        resolver,
-                                        internal_resolver,
-                                        def_list,
-                                        unifier,
-                                        primitives,
-                                    )?;
-                                }
-                                Ok(())
-                            }
-                        }
-                        _ => Err(format!(
-                            "unpack of this expression is not supported at {}",
-                            value.location
-                        )),
-                    }
-                }
-            }
-
-            let def_list = composer.extract_def_list();
-            let unifier = &mut composer.unifier;
-            let primitives = &composer.primitives_ty;
-            if let Err(err) = handle_assignment_pattern(
-                targets,
-                value,
-                resolver.as_ref(),
-                internal_resolver.as_ref(),
-                &def_list,
-                unifier,
-                primitives,
-            ) {
-                eprintln!("{}", err);
-                return;
-            }
-            continue;
-        }
-
-        // allow (and ignore) "from __future__ import annotations"
-        if matches!(
-            &stmt.node,
+            },
+            // allow (and ignore) "from __future__ import annotations"
             StmtKind::ImportFrom { module, names, .. }
-                if module == &Some("__future__".into()) && names.len() == 1 && names[0].name == "annotations".into()
-        ) {
-            continue;
-        }
-
-        let (name, def_id, ty) =
-            composer.register_top_level(stmt, Some(resolver.clone()), "__main__".into()).unwrap();
-
-        internal_resolver.add_id_def(name, def_id);
-        if let Some(ty) = ty {
-            internal_resolver.add_id_type(name, ty);
+                if module == &Some("__future__".into()) && names.len() == 1 && names[0].name == "annotations".into() => (),
+            _ => {
+                let (name, def_id, ty) =
+                    composer.register_top_level(stmt, Some(resolver.clone()), "__main__".into()).unwrap();
+                internal_resolver.add_id_def(name, def_id);
+                if let Some(ty) = ty {
+                    internal_resolver.add_id_type(name, ty);
+                }
+            }
         }
     }
 
