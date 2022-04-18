@@ -34,14 +34,14 @@ let
 in rec {
   llvm-nac3 = pkgs.stdenvNoCC.mkDerivation rec {
     pname = "llvm-nac3-msys2";
-    version = "13.0.1";
+    version = "14.0.1";
     src-llvm = pkgs.fetchurl {
       url = "https://github.com/llvm/llvm-project/releases/download/llvmorg-${version}/llvm-${version}.src.tar.xz";
-      sha256 = "sha256-7GuA2Cw4SsrS3BkpA6bPLNuv+4ibhL+5janXHmMPyDQ=";
+      sha256 = "sha256-W4kBfewnKTEasUNALwPaHeptDHndXHAbyTnPizTwHsI=";
     };
     src-clang = pkgs.fetchurl {
       url = "https://github.com/llvm/llvm-project/releases/download/llvmorg-${version}/clang-${version}.src.tar.xz";
-      sha256 = "sha256-eHqeLZn1yHIKoXc+S+AJRhzTDTvUD90kWR5HNGfJF8k=";
+      sha256 = "sha256-hE+O1cVEOPxTPQoW4KrPdfhLmKWaU9CEhT0tvsL9kqE=";
     };
     buildInputs = [ pkgs.wineWowPackages.stable ];
     phases = [ "unpackPhase" "patchPhase" "configurePhase" "buildPhase" "installPhase" ];
@@ -49,6 +49,7 @@ in rec {
       ''
       mkdir llvm
       tar xf ${src-llvm} -C llvm --strip-components=1
+      mv llvm/Modules/* llvm/cmake/modules  # work around https://github.com/llvm/llvm-project/issues/53281
       mkdir clang
       tar xf ${src-clang} -C clang --strip-components=1
       cd llvm
@@ -64,7 +65,7 @@ in rec {
       ${silenceFontconfig}
       mkdir build
       cd build
-      wine64 cmake .. -DCMAKE_BUILD_TYPE=Release -DLLVM_ENABLE_UNWIND_TABLES=OFF -DLLVM_ENABLE_THREADS=OFF -DLLVM_TARGETS_TO_BUILD=X86\;ARM\;RISCV -DLLVM_LINK_LLVM_DYLIB=OFF -DLLVM_ENABLE_FFI=OFF -DFFI_INCLUDE_DIR=fck-cmake -DFFI_LIBRARY_DIR=fck-cmake -DLLVM_ENABLE_LIBXML2=OFF -DLLVM_ENABLE_PROJECTS=clang -DCMAKE_INSTALL_PREFIX=Z:$out
+      wine64 cmake .. -DCMAKE_BUILD_TYPE=Release -DLLVM_ENABLE_UNWIND_TABLES=OFF -DLLVM_ENABLE_THREADS=OFF -DLLVM_TARGETS_TO_BUILD=X86\;ARM\;RISCV -DLLVM_LINK_LLVM_DYLIB=OFF -DLLVM_ENABLE_FFI=OFF -DFFI_INCLUDE_DIR=fck-cmake -DFFI_LIBRARY_DIR=fck-cmake -DLLVM_ENABLE_LIBXML2=OFF -DLLVM_INCLUDE_BENCHMARKS=OFF -DLLVM_ENABLE_PROJECTS=clang -DCMAKE_INSTALL_PREFIX=Z:$out
       '';
     buildPhase =
       ''
@@ -79,7 +80,12 @@ in rec {
   nac3artiq = pkgs.rustPlatform.buildRustPackage {
     name = "nac3artiq-msys2";
     src = ../../.;
-    cargoLock = { lockFile = ../../Cargo.lock; };
+    cargoLock = {
+      lockFile = ../../Cargo.lock;
+      outputHashes = {
+        "inkwell-0.1.0" = "sha256-THGKoTqQCSusxMukOiksQ9pCnxdIBUO6MH3fiwQjYVA=";
+      };
+    };
     nativeBuildInputs = [ pkgs.wineWowPackages.stable ];
     buildPhase =
       ''
@@ -122,14 +128,19 @@ in rec {
   };
   lld = pkgs.stdenvNoCC.mkDerivation rec {
     pname = "lld-msys2";
-    version = "13.0.1";
+    version = "14.0.1";
     src = pkgs.fetchurl {
       url = "https://github.com/llvm/llvm-project/releases/download/llvmorg-${version}/lld-${version}.src.tar.xz";
-      sha256 = "sha256-Zmr3Rei/e2gFM7TRi3ox3HyrV1sebk0mGSK7r9lkTPs=";
+      sha256 = "sha256-MbrFSILSfJ4hfqRFA0BGrAUkLlyOSyxQ8/mAL8ijeBo=";
     };
     buildInputs = [ pkgs.wineWowPackages.stable ];
     phases = [ "unpackPhase" "patchPhase" "configurePhase" "buildPhase" "installPhase" ];
     patches = [ ./lld-disable-macho.diff ];
+    setSourceRoot =  # work around https://github.com/llvm/llvm-project/issues/53281
+      ''
+      mv cmake/Modules/* lld-14.0.1.src/cmake/modules
+      sourceRoot=lld-14.0.1.src
+      '';
     configurePhase =
       ''
       export HOME=`mktemp -d`

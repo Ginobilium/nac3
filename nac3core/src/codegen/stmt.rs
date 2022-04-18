@@ -494,7 +494,7 @@ pub fn get_builtins<'ctx, 'a>(
         if symbol == "__nac3_raise" || symbol == "__nac3_resume" {
             fun.add_attribute(
                 AttributeLoc::Function,
-                ctx.ctx.create_enum_attribute(Attribute::get_named_enum_kind_id("noreturn"), 1),
+                ctx.ctx.create_enum_attribute(Attribute::get_named_enum_kind_id("noreturn"), 0),
             );
         }
         fun

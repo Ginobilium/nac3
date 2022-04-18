@@ -10,11 +10,17 @@
       packages.x86_64-linux = rec {
         llvm-nac3 = pkgs.callPackage ./nix/llvm {};
         nac3artiq = pkgs.python3Packages.toPythonModule (
-          pkgs.rustPlatform.buildRustPackage {
+          pkgs.rustPlatform.buildRustPackage rec {
             name = "nac3artiq";
             outputs = [ "out" "runkernel" "standalone" ];
             src = self;
-            cargoLock = { lockFile = ./Cargo.lock; };
+            cargoLock = {
+              lockFile = ./Cargo.lock;
+              outputHashes = {
+                "inkwell-0.1.0" = "sha256-THGKoTqQCSusxMukOiksQ9pCnxdIBUO6MH3fiwQjYVA=";
+              };
+            };
+            passthru.cargoLock = cargoLock;
             nativeBuildInputs = [ pkgs.python3 pkgs.llvmPackages_13.clang-unwrapped llvm-nac3 ];
             buildInputs = [ pkgs.python3 llvm-nac3 ];
             checkInputs = [ (pkgs.python3.withPackages(ps: [ ps.numpy ])) ];
@@ -56,7 +62,7 @@
           pkgs.rustPlatform.buildRustPackage {
             name = "nac3artiq-instrumented";
             src = self;
-            cargoLock = { lockFile = ./Cargo.lock; };
+            inherit (nac3artiq) cargoLock;
             nativeBuildInputs = [ pkgs.python3 pkgs.llvmPackages_13.clang-unwrapped llvm-nac3-instrumented ];
             buildInputs = [ pkgs.python3 llvm-nac3-instrumented ];
             cargoBuildFlags = [ "--package" "nac3artiq" "--features" "init-llvm-profile" ];
@@ -94,7 +100,7 @@
           pkgs.rustPlatform.buildRustPackage {
             name = "nac3artiq-pgo";
             src = self;
-            cargoLock = { lockFile = ./Cargo.lock; };
+            inherit (nac3artiq) cargoLock;
             nativeBuildInputs = [ pkgs.python3 pkgs.llvmPackages_13.clang-unwrapped llvm-nac3-pgo ];
             buildInputs = [ pkgs.python3 llvm-nac3-pgo ];
             cargoBuildFlags = [ "--package" "nac3artiq" ];

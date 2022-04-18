@@ -8,7 +8,6 @@
 , ncurses
 , zlib
 , which
-, llvmPackages_13
 , debugVersion ? false
 , enableManpages ? false
 , enableSharedLibraries ? false
@@ -18,7 +17,7 @@
 let
   inherit (lib) optional optionals optionalString;
 
-  release_version = "13.0.1";
+  release_version = "14.0.1";
   candidate = ""; # empty or "rcN"
   dash-candidate = lib.optionalString (candidate != "") "-${candidate}";
   version = "${release_version}${dash-candidate}"; # differentiating these (variables) is important for RCs
@@ -35,7 +34,7 @@ in stdenv.mkDerivation (rec {
   pname = "llvm";
   inherit version;
 
-  src = fetch pname "sha256-7GuA2Cw4SsrS3BkpA6bPLNuv+4ibhL+5janXHmMPyDQ=";
+  src = fetch pname "sha256-W4kBfewnKTEasUNALwPaHeptDHndXHAbyTnPizTwHsI=";
 
   unpackPhase = ''
     unpackFile $src
@@ -50,19 +49,12 @@ in stdenv.mkDerivation (rec {
 
   buildInputs = [ ];
 
-  propagatedBuildInputs = optionals (stdenv.buildPlatform == stdenv.hostPlatform) [ ncurses ]
-    ++ [ zlib ];
+  propagatedBuildInputs = [ ncurses zlib ];
 
   checkInputs = [ which ];
 
   patches = [
     ./gnu-install-dirs.patch
-    # Fix random compiler crashes: https://bugs.llvm.org/show_bug.cgi?id=50611
-    (fetchpatch {
-      url = "https://raw.githubusercontent.com/archlinux/svntogit-packages/4764a4f8c920912a2bfd8b0eea57273acfe0d8a8/trunk/no-strict-aliasing-DwarfCompileUnit.patch";
-      sha256 = "18l6mrvm2vmwm77ckcnbjvh6ybvn72rhrb799d4qzwac4x2ifl7g";
-      stripLen = 1;
-    })
     ./llvm-future-riscv-abi.diff
   ];
 
@@ -121,6 +113,7 @@ in stdenv.mkDerivation (rec {
     "-DLLVM_DEFAULT_TARGET_TRIPLE=${stdenv.hostPlatform.config}"
     "-DLLVM_ENABLE_UNWIND_TABLES=OFF"
     "-DLLVM_ENABLE_THREADS=OFF"
+    "-DLLVM_INCLUDE_BENCHMARKS=OFF"
     "-DLLVM_TARGETS_TO_BUILD=X86;ARM;RISCV"
   ] ++ optionals enableSharedLibraries [
     "-DLLVM_LINK_LLVM_DYLIB=ON"
@@ -137,7 +130,6 @@ in stdenv.mkDerivation (rec {
     "-DCAN_TARGET_i386=false"
   ] ++ optionals (stdenv.hostPlatform != stdenv.buildPlatform) [
     "-DCMAKE_CROSSCOMPILING=True"
-    "-DLLVM_TABLEGEN=${llvmPackages_13.tools.llvm}/bin/llvm-tblgen"
     (
       let
         nativeCC = pkgsBuildBuild.targetPackages.stdenv.cc;

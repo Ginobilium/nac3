@@ -10,6 +10,7 @@ nac3parser = { path = "../nac3parser" }
 nac3core = { path = "../nac3core" }
 
 [dependencies.inkwell]
-version = "0.1.0-beta.4"
+git = "https://github.com/nbaksalyar/inkwell.git"
+branch = "llvm14"
 default-features = false
-features = ["llvm13-0", "target-x86", "target-arm", "target-riscv", "no-libffi-linking"]
+features = ["llvm14-0", "target-x86", "target-arm", "target-riscv", "no-libffi-linking"]
