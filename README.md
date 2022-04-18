@@ -1,7 +1,10 @@
+<div align="center">
+
 ![icon](https://git.m-labs.hk/M-Labs/nac3/raw/branch/master/nac3.svg)
 
-# NAC3
+</div>
 
+# NAC3
 NAC3 is a major, backward-incompatible rewrite of the compiler for the [ARTIQ](https://m-labs.hk/artiq) physics experiment control and data acquisition system. It features greatly improved compilation speeds, a much better type system, and more predictable and transparent operation.
 
 NAC3 has a modular design and its applicability reaches beyond ARTIQ. The ``nac3core`` module does not contain anything specific to ARTIQ, and can be used in any project that requires compiling Python to machine code.
