@@ -2,10 +2,8 @@
   description = "The third-generation ARTIQ compiler";
 
   inputs.nixpkgs.url = github:NixOS/nixpkgs/nixos-21.11;
-  inputs.sipyco.url = github:m-labs/sipyco;
-  inputs.sipyco.inputs.nixpkgs.follows = "nixpkgs";
 
-  outputs = { self, nixpkgs, sipyco }:
+  outputs = { self, nixpkgs }:
     let
       pkgs = import nixpkgs { system = "x86_64-linux"; };
     in rec {
@@ -83,23 +81,34 @@
         );
         nac3artiq-profile = pkgs.stdenvNoCC.mkDerivation {
           name = "nac3artiq-profile";
-          src = pkgs.fetchFromGitHub {
-            owner = "m-labs";
-            repo = "artiq";
-            rev = "dd57fdc530baf926a5f354dc1c2bd90564affd96";
-            sha256 = "sha256-hcqVcToYWkc3oDFkKr9wZUF65ydiSYVHdmiGiu2Mc1c=";
-          };
+          srcs = [
+            (pkgs.fetchFromGitHub {
+              owner = "m-labs";
+              repo = "sipyco";
+              rev = "939f84f9b5eef7efbf7423c735d1834783b6140e";
+              sha256 = "sha256-15Nun4EY35j+6SPZkjzZtyH/ncxLS60KuGJjFh5kSTc=";
+            })
+            (pkgs.fetchFromGitHub {
+              owner = "m-labs";
+              repo = "artiq";
+              rev = "dd57fdc530baf926a5f354dc1c2bd90564affd96";
+              sha256 = "sha256-hcqVcToYWkc3oDFkKr9wZUF65ydiSYVHdmiGiu2Mc1c=";
+            })
+          ];
           buildInputs = [
-            (python3-mimalloc.withPackages(ps: [ ps.numpy ps.jsonschema sipyco.packages.x86_64-linux.sipyco nac3artiq-instrumented ]))
+            (python3-mimalloc.withPackages(ps: [ ps.numpy ps.jsonschema nac3artiq-instrumented ]))
             pkgs.lld_13
             pkgs.llvmPackages_13.llvm.out
           ];
           phases = [ "buildPhase" "installPhase" ];
           buildPhase =
             ''
-            export PYTHONPATH=$src
-            python -m artiq.frontend.artiq_ddb_template $src/artiq/examples/nac3devices/nac3devices.json > device_db.py
-            cp $src/artiq/examples/nac3devices/nac3devices.py .
+            srcs=($srcs)
+            sipyco=''${srcs[0]}
+            artiq=''${srcs[1]}
+            export PYTHONPATH=$sipyco:$artiq
+            python -m artiq.frontend.artiq_ddb_template $artiq/artiq/examples/nac3devices/nac3devices.json > device_db.py
+            cp $artiq/artiq/examples/nac3devices/nac3devices.py .
             python -m artiq.frontend.artiq_compile nac3devices.py
             '';
           installPhase =
