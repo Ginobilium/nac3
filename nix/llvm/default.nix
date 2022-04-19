@@ -147,6 +147,7 @@ in stdenv.mkDerivation (rec {
   ] ++ extraCmakeFlags;
 
   postBuild = ''
+    make llvm-config
     rm -fR $out
   '';
 
@@ -155,6 +156,7 @@ in stdenv.mkDerivation (rec {
   '';
 
   postInstall = ''
+    cp bin/llvm-config $out/bin
     mkdir -p $python/share
     mv $out/share/opt-viewer $python/share/opt-viewer
     moveToOutput "bin/llvm-config*" "$dev"
