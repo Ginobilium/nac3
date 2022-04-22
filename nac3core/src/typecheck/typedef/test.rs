@@ -286,7 +286,7 @@ fn test_unify(
         ("v1", "tuple[int]"),
         ("v2", "tuple[float]"),
     ],
-    (("v1", "v2"), "Incompatible types: 0 and 1")
+    (("v1", "v2"), "Incompatible types: tuple[0] and tuple[1]")
     ; "tuple parameter mismatch"
 )]
 #[test_case(2,
@@ -478,7 +478,8 @@ fn test_typevar_range() {
     let int_list = env.unifier.add_ty(TypeEnum::TList { ty: int });
     assert_eq!(
         env.unify(a_list, int_list),
-        Err("Expected any one of these types: 1, but got 0".into())
+        Err("Incompatible types: list[typevar22] and list[0]\
+            \n\nNotes:\n    typevar22 ∈ {1}".into())
     );
 
     let a = env.unifier.get_fresh_var_with_range(&[int, float], None, None).0;
@@ -506,7 +507,7 @@ fn test_rigid_var() {
 
     assert_eq!(env.unify(a, b), Err("Incompatible types: typevar3 and typevar2".to_string()));
     env.unifier.unify(list_a, list_x).unwrap();
-    assert_eq!(env.unify(list_x, list_int), Err("Incompatible types: 0 and typevar2".to_string()));
+    assert_eq!(env.unify(list_x, list_int), Err("Incompatible types: list[typevar2] and list[0]".to_string()));
 
     env.unifier.replace_rigid_var(a, int);
     env.unifier.unify(list_x, list_int).unwrap();

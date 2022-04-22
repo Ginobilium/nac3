@@ -657,12 +657,16 @@ impl Unifier {
                     return Err(TypeError::new(TypeErrorKind::IncompatibleTypes(a, b), None));
                 }
                 for (x, y) in ty1.iter().zip(ty2.iter()) {
-                    self.unify_impl(*x, *y, false)?;
+                    if self.unify_impl(*x, *y, false).is_err() {
+                        return Err(TypeError::new(TypeErrorKind::IncompatibleTypes(a, b), None));
+                    }
                 }
                 self.set_a_to_b(a, b);
             }
             (TList { ty: ty1 }, TList { ty: ty2 }) => {
-                self.unify_impl(*ty1, *ty2, false)?;
+                if self.unify_impl(*ty1, *ty2, false).is_err() {
+                    return Err(TypeError::new(TypeErrorKind::IncompatibleTypes(a, b), None));
+                }
                 self.set_a_to_b(a, b);
             }
             (TVar { fields: Some(map), range, .. }, TObj { fields, .. }) => {
@@ -743,12 +747,16 @@ impl Unifier {
                     self.incompatible_types(a, b)?;
                 }
                 for (x, y) in zip(params1.values(), params2.values()) {
-                    self.unify_impl(*x, *y, false)?;
+                    if self.unify_impl(*x, *y, false).is_err() {
+                        return Err(TypeError::new(TypeErrorKind::IncompatibleTypes(a, b), None));
+                    };
                 }
                 self.set_a_to_b(a, b);
             }
             (TVirtual { ty: ty1 }, TVirtual { ty: ty2 }) => {
-                self.unify_impl(*ty1, *ty2, false)?;
+                if self.unify_impl(*ty1, *ty2, false).is_err() {
+                    return Err(TypeError::new(TypeErrorKind::IncompatibleTypes(a, b), None));
+                };
                 self.set_a_to_b(a, b);
             }
             (TCall(calls1), TCall(calls2)) => {
@@ -784,9 +792,13 @@ impl Unifier {
                     if x.name != y.name || x.default_value != y.default_value {
                         return Err(TypeError::new(TypeErrorKind::IncompatibleTypes(a, b), None));
                     }
-                    self.unify_impl(x.ty, y.ty, false)?;
+                    if self.unify_impl(x.ty, y.ty, false).is_err() {
+                        return Err(TypeError::new(TypeErrorKind::IncompatibleTypes(a, b), None));
+                    };
                 }
-                self.unify_impl(sign1.ret, sign2.ret, false)?;
+                if self.unify_impl(sign1.ret, sign2.ret, false).is_err() {
+                    return Err(TypeError::new(TypeErrorKind::IncompatibleTypes(a, b), None));
+                };
                 self.set_a_to_b(a, b);
             }
             (TVar { fields: Some(fields), .. }, _) => {
