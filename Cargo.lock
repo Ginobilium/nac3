@@ -321,7 +321,7 @@ dependencies = [
 [[package]]
 name = "inkwell"
 version = "0.1.0"
-source = "git+https://github.com/nbaksalyar/inkwell.git?branch=llvm14#54f9e286279666d40d5f6e2c3fde8a91334a7b63"
+source = "git+https://github.com/TheDan64/inkwell.git#bff378bee02bcbb5bed35f47e9ed69e6642e9188"
 dependencies = [
  "either",
  "inkwell_internals",
@@ -334,7 +334,7 @@ dependencies = [
 [[package]]
 name = "inkwell_internals"
 version = "0.5.0"
-source = "git+https://github.com/nbaksalyar/inkwell.git?branch=llvm14#54f9e286279666d40d5f6e2c3fde8a91334a7b63"
+source = "git+https://github.com/TheDan64/inkwell.git#bff378bee02bcbb5bed35f47e9ed69e6642e9188"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -419,9 +419,9 @@ checksum = "e2abad23fbc42b3700f2f279844dc832adb2b2eb069b2df918f455c4e18cc646"
 
 [[package]]
 name = "libc"
-version = "0.2.123"
+version = "0.2.124"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cb691a747a7ab48abc15c5b42066eaafde10dc427e3b6ee2a1cf43db04c763bd"
+checksum = "21a41fed9d98f27ab1c6d161da622a4fa35e8a54a8adc24bbf3ddd0ef70b0e50"
 
 [[package]]
 name = "libloading"
@@ -441,9 +441,9 @@ checksum = "7fb9b38af92608140b86b693604b9ffcc5824240a484d1ecd4795bacb2fe88f3"
 
 [[package]]
 name = "llvm-sys"
-version = "140.0.0"
+version = "140.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7edbec78fa56ea7a1ff451683a51b8ecf79a65ca9e88a4be6c4b0a6fc300d2a6"
+checksum = "0cf9ca02e92ab306f5fabb3d8de94951111ec3f59aa1c5ead7365885c2e2609e"
 dependencies = [
  "cc",
  "lazy_static",

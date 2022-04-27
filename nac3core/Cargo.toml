@@ -12,8 +12,7 @@ rayon = "1.5.1"
 nac3parser = { path = "../nac3parser" }
 
 [dependencies.inkwell]
-git = "https://github.com/nbaksalyar/inkwell.git"
-branch = "llvm14"
+git = "https://github.com/TheDan64/inkwell.git"
 default-features = false
 features = ["llvm14-0", "target-x86", "target-arm", "target-riscv", "no-libffi-linking"]
 

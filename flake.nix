@@ -17,7 +17,7 @@
             cargoLock = {
               lockFile = ./Cargo.lock;
               outputHashes = {
-                "inkwell-0.1.0" = "sha256-THGKoTqQCSusxMukOiksQ9pCnxdIBUO6MH3fiwQjYVA=";
+                "inkwell-0.1.0" = "sha256-TPvmjByjSHs7U8W3oJU+y88IZcuc9WevymwNq6Ip1iA=";
               };
             };
             passthru.cargoLock = cargoLock;
