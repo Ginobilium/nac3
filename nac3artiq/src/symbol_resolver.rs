@@ -115,13 +115,7 @@ impl StaticValue for PythonValue {
                         &[ctx.ctx.i32_type().const_int(id as u64, false).into()],
                         false,
                     ));
-                    let global2 = ctx.module.add_global(
-                        struct_type.ptr_type(AddressSpace::Generic),
-                        None,
-                        format!("{}_const2", self.id).as_str(),
-                    );
-                    global2.set_initializer(&global.as_pointer_value());
-                    Ok(global2.as_pointer_value().into())
+                    Ok(global.as_pointer_value().into())
                 })
                 .unwrap()
             })
