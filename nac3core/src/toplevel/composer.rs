@@ -1470,7 +1470,7 @@ impl TopLevelComposer {
 
     /// step 5, analyze and call type inferencer to fill the `instance_to_stmt` of topleveldef::function
     fn analyze_function_instance(&mut self) -> Result<(), String> {
-        // first get the class contructor type correct for the following type check in function body
+        // first get the class constructor type correct for the following type check in function body
         // also do class field instantiation check
         let init_str_id = "__init__".into();
         let mut definition_extension = Vec::new();
@@ -1581,7 +1581,7 @@ impl TopLevelComposer {
                     return Ok(());
                 }
                 let mut init_id: Option<DefinitionId> = None;
-                // get the class contructor type correct
+                // get the class constructor type correct
                 let (contor_args, contor_type_vars) = {
                     let mut constructor_args: Vec<FuncArg> = Vec::new();
                     let mut type_vars: HashMap<u32, Type> = HashMap::new();
