@@ -623,7 +623,7 @@ impl Nac3 {
             format!("def __modinit__():\n    base.{}({})", method_name, arg_names.join(", "))
         };
         let mut synthesized =
-            parse_program(&synthesized, "__nac3_synthesized_modinit__".to_string().into()).unwrap();
+            parse_program(&synthesized, "<nac3_synthesized_modinit>".to_string().into()).unwrap();
         let inner_resolver = Arc::new(InnerResolver {
             id_to_type: builtins_ty.clone().into(),
             id_to_def: builtins_def.clone().into(),
@@ -657,7 +657,7 @@ impl Nac3 {
 
         if let Err(e) = composer.start_analysis(true) {
             // report error of __modinit__ separately
-            if !e.contains("__nac3_synthesized_modinit__") {
+            if !e.contains("<nac3_synthesized_modinit>") {
                 return Err(CompileError::new_err(format!(
                     "compilation failed\n----------\n{}",
                     e
